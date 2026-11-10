@@ -9,6 +9,19 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Opening a workflow no longer flashes the graph in the wrong place.** The
+  canvas mounts inside a resizable pane that has no width until after the first
+  commit, so the first painted frame showed every node at ReactFlow's default
+  transform with the toolbar collapsed to its narrowest tier; the correct view
+  arrived a frame later. The canvas's contents now stay invisible until the
+  opening view has been applied, so the first thing drawn is already the graph
+  where it belongs with the toolbar at its full width. A workflow with no nodes
+  opens immediately instead of waiting for a measurement that never comes.
+
 ## [1.0.0] — 2026-11-10
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported

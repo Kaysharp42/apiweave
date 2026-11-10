@@ -1048,6 +1048,14 @@ function WorkflowCanvas({
   // fit-view button and the pane double-click keep the deliberate overview.
 
   const didApplyOpeningViewRef = useRef(false);
+  // The canvas's contents stay invisible until the opening view is on them.
+  // The canvas mounts inside an Allotment pane, which has no width until
+  // Allotment's own ResizeObserver lays it out — after the first commit. The
+  // pane is painted at full size that same frame, but this canvas only hears
+  // about it from its own observer a frame later, so that first frame showed
+  // the graph at ReactFlow's default transform and the toolbar collapsed to its
+  // narrowest tier against a zero-width track.
+  const [isOpeningViewApplied, setIsOpeningViewApplied] = useState(false);
 
   useEffect(() => {
     const element = canvasRef.current;
@@ -1067,12 +1075,19 @@ function WorkflowCanvas({
 
   useEffect(() => {
     if (didApplyOpeningViewRef.current) return;
-    if (!workflowId || !isHydrated || !nodesInitialized || !hasFlowInstance) {
-      return;
-    }
+    if (!workflowId || !isHydrated || !hasFlowInstance) return;
     if (canvasSize.width <= 0 || canvasSize.height <= 0) return;
     const instance = reactFlowInstanceRef.current;
     if (!instance) return;
+
+    // The instance's nodes are the measured ones: ReactFlow writes their
+    // dimensions into its own store, so reading our state here could run a
+    // render behind and produce zero bounds.
+    const graphNodes = instance.getNodes();
+    // ReactFlow never reports an empty graph as initialised, and an empty graph
+    // has nothing to measure — waiting for it would leave the canvas hidden.
+    const isEmpty = graphNodes.length === 0;
+    if (!isEmpty && !nodesInitialized) return;
 
     // A tab the user has already looked at wins over any computed view.
     let view = useTabStore
@@ -1080,12 +1095,10 @@ function WorkflowCanvas({
       .tabs.find((tab) => tab.id === workflowId)?.viewport;
 
     if (!view) {
-      // The instance's nodes are the measured ones: ReactFlow writes their
-      // dimensions into its own store, so reading our state here could run a
-      // render behind and produce zero bounds.
-      const bounds = getNodesBounds(instance.getNodes());
-      // Zero bounds are not a graph to frame — wait for measurement.
-      if (bounds.width <= 0 || bounds.height <= 0) return;
+      const bounds = getNodesBounds(graphNodes);
+      // Zero bounds on a real graph are not a graph to frame — wait for
+      // measurement. On an empty one they give the identity viewport.
+      if (!isEmpty && (bounds.width <= 0 || bounds.height <= 0)) return;
       view = openingViewport({
         bounds,
         container: canvasSize,
@@ -1094,7 +1107,10 @@ function WorkflowCanvas({
     }
 
     didApplyOpeningViewRef.current = true;
-    instance.setViewport(snapTransform(view, window.devicePixelRatio));
+    // Synchronous with no duration (d3 applies the transform on the selection
+    // directly), so the reveal below renders with the view already in place.
+    void instance.setViewport(snapTransform(view, window.devicePixelRatio));
+    setIsOpeningViewApplied(true);
   }, [canvasSize, hasFlowInstance, isHydrated, nodesInitialized, workflowId]);
 
   // Recorded on the way out, not on every move: a drag fires `onMove` per
@@ -1927,8 +1943,14 @@ function WorkflowCanvas({
   return (
     <main
       ref={canvasRef}
-      className="w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300"
+      // `opacity`, not `display`: ReactFlow and the toolbar both have to lay
+      // out and measure while hidden. Not `visibility` either — ReactFlow puts
+      // an inline `visibility: visible` on every measured node, which beats an
+      // inherited `hidden`. Children only, so the surface itself is painted
+      // from the first frame. See `isOpeningViewApplied`.
+      className={`w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300 ${isOpeningViewApplied ? "" : "*:opacity-0 *:pointer-events-none"}`}
       aria-label="Workflow canvas"
+      aria-busy={!isOpeningViewApplied}
     >
       {/* Removed: a second, static 32px line grid drawn over this one. It was
           pinned to the viewport rather than the canvas, so it did not move
