@@ -1,6 +1,5 @@
 /**
- * libsodium sealed-box ingress — ported from `backend/app/services/secret_sealed_box.py`
- * and `scoped_secret_resolver.py`.
+ * libsodium sealed-box ingress.
  *
  * Write-only transport: the renderer encrypts a secret value with the scope's
  * Curve25519 public key via `crypto_box_seal` (anonymous sender); the trusted
@@ -8,9 +7,9 @@
  * AES-256-GCM envelope (`crypto.ts`). There is NO read-back — the opened
  * plaintext is used only transiently by the runtime during substitution.
  *
- * A private key is a raw 32-byte Curve25519 seed (PyNaCl `PrivateKey(seed)`);
- * the public key is `crypto_scalarmult_base(seed)`. This matches the byte-for-byte
- * wire format PyNaCl produces, so the captured crypto fixtures interop exactly.
+ * A private key is a raw 32-byte Curve25519 seed; the public key is
+ * `crypto_scalarmult_base(seed)`. The known-answer crypto vectors pin this wire
+ * format byte for byte.
  */
 
 import _sodium from "libsodium-wrappers"

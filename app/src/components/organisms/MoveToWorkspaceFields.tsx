@@ -1,7 +1,7 @@
 import { FormField } from "../molecules/FormField";
+import { Select } from "../atoms/Select";
 import { Spinner } from "../atoms/Spinner";
 import { WorkspaceSelect } from "./WorkspaceSelect";
-import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
 import type { MovableItemKind, Project, Workspace } from "../../types";
 
 interface MoveToWorkspaceFieldsProps {
@@ -79,9 +79,9 @@ export function MoveToWorkspaceFields({
               <Spinner size="xs" /> Loading projects…
             </div>
           ) : (
-            <select
+            <Select
               aria-label="Project in the destination workspace"
-              className={MOVE_DIALOG_SELECT_CLASS}
+              className="cursor-pointer"
               value={targetProjectId}
               onChange={(event) => onSelectProject(event.target.value)}
               disabled={disabled}
@@ -95,7 +95,7 @@ export function MoveToWorkspaceFields({
                   </option>
                 );
               })}
-            </select>
+            </Select>
           )}
         </FormField>
       )}

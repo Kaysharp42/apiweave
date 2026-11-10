@@ -16,6 +16,7 @@ import type {
 import type { AgentRosterEntry } from "@shared/types/AgentsBridge";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
+import { Select } from "../atoms/Select";
 import { IconButton } from "../atoms/IconButton";
 import { Spinner } from "../atoms/Spinner";
 import { TextArea } from "../atoms/TextArea";
@@ -369,7 +370,7 @@ export function AgentsSettingsPanel() {
                 label="Opening prompt"
                 hint="How a prompt is handed to the agent when a launch carries one."
               >
-                <select
+                <Select
                   value={draft.promptMode}
                   onChange={(event) =>
                     setDraft({
@@ -379,7 +380,6 @@ export function AgentsSettingsPanel() {
                     })
                   }
                   aria-label="Prompt mode"
-                  className="w-full rounded-xs border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
                 >
                   <option value="none">Not supported</option>
                   <option value="argv">As positional argument</option>
@@ -390,7 +390,7 @@ export function AgentsSettingsPanel() {
                       write to, and `launchExternal` refuses rather than
                       dropping the prompt silently. */}
                   <option value="stdin">Typed into the terminal</option>
-                </select>
+                </Select>
               </FormField>
               <FormField
                 label="Prompt flag"

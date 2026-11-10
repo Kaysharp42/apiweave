@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent, type DragEvent } from "react";
+import { useState, useEffect } from "react";
 import {
   Upload,
   FileText,
@@ -12,29 +12,14 @@ import { Button } from "./atoms/Button";
 import { Select } from "./atoms/Select";
 import { TextArea } from "./atoms/TextArea";
 import { CheckboxOption } from "./molecules/CheckboxOption";
+import { FileDropZone } from "./molecules/FileDropZone";
 import { Modal } from "./molecules/Modal";
 import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { getLogger } from "../utils/logger";
+import type { CurlImportPreview, Workflow } from "../types";
 
 const curlImportLog = getLogger("CurlImport");
-
-interface Workflow {
-  workflowId: string;
-  name: string;
-  nodes?: unknown[];
-}
-
-interface DryRunResult {
-  stats: {
-    totalRequests: number;
-  };
-  workflow: {
-    name: string;
-    nodeCount: number;
-    edgeCount: number;
-  };
-}
 
 interface CurlImportProps {
   onClose: () => void;
@@ -50,10 +35,11 @@ export function CurlImport({
   const { workspaceId } = useScopeContext();
   const [curlInput, setCurlInput] = useState<string>("");
   const [sanitize, setSanitize] = useState<boolean>(true);
-  const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null);
+  const [dryRunResult, setDryRunResult] = useState<CurlImportPreview | null>(
+    null,
+  );
   const [importing, setImporting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(
@@ -74,67 +60,28 @@ export function CurlImport({
     })();
   }, []);
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const content = event.target?.result;
-          if (typeof content === "string") {
-            setCurlInput(content);
-          }
-          setError(null);
-          setDryRunResult(null);
-        } catch (err) {
-          if (err instanceof Error) {
-            setError("Failed to read file: " + err.message);
-          }
+  const handleFileSelect = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result;
+        if (typeof content === "string") {
+          setCurlInput(content);
         }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const content = event.target?.result;
-          if (typeof content === "string") {
-            setCurlInput(content);
-          }
-          setError(null);
-          setDryRunResult(null);
-        } catch (err) {
-          if (err instanceof Error) {
-            setError("Failed to read file: " + err.message);
-          }
+        setError(null);
+        setDryRunResult(null);
+      } catch (err) {
+        if (err instanceof Error) {
+          setError("Failed to read file: " + err.message);
         }
-      };
-      reader.readAsText(file);
-    }
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handlePreview = async () => {
     if (!curlInput.trim()) {
-      setError("Please enter a curl command");
+      setError("Please enter a cURL command");
       return;
     }
 
@@ -142,13 +89,14 @@ export function CurlImport({
     setDryRunResult(null);
     setIsLoading(true);
 
+    // fallow-ignore-next-line code-duplication -- the preview handlers of the three import dialogs share their setState preamble and try/finally by design; each calls its own IPC import with its own payload, so there is no shared behaviour to extract.
     try {
       const result = (await apiweave.workflows.importCurl({
         workspaceId: workspaceId || "",
         curlCommand: curlInput,
         sanitize,
         dryRun: true,
-      })) as DryRunResult;
+      })) as CurlImportPreview;
       setDryRunResult(result);
     } catch (err) {
       curlImportLog.error("Preview error:", err);
@@ -162,7 +110,7 @@ export function CurlImport({
 
   const handleImport = async () => {
     if (!curlInput.trim()) {
-      setError("Please enter a curl command");
+      setError("Please enter a cURL command");
       return;
     }
 
@@ -214,7 +162,7 @@ export function CurlImport({
     <Modal
       isOpen
       onClose={onClose}
-      title="Import curl Commands"
+      title="Import cURL commands"
       size="lg"
       footer={
         <>
@@ -225,19 +173,18 @@ export function CurlImport({
             loading={isLoading}
             icon={!isLoading ? <FileText className="w-4 h-4" /> : undefined}
           >
-            {isLoading ? "Previewing..." : "Preview"}
+            Preview
           </Button>
           <Button
             onClick={handleImport}
             disabled={importing || !curlInput}
             variant="primary"
-            intent="info"
             loading={importing}
             icon={!importing ? <Upload className="w-4 h-4" /> : undefined}
           >
-            {importing ? "Importing..." : "Import as Workflow"}
+            Import as workflow
           </Button>
-          <Button onClick={onClose} variant="outline">
+          <Button onClick={onClose} variant="ghost">
             Close
           </Button>
         </>
@@ -248,41 +195,20 @@ export function CurlImport({
         {/* Info */}
         <div>
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-            Import curl commands to automatically create API test workflows.
+            Import cURL commands to automatically create API test workflows.
             Supports single or multiple commands (one per line or separated by
             &&).
           </p>
         </div>
 
         {/* File Upload Area */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={`border border-dashed rounded-sm p-8 text-center transition-colors ${
-            isDragging
-              ? "border-primary/20 dark:border-primary/30 bg-primary/5 dark:bg-primary/10"
-              : "border-border dark:border-border-dark"
-          }`}
-        >
-          <Upload className="w-12 h-12 mx-auto mb-4 text-text-muted dark:text-text-muted-dark" />
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
-            Drag & drop a text file with curl commands here, or click to browse
-          </p>
-          <input
-            type="file"
-            accept=".txt,.sh,.curl"
-            onChange={handleFileSelect}
-            className="hidden"
-            id="curl-file-input"
-          />
-          <label
-            htmlFor="curl-file-input"
-            className="inline-block px-4 py-2 bg-primary text-white rounded-sm hover:bg-primary-hover cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
-          >
-            Choose File
-          </label>
-        </div>
+        <FileDropZone
+          title="Drag & drop a text file with cURL commands, or click to browse"
+          hint="Supports: .txt, .sh, .curl"
+          accept=".txt,.sh,.curl"
+          inputAriaLabel="cURL command file upload"
+          onFileSelect={handleFileSelect}
+        />
 
         {/* Text Input Area */}
         <div>
@@ -290,7 +216,7 @@ export function CurlImport({
             htmlFor="curl-paste-area"
             className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
           >
-            Or paste curl commands here:
+            Or paste cURL commands here:
           </label>
           <TextArea
             id="curl-paste-area"
@@ -318,11 +244,10 @@ curl -X POST "https://api.example.com/users" \\
             <Button
               onClick={handlePasteSample}
               variant="outline"
-              intent="info"
               size="sm"
               icon={<Copy className="w-4 h-4" />}
             >
-              Paste Sample
+              Paste sample
             </Button>
           </div>
         </div>
@@ -336,7 +261,7 @@ curl -X POST "https://api.example.com/users" \\
                 htmlFor="curl-destination-workflow"
                 className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
               >
-                Destination Workflow
+                Destination workflow
               </label>
               <Select
                 id="curl-destination-workflow"
@@ -346,8 +271,8 @@ curl -X POST "https://api.example.com/users" \\
               >
                 <option value="">
                   {loadingWorkflows
-                    ? "Loading workflows..."
-                    : "+ Create New Workflow"}
+                    ? "Loading workflows…"
+                    : "+ Create new workflow"}
                 </option>
                 {workflows.map((wf) => (
                   <option key={wf.workflowId} value={wf.workflowId}>

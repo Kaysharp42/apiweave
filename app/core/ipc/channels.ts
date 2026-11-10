@@ -116,6 +116,7 @@ export const GIT_CHANNELS = {
   listOwners: "git:listOwners",
   createRepository: "git:createRepository",
   listRepositories: "git:listRepositories",
+  listTaggedWorkspaces: "git:listTaggedWorkspaces",
 } as const
 
 /** The one-time code a sign-in in progress printed, pushed to the renderer for its dialog. */

@@ -5,6 +5,7 @@ import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { ProjectRunItem } from "@shared/types/ProjectRunItem";
 import type { ReportFormat } from "@shared/types/ReportFormat";
 import { Button } from "../atoms/Button";
+import { Select } from "../atoms/Select";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { StatusBadge } from "../molecules/StatusBadge";
@@ -13,7 +14,6 @@ import { apiweave, onProjectRunChanged } from "../../utils/apiweaveClient";
 import { downloadReport } from "../../utils/downloadFile";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import { formatTimestamp } from "../../utils/formatTimestamp";
-import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
 import type { ProjectRunPanelProps, StatusBadgeProps } from "../../types";
 
 const NO_ENVIRONMENT = "";
@@ -166,9 +166,9 @@ export function ProjectRunPanel({
       <div className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <FormField label="Environment" className="max-w-xs">
-            <select
+            <Select
               aria-label="Environment for the project run"
-              className={MOVE_DIALOG_SELECT_CLASS}
+              className="cursor-pointer"
               value={chosenEnvironmentId}
               onChange={(event) => setEnvironmentId(event.target.value)}
             >
@@ -181,7 +181,7 @@ export function ProjectRunPanel({
                   {environment.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </FormField>
           <Button
             variant="primary"

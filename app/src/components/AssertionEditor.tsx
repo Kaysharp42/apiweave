@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./atoms/Button";
+import { Select } from "./atoms/Select";
 import type { AssertionEditorProps } from "../types";
 import type { AssertionValue } from "../types";
 
@@ -54,7 +55,7 @@ export default function AssertionEditor({
   return (
     <form className="space-y-2" onSubmit={(e) => e.preventDefault()}>
       <div className="grid grid-cols-2 gap-2">
-        <select
+        <Select
           value={source}
           onChange={(e) =>
             onChange({
@@ -64,14 +65,14 @@ export default function AssertionEditor({
           }
           onKeyDown={handleKey}
           aria-label="Assertion source"
-          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+          className="px-2 py-1 text-sm rounded-sm"
         >
           <option value="prev">prev</option>
           <option value="variables">variables</option>
           <option value="status">status</option>
           <option value="cookies">cookies</option>
           <option value="headers">headers</option>
-        </select>
+        </Select>
         <div>
           <input
             ref={inputRef}
@@ -92,7 +93,7 @@ export default function AssertionEditor({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <select
+        <Select
           value={operator}
           onChange={(e) =>
             onChange({
@@ -102,7 +103,7 @@ export default function AssertionEditor({
           }
           onKeyDown={handleKey}
           aria-label="Assertion operator"
-          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+          className="px-2 py-1 text-sm rounded-sm"
         >
           <option value="equals">Equals (==)</option>
           <option value="notEquals">Not Equals (!=)</option>
@@ -119,7 +120,7 @@ export default function AssertionEditor({
           <option value="notMatches">Does Not Match regex</option>
           <option value="type">Is of type</option>
           <option value="matchesSchema">Matches JSON Schema</option>
-        </select>
+        </Select>
 
         {!["exists", "notExists"].includes(operator) ? (
           <div>
@@ -148,7 +149,7 @@ export default function AssertionEditor({
       </div>
 
       <div className="flex gap-2 justify-end">
-        <Button type="button" variant="outline" size="xs" onClick={onCancel}>
+        <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
           Cancel
         </Button>
         <Button type="button" variant="primary" size="xs" onClick={handleSave}>

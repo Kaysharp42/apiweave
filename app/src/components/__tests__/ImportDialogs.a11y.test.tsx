@@ -29,15 +29,15 @@ const { ImportToNodesPanel } = await import("../ImportToNodesPanel");
 const { default: HistoryModal } = await import("../HistoryModal");
 
 const dialogs: Array<[string, (onClose: () => void) => ReactElement]> = [
-  ["Import curl Commands", (onClose) => <CurlImport onClose={onClose} />],
-  ["Import HAR File", (onClose) => <HARImport onClose={onClose} />],
-  ["Import OpenAPI/Swagger", (onClose) => <OpenAPIImport onClose={onClose} />],
+  ["Import cURL commands", (onClose) => <CurlImport onClose={onClose} />],
+  ["Import HAR file", (onClose) => <HARImport onClose={onClose} />],
+  ["Import OpenAPI", (onClose) => <OpenAPIImport onClose={onClose} />],
   [
     "Import to Add Nodes",
     (onClose) => <ImportToNodesPanel isOpen onClose={onClose} workflowId="wf-1" onTemplatesSaved={() => {}} />,
   ],
   [
-    "Run History",
+    "Run history",
     (onClose) => (
       <HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={onClose} onSelectRun={vi.fn()} />
     ),

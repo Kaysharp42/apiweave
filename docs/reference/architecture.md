@@ -1,6 +1,6 @@
 # Architecture
 
-*A high-level overview of how APIWeave's components fit together and how a workflow run moves through the system. This doc is conceptual: no source code references, no class names, just the moving parts.*
+*A high-level overview of how APIWeave's components fit together and how a workflow run moves through the system. It names the source files and classes behind each part where that helps you find them, for contributors and for users who want to know what runs where.*
 
 ## Prerequisites
 
@@ -22,6 +22,9 @@ graph LR
     SecretStore --> SQLite
     Runner -->|progress events| MainProcess
     MainProcess -->|progress events| Renderer
+    MainProcess -->|spawn, resize, kill| PtyHost[PTY host<br/>utility process]
+    PtyHost -->|terminal output, MessagePort| Renderer
+    PtyHost --> AgentCli[Coding agent CLIs]
 ```
 
 The diagram shows the components that make up APIWeave and the paths a request can take from the user or a local agent to the database and back. The next sections describe each piece in plain language.
@@ -31,6 +34,8 @@ The diagram shows the components that make up APIWeave and the paths a request c
 **Renderer** is a React single-page app built on the React Flow canvas library (`@xyflow/react`). It hosts the visual workflow editor, the variables and environments panels, the secrets page, and the project list. The renderer never talks to the database directly; everything flows through the main process over a typed IPC channel exposed by the preload script.
 
 **Main process** is the Electron main process: a single Node.js process that owns the BrowserWindow, the IPC handler registry, the services, the repositories, the runner, the encrypted secret store, and the local MCP bridge. The main process is the only component that touches the database.
+
+**PTY host** (`electron/pty_host.ts`) is an Electron utility process that owns the pseudoterminal of every [coding agent](../features/coding-agents.md) launched into the dock, and nothing else. The main process forks it the first time an agent is launched and tells it what to spawn, resize or kill; the session rows themselves stay in SQLite, written by the main process. Terminal output goes from the PTY host to the renderer over a `MessagePort`, so heavy output never passes through the main process's event loop. A native crash in the host takes down only the host, and a session survives a renderer reload. The host also reports whether each agent is producing output or idle, which drives the dock's busy/idle badge.
 
 **IPC handler registry** is the typed single-channel router that wires the renderer's calls to the services. The same registry backs the local MCP bridge, so behavior is consistent regardless of which transport called it.
 
@@ -126,7 +131,7 @@ APIWeave exposes two surfaces, both local:
 
 Outside the app, the headless CLI (`apiweave run`, `app/core/cli/`) reuses the importers, repositories, scheduler, project runner and reporters under plain Node, with an in-memory SQLite database and secrets from its environment. It never imports Electron, the keychain or the MCP bridge; its build fails if anything on its import graph does. See [Run Tests in CI](../guides/ci.md).
 
-Two kinds of outbound-only connection exist beyond those: the auto-update manager polls the GitHub release channel for updates, and the app runs your own `git` against a host you name to keep a tracked workspace in step with its remote — a sync cycle fetches, merges the two sides by record and field when both moved, and pushes the workspace's history (see [Sync with the remote](../guides/git-workflows.md#sync-with-the-remote)) — and to clone a repository when you click **Open workspace** in **Open from git…** (see [Open a workspace from git](../guides/git-workflows.md#open-a-workspace-from-git)). Both git operations are bridged to the renderer through a privileged preload world that is not on the IPC router, so the MCP bridge cannot reach them. None of these accepts inbound connections.
+Several outbound-only connections exist beyond those. The auto-update manager polls the GitHub release channel for updates. The app runs your own `gh` (GitHub CLI) or `glab` (GitLab CLI) to sign in to an account, to list its organizations, groups and repositories, and to create a workspace's repository (see [Keep Tests in a Git Repository](../guides/git-workflows.md)). The renderer loads a signed-in GitHub account's profile picture from `https://<host>/<login>.png`, without a token; GitLab accounts show initials and make no request. And the app runs your own `git` against a host you name to keep a tracked workspace in step with its remote — a sync cycle fetches, merges the two sides by record and field when both moved, and pushes the workspace's history (see [Sync with the remote](../guides/git-workflows.md#sync-with-the-remote)) — and to clone a repository when you click **Open workspace** in **Open from git…** (see [Open a workspace from git](../guides/git-workflows.md#open-a-workspace-from-git)). The git and account operations are bridged to the renderer through a privileged preload world that is not on the IPC router, so the MCP bridge cannot reach them. None of these accepts inbound connections.
 
 ## Related
 

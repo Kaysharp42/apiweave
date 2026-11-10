@@ -1,10 +1,13 @@
-import { useState, type ChangeEvent, type DragEvent } from "react";
-import { Upload, CheckCircle, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle, AlertCircle } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
 import { Input } from "./atoms/Input";
+import { Select } from "./atoms/Select";
 import { Toggle } from "./atoms/Toggle";
+import { CheckboxOption } from "./molecules/CheckboxOption";
+import { ImportFilePicker } from "./molecules/ImportFilePicker";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
 import type { OpenAPIImportProps } from "../types/OpenAPIImportProps";
@@ -29,7 +32,6 @@ export function OpenAPIImport({
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewParamsKey, setPreviewParamsKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [groupTitle, setGroupTitle] = useState<string>("");
   const { addImportedGroup } = usePalette();
@@ -70,23 +72,6 @@ export function OpenAPIImport({
       }
     };
     reader.readAsText(file);
-  };
-
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const file = e.dataTransfer.files[0];
-    handleFileUpload(file);
   };
 
   const getPreviewParamsKey = (file: File): string =>
@@ -202,16 +187,11 @@ export function OpenAPIImport({
     });
   };
 
-  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    handleFileUpload(file);
-  };
-
   return (
     <Modal
       isOpen
       onClose={onClose}
-      title="Import OpenAPI/Swagger"
+      title="Import OpenAPI"
       size="lg"
       footer={
         <div className="flex w-full justify-between">
@@ -225,20 +205,19 @@ export function OpenAPIImport({
               disabled={!openapiFile || isLoading}
               loading={isLoading}
             >
-              {isLoading ? "Loading..." : "Preview"}
+              Preview
             </Button>
             <Button
               onClick={handleImport}
               variant="primary"
               disabled={!preview || isPreviewStale || isLoading}
-              loading={isLoading}
               title={
                 preview && isPreviewStale
                   ? "Inputs changed since the last preview. Preview again before importing."
                   : undefined
               }
             >
-              {isLoading ? "Adding..." : "Add to Nodes"}
+              Add to nodes
             </Button>
           </div>
         </div>
@@ -246,40 +225,14 @@ export function OpenAPIImport({
     >
       <div className="p-4 space-y-4">
         {/* File Upload Area */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          className={`border border-dashed rounded-sm p-8 text-center transition-colors ${
-            isDragging
-              ? "border-primary/50 bg-primary/5 dark:bg-primary/10"
-              : "border-border dark:border-border-dark"
-          }`}
-        >
-          <Upload className="w-12 h-12 mx-auto mb-4 text-text-muted dark:text-text-muted-dark" />
-          <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
-            Drag & drop your OpenAPI/Swagger JSON file here, or click to browse
-          </p>
-          <input
-            type="file"
-            accept=".json"
-            onChange={handleFileInputChange}
-            className="hidden"
-            id="openapi-file-input"
-          />
-          <label
-            htmlFor="openapi-file-input"
-            className="inline-block px-4 py-2 bg-(--aw-primary) text-white rounded-sm hover:bg-(--aw-primary-hover) cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
-          >
-            Choose File
-          </label>
-          {openapiFile && (
-            <p className="mt-2 text-sm text-status-success flex items-center gap-1 justify-center">
-              <CheckCircle className="w-4 h-4" />
-              <span>{openapiFile.name}</span>
-            </p>
-          )}
-        </div>
+        <ImportFilePicker
+          title="Drag & drop an OpenAPI JSON file, or click to browse"
+          hint="Supports: .json"
+          accept=".json"
+          inputAriaLabel="OpenAPI file upload"
+          file={openapiFile}
+          onFileSelect={handleFileUpload}
+        />
 
         {/* Options */}
         {openapiJson && (
@@ -292,22 +245,22 @@ export function OpenAPIImport({
                     htmlFor="openapi-base-url"
                     className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
                   >
-                    Base URL (Server)
+                    Base URL (server)
                   </label>
-                  <select
+                  <Select
                     id="openapi-base-url"
                     value={baseUrl}
                     onChange={(e) => handleServerSelect(e.target.value)}
-                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
+                    className="font-mono"
                   >
-                    <option value="">-- Select Server --</option>
+                    <option value="">Select a server</option>
                     {preview.availableServers.map((server) => (
                       <option key={server.url} value={server.url}>
                         {server.url}{" "}
                         {server.description && `(${server.description})`}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
 
@@ -317,7 +270,7 @@ export function OpenAPIImport({
                 htmlFor="openapi-custom-base-url"
                 className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
               >
-                Custom Base URL (optional)
+                Custom base URL (optional)
               </label>
               <Input
                 id="openapi-custom-base-url"
@@ -332,7 +285,7 @@ export function OpenAPIImport({
             {preview?.availableTags && preview.availableTags.length > 0 && (
               <div>
                 <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Filter by Tags (select to import only specific tags)
+                  Filter by tags (select to import only specific tags)
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {preview.availableTags.map((tag) => (
@@ -352,28 +305,18 @@ export function OpenAPIImport({
                 </div>
                 {selectedTags.length === 0 && (
                   <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1">
-                    No tags selected - all endpoints will be imported
+                    No tags selected — all endpoints will be imported
                   </p>
                 )}
               </div>
             )}
 
             {/* Sanitize Option */}
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="sanitize-openapi"
-                checked={sanitize}
-                onChange={(e) => setSanitize(e.target.checked)}
-                className="w-4 h-4"
-              />
-              <label
-                htmlFor="sanitize-openapi"
-                className="text-sm text-text-primary dark:text-text-primary-dark"
-              >
-                Sanitize sensitive headers (Authorization, API keys)
-              </label>
-            </div>
+            <CheckboxOption
+              label="Sanitize sensitive headers (Authorization, API keys)"
+              checked={sanitize}
+              onChange={setSanitize}
+            />
 
             <Toggle
               label="Add schema assertions: check each response body against the spec's schema for its status"
@@ -387,14 +330,14 @@ export function OpenAPIImport({
                 htmlFor="openapi-palette-group-title"
                 className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
               >
-                Palette Group Title (optional)
+                Palette group title (optional)
               </label>
               <Input
                 id="openapi-palette-group-title"
                 type="text"
                 value={groupTitle}
                 onChange={(e) => setGroupTitle(e.target.value)}
-                placeholder={openapiFile?.name || "My API Group"}
+                placeholder={openapiFile?.name || "My API group"}
               />
             </div>
           </div>
@@ -439,7 +382,7 @@ export function OpenAPIImport({
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary dark:text-text-secondary-dark">
-                  Total Nodes:
+                  Total nodes:
                 </span>
                 <span className="font-medium text-text-primary dark:text-text-primary-dark">
                   {preview.workflow?.nodeCount}
@@ -448,7 +391,7 @@ export function OpenAPIImport({
               {selectedTags.length > 0 && (
                 <div className="flex justify-between">
                   <span className="text-text-secondary dark:text-text-secondary-dark">
-                    Selected Tags:
+                    Selected tags:
                   </span>
                   <span className="font-medium text-text-primary dark:text-text-primary-dark">
                     {selectedTags.join(", ")}
@@ -461,7 +404,7 @@ export function OpenAPIImport({
             {preview.nodes && preview.nodes.length > 2 && (
               <div className="mt-4">
                 <h4 className="text-xs font-semibold text-text-primary dark:text-text-primary-dark mb-2">
-                  Sample Endpoints (first 5):
+                  Sample endpoints (first 5):
                 </h4>
                 <div className="space-y-1">
                   {preview.nodes.slice(1, 6).map((node) => (
@@ -474,7 +417,7 @@ export function OpenAPIImport({
                       }
                       className="text-xs px-2 py-1 bg-surface-raised dark:bg-surface-dark-raised rounded-sm border border-border dark:border-border-dark"
                     >
-                      <span className="font-mono text-primary dark:text-primary-dark">
+                      <span className="font-mono text-primary dark:text-primary-light">
                         {node.config?.method}
                       </span>{" "}
                       <span className="text-text-primary dark:text-text-primary-dark">

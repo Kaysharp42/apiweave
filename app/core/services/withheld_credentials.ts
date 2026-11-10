@@ -2,7 +2,7 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodePreset } from "@shared/types/NodePreset"
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
-import { stableJson } from "@shared/workspace-repo/format"
+import { stableJson, toPlain } from "@shared/workspace-repo/format"
 import { exportNode, exportWorkflow } from "./workspace_repo_format"
 import { findRedactedPlaceholders, SECRET_PLACEHOLDER, sanitizeExportValue, sanitizeVariablesForExport } from "./secret_utils"
 
@@ -57,10 +57,6 @@ export function withheldPlaceholderWarning(
   return `Workflow '${workflowName}' has the placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}: `
     + "the export withheld a credential there. Use a {{secrets.NAME}} reference instead"
     + (stored === undefined ? "" : "; the version before this import is in the workflow's history")
-}
-
-export function toPlain(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value ?? null)) as JsonValue
 }
 
 export function asRecord(value: JsonValue): Record<string, JsonValue> {

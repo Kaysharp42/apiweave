@@ -1,6 +1,8 @@
 # IPC API Reference
 
-*A short tour of the typed IPC handler registry used by the renderer and the local MCP bridge. The bridge exposes an explicit, secret-safe whitelist over these handlers rather than the complete renderer surface.*
+*A short tour of the typed IPC handler registry used by the renderer and the local MCP bridge, for contributors. The bridge exposes an explicit, secret-safe whitelist over these handlers rather than the complete renderer surface.*
+
+> **This is an internal surface.** IPC channel names and payloads are not a public API and may change in any release, including a patch. The public, versioned agent surface is the MCP tool list; see the [Compatibility and Deprecation Policy](compatibility.md).
 
 ## Prerequisites
 
@@ -26,6 +28,8 @@ The IPC surface is grouped by resource. Every operation is a typed envelope with
 | Node presets | `nodePresets.*` | Workspace-scoped library of reusable node configurations (create, list, update, delete) |
 | Secrets | `secrets.*` | Metadata reads plus sealed-box writes for trusted renderer IPC |
 | Assertions | `assertions.*` | Suggest, validate, and apply assertion rules |
+| Guides | `guides.*` | The bundled agent authoring guides, by slug |
+| App | `app.*` | Facts about the running app for **About**, and revealing the data folder (renderer only; not an MCP tool) |
 
 The renderer never calls services directly. Every renderer call routes through a handler in `app/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
 
@@ -42,6 +46,8 @@ The renderer never calls services directly. Every renderer call routes through a
 | Secrets | `app/core/ipc/handlers/secrets.ts` | Metadata list/resolve, sealed-box set, delete, public key |
 | Assertions | `app/core/ipc/handlers/assertions.ts` | Suggest, validate, and apply assertion rules |
 | Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, create, update, delete |
+| Guides | `app/core/ipc/handlers/guides.ts` | `guides.get`: one authoring guide by slug, for clients that cannot read MCP resources |
+| App | `app/core/ipc/handlers/app.ts` | `app.info` and `app.revealDataFolder`, registered only when there is an Electron app to describe |
 | Common | `app/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |
 | Index | `app/core/ipc/handlers/index.ts` | Registration entry point for `registerAllHandlers` |
 
@@ -49,7 +55,7 @@ The renderer never calls services directly. Every renderer call routes through a
 
 **Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The desktop app is single-user on this machine; work is organized into local workspaces. The MCP bridge uses a per-install bearer token that can be regenerated from Settings; see [MCP Integration](../features/mcp-integration.md).
 
-**Error format.** Every error returns a JSON shape: `{"error": {"code": "string", "message": "string", "details": {...}}}`. The IPC contract has four codes: `not_found`, `validation`, `conflict`, and `denied`. HTTP status codes appear only at the MCP transport boundary, where the HTTP server maps failures onto statuses such as 400, 401, 403, 404, 405, 413, and 503.
+**Result envelope.** Every call resolves to a result envelope. Success is `{"ok": true, "data": ...}`; a failure the caller can act on is `{"ok": false, "error": {"code": "...", "message": "...", "details": ...}}`, where `details` is optional (for a validation failure it holds the schema issues). The contract has four codes: `not_found`, `validation`, `conflict`, and `denied`. Any other failure is an internal bug: it is logged and the call is rejected rather than returned as one of the four codes. HTTP status codes appear only at the MCP transport boundary, where the HTTP server maps failures onto statuses such as 400, 401, 403, 404, 405, 413, and 503.
 
 **Write-only secrets.** Secret write channels accept a Libsodium sealed-box payload encrypted against the install's public key. The plaintext value never crosses the IPC boundary. Secret read channels return metadata only. There is no API to read a stored secret value back.
 
@@ -63,7 +69,7 @@ None at the IPC layer. The local MCP bridge has no call-rate limit, but it requi
 
 ## Versioning
 
-The IPC channel is unversioned. Channel names are stable; new arguments or new envelope fields are added without renaming existing channels. Breaking changes are documented in the project changelog and announced in release notes before the next tag is cut.
+The IPC channel is internal and unversioned. Handler names and payloads change whenever the renderer needs them to, with no deprecation window, because the renderer and the main process always ship together. Build against the MCP tools instead: their names, arguments and results are the public contract described in the [Compatibility and Deprecation Policy](compatibility.md).
 
 ## Related
 

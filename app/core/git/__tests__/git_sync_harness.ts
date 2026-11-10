@@ -50,6 +50,10 @@ export interface HarnessOptions {
   readonly disposeWaitMs?: number
   /** A bound account's token, as `HostCliService.token` would give it. */
   readonly credentials?: GitSyncServiceOptions["credentials"]
+  /** Told every workspace an import committed. */
+  readonly onImported?: (workspaceId: string) => void
+  /** Told every workspace an open created. */
+  readonly onOpened?: (workspaceId: string) => void
 }
 
 /** A database whose repositories report their writes to a sync service over real git in a temporary root. */
@@ -77,6 +81,8 @@ export function openHarness(options: HarnessOptions = {}): Harness {
       onStatusChanged: options.onStatusChanged,
       disposeWaitMs: options.disposeWaitMs,
       credentials: options.credentials,
+      onImported: options.onImported,
+      onOpened: options.onOpened,
     })
   sync = start()
   const harness: Harness = {

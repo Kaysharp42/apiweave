@@ -1,6 +1,6 @@
 # Features
 
-*Detailed feature documentation for APIWeave. The pages in this category follow a natural user journey: build workflows on the canvas and pass data between steps, configure the environment and the project that groups the workflows, then integrate with local tooling through the MCP bridge and OpenAPI or Swagger import.*
+*Detailed feature documentation for APIWeave. The pages in this category follow a natural user journey: build workflows on the canvas and pass data between steps, configure the environment and the project that groups the workflows, then integrate with local tooling through embedded coding agents, the MCP bridge, and OpenAPI or Swagger import.*
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ The in-app guide to the rest of the product, readable offline and independent of
 
 ## Execution
 
-The two guides in this section cover the canvas itself and the data that flows between steps on a single run.
+These guides cover the canvas itself, the data that flows between steps on a run, and the tools for running and debugging it.
 
 - [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — including the Call Workflow node that runs another workflow as one step and the expected-status control for negative tests — canvas actions, and keyboard shortcuts.
 - [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors, and manage workflow-level variables.
@@ -33,8 +33,9 @@ These pages cover the per-environment values a workflow reads at run time, the p
 
 ## Integration
 
-The two guides in this section cover the surfaces APIWeave exposes to other tools on your machine, whether that is a local AI agent or an upstream API definition.
+These guides cover how APIWeave works with other tools on your machine: the coding agents it launches, the MCP server any local agent can drive it through, and upstream API definitions.
 
+- [Coding Agents](coding-agents.md): launch an installed agent CLI (Claude Code, Codex CLI, Gemini CLI, OpenCode and others) beside the canvas, already connected to the MCP server and briefed on the workflow. Covers Settings → Agents, the dock, busy and idle status, Resume, external terminals, and keeping APIWeave running in the tray.
 - [MCP Integration](mcp-integration.md): drive APIWeave from AI agents through the Model Context Protocol. Covers the local loopback HTTP bridge, the per-install bearer token (regenerable from Settings), and setup recipes for five major agents. See also [Giving the agent a map of your code](mcp-integration.md#giving-the-agent-a-map-of-your-code) for graphify-based code maps.
 - [Swagger and OpenAPI Import](swagger-import.md): turn an OpenAPI or Swagger document into reusable request templates, with environment-linked sync, one-time file import, and the `Check API` warning badge.
 

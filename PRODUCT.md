@@ -56,6 +56,7 @@ Derived from the project philosophy (AGENTS.md):
 ## Accessibility & Inclusion
 
 WCAG 2.1 AA is the baseline. This includes:
+
 - Minimum 4.5:1 contrast for body text, 3:1 for large text
 - Non-text content (icons, focus indicators) at 3:1 minimum
 - Keyboard-navigable interfaces with visible focus indicators

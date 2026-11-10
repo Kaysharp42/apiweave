@@ -8,7 +8,7 @@ import { evaluateScript, type ScriptJob, type ScriptWorkerMessage } from "./scri
  * dist/cli/script-worker.cjs).
  *
  * `aw.crypto.uuid()` is synchronous inside the script but must come from the
- * run's own generator (the parity harness pins it), which lives on the
+ * run's own generator (tests seed it), which lives on the
  * caller's thread: the worker asks for one and blocks on the job's `channel`
  * until the caller has written it there.
  */

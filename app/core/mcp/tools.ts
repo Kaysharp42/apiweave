@@ -6,13 +6,13 @@ import { MCP_GUIDES } from "./guide"
  * registry, NOT an auto-expose-everything. Each entry names a `{domain}.{action}`
  * that already exists as an IPC handler; the bridge (`bridge.ts`) turns each into
  * an MCP tool named `${domain}_${action}` that dispatches through the same router,
- * so parity and secret-safety are inherited from the service path (Task 13 proved
- * reads return refs + metadata only, never plaintext).
+ * so parity and secret-safety are inherited from the service path (reads return
+ * refs + metadata only, never plaintext).
  *
  * Deliberately EXCLUDED (documented so the whitelist test can assert their absence):
  *  - `secrets.set`, `secrets.delete`, `secrets.duplicate`, `secrets.moveToScope` — keystore
- *    mutations; MCP secret surface is read-only metadata (`list`, `resolve`), matching the
- *    Python "metadata-only" posture. Duplicate/move carry sealed BYTES between scopes, so
+ *    mutations; the MCP secret surface is read-only metadata (`list`, `resolve`).
+ *    Duplicate/move carry sealed BYTES between scopes, so
  *    exposing them would let an agent re-home a credential it is not allowed to read.
  *  - `runs.report`, `projects.runReport` — a whole JUnit or HTML report as one
  *    unbounded string for the renderer to save; an agent reads the same facts,
@@ -131,7 +131,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("workflows", "patch", "write", "Edit a workflow by id: upsertNodes, upsertEdges, removeNodeIds, removeEdgeIds, setVariables/unsetVariables, and name, description or tags. Pass expectedRevision from the rev you last read to reject stale edits. Insert a node and rewire it in ONE patch — the new node, old edge removals and replacement edges together — so the saved branch stays connected. Existing nodes merge recursively; new nodes need type and complete config: call workflows_nodeSchema for a type's config fields. `parentId` moves a node into a group (null takes it out). Returns touched ids and one diagnosis. Topology changes are laid out automatically; config/label-only patches keep every position; `layout: false` keeps positions as sent.", { idempotent: true, diagnoseAfterWrite: true, autoLayout: true, resultProjection: "workflowWrite", alwaysLoad: true }),
   tool("workflows", "layout", "write", "Re-lay-out a workflow's node positions with dagre (layered left-to-right or top-to-bottom) without changing anything else — for nodes left stacked or overlapping by an import or an older graph.", { idempotent: true, diagnoseAfterWrite: true, resultProjection: "workflowWrite" }),
   tool("workflows", "delete", "write", "Delete a workflow.", { destructive: true, idempotent: true }),
-  tool("workflows", "listRevisions", "read", "List a workflow's earlier versions, newest first: when each was kept, its node/edge counts, and the write it preceded (`canvas`, `agent:<name>`, `cloud`, `import`, `restore`). The workflow as it was before your edits is always kept (consecutive writes from you within ten minutes share one version), so a bad edit can be undone — the user restores a version from Version history in APIWeave; there is no restore tool. Metadata only, never content."),
+  tool("workflows", "listRevisions", "read", "List a workflow's earlier versions, newest first: when each was kept, its node/edge counts, and the write it preceded (`canvas`, `agent:<name>`, `git`, `import`, `restore`). The workflow as it was before your edits is always kept (consecutive writes from you within ten minutes share one version), so a bad edit can be undone — the user restores a version from Version history in APIWeave; there is no restore tool. Metadata only, never content."),
   tool("workflows", "attachToCollection", "write", "Attach a workflow to a project, or detach it with collectionId null — the project-membership write.", { idempotent: true, diagnoseAfterWrite: true, resultProjection: "workflowWrite" }),
   tool("workflows", "setEnvironment", "write", "Set or clear the environment a workflow runs against.", { idempotent: true, diagnoseAfterWrite: true, resultProjection: "workflowWrite" }),
   tool("workflows", "moveToWorkspace", "write", "Move a workflow into another workspace, optionally attaching it to a project there (`targetCollectionId`, or null for unassigned). Its selected environment is cleared and any `workflow` node targeting a workflow left behind loses that target — references resolve within a workspace, so they cannot follow. Confirm with the user before calling: moving it back recovers none of this.", { destructive: true, diagnoseAfterWrite: true, resultProjection: "workflowWrite" }),
@@ -187,9 +187,9 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("secrets", "resolve", "read", "Resolve which scope a secret name binds to. Returns metadata only, never the value."),
 
   // Projects — export/import (references only, fail-closed on plaintext)
-  tool("projects", "export", "read", "Export a collection bundle (secret references only, no values)."),
-  tool("projects", "dryRun", "read", "Preview importing a bundle without writing."),
-  tool("projects", "import", "write", "Import a collection bundle into a workspace."),
+  tool("projects", "export", "read", "Export a project bundle (`.aweproject`) with secret references only, no values."),
+  tool("projects", "dryRun", "read", "Preview importing a project bundle (`.aweproject`) without writing."),
+  tool("projects", "import", "write", "Import a project bundle (`.aweproject`) into a workspace."),
 ]
 
 export const MCP_SERVER_INFO_TOOL = {

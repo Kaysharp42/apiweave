@@ -13,13 +13,14 @@ export function GitAvatar({ account, className = "h-8 w-8 rounded-full text-xs" 
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const showImage = url !== null && failedUrl !== url;
+  const imageLoaded = showImage && loadedUrl === url;
 
   return (
     <span
       aria-hidden="true"
       className={`relative flex shrink-0 select-none items-center justify-center overflow-hidden bg-primary/10 font-semibold text-primary dark:bg-primary-light/10 dark:text-primary-light ${className}`}
     >
-      {loadedUrl !== url && gitAccountInitials(account.login)}
+      {!imageLoaded && gitAccountInitials(account.login)}
       {showImage && (
         <img
           key={url}
@@ -29,7 +30,7 @@ export function GitAvatar({ account, className = "h-8 w-8 rounded-full text-xs" 
           referrerPolicy="no-referrer"
           onLoad={() => setLoadedUrl(url)}
           onError={() => setFailedUrl(url)}
-          className={`absolute inset-0 h-full w-full object-cover ${loadedUrl === url ? "" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-cover ${imageLoaded ? "" : "opacity-0"}`}
         />
       )}
     </span>

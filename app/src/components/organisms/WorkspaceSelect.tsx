@@ -1,21 +1,9 @@
-import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
-import type { Workspace } from "../../types";
-
-interface WorkspaceSelectProps {
-  readonly workspaces: readonly Workspace[];
-  readonly value: string;
-  readonly onChange: (workspaceId: string) => void;
-  readonly disabled: boolean;
-  /** The workspace the item currently lives in, when the list marks it. */
-  readonly sourceWorkspaceId?: string;
-  /** Suffix appended to the source workspace's name, e.g. " (same workspace)". */
-  readonly sourceSuffix?: string;
-}
+import { Select } from "../atoms/Select";
+import type { WorkspaceSelectProps } from "../../types";
 
 /**
- * The destination-workspace `<select>` the move and duplicate dialogs share —
- * same aria label, same daisyUI + token pairing (see `moveDialogClasses`), so
- * the two destination pickers cannot drift apart.
+ * The destination-workspace picker the move and duplicate dialogs share: same
+ * accessible name, same `Select` atom, so the two cannot drift apart.
  */
 export function WorkspaceSelect({
   workspaces,
@@ -26,9 +14,9 @@ export function WorkspaceSelect({
   sourceSuffix = "",
 }: WorkspaceSelectProps) {
   return (
-    <select
+    <Select
       aria-label="Destination workspace"
-      className={MOVE_DIALOG_SELECT_CLASS}
+      className="cursor-pointer"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       disabled={disabled}
@@ -42,6 +30,6 @@ export function WorkspaceSelect({
             : ""}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }

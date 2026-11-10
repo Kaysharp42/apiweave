@@ -22,11 +22,7 @@ import type {
   Project,
   Run,
   RunResult,
-  KeyValue,
   WorkspaceTab,
-  CanvasAction,
-  ApiResponseEnvelope,
-  PaginatedResponse,
 } from "../index";
 
 // ============================================================
@@ -176,16 +172,6 @@ const _mockCollection: Project = {
 };
 
 // ============================================================
-// KeyValue type tests
-// ============================================================
-
-const _mockKeyValue: KeyValue = {
-  key: "Content-Type",
-  value: "application/json",
-  enabled: true,
-};
-
-// ============================================================
 // WorkspaceTab type tests
 // ============================================================
 
@@ -195,32 +181,6 @@ const _mockTab: WorkspaceTab = {
   workspaceId: "ws-1",
   name: "Test Workflow",
   isDirty: false,
-};
-
-// ============================================================
-// CanvasAction type tests
-// ============================================================
-
-const _mockAction: CanvasAction = {
-  type: "duplicate",
-  nodeId: "node-1",
-  timestamp: Date.now(),
-};
-
-// ============================================================
-// API response type tests
-// ============================================================
-
-const _mockPaginatedResponse: PaginatedResponse<Workflow> = {
-  workflows: [_mockWorkflow],
-  total: 1,
-  skip: 0,
-  limit: 20,
-};
-
-const _mockEnvelope: ApiResponseEnvelope<Workflow> = {
-  data: _mockWorkflow,
-  total: 1,
 };
 
 // ============================================================
@@ -240,8 +200,4 @@ void _mockRunResult;
 void _mockVariable;
 void _mockEnvironment;
 void _mockCollection;
-void _mockKeyValue;
 void _mockTab;
-void _mockAction;
-void _mockPaginatedResponse;
-void _mockEnvelope;

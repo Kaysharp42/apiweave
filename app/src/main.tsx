@@ -17,17 +17,14 @@ import "@fontsource/jetbrains-mono/latin-500.css";
 import "@fontsource/jetbrains-mono/latin-600.css";
 // @ts-expect-error - CSS module type declaration handled by Vite
 import "./index.css";
-import { isDesktopShell } from "./utils/isDesktopShell";
 import { desktop } from "./utils/apiweaveClient";
 import { confirmCloseAll } from "./stores/PendingEditsStore";
 import { ErrorBoundary } from "./components/molecules/ErrorBoundary";
 import { UnsavedChangesDialog } from "./components/organisms/UnsavedChangesDialog";
 
-// The desktop shell (frameless window) draws its own title bar and reserves
-// its height from the viewport via the .desktop-shell CSS in index.css. Web/
-// Docker builds have no injected runtime, so this is a no-op there.
-const isDesktop = isDesktopShell();
-if (isDesktop) document.documentElement.classList.add("desktop-shell");
+// The frameless window draws its own title bar and reserves its height from
+// the viewport via the .desktop-shell CSS in index.css.
+document.documentElement.classList.add("desktop-shell");
 
 // Main asks before the window closes or the app quits. Registered here, outside
 // React, so it answers even when the tree failed to render.
@@ -56,13 +53,9 @@ const tree = (
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    {isDesktop ? (
-      <div className="flex flex-col" style={{ height: "100vh" }}>
-        <TitleBar />
-        <div className="min-h-0 flex-1 overflow-auto">{tree}</div>
-      </div>
-    ) : (
-      tree
-    )}
+    <div className="flex flex-col" style={{ height: "100vh" }}>
+      <TitleBar />
+      <div className="min-h-0 flex-1 overflow-auto">{tree}</div>
+    </div>
   </StrictMode>,
 );

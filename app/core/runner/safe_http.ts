@@ -201,11 +201,6 @@ export class SafeHttp {
     return this.safeFetch(url, { ...init, method: "GET", redirect: "manual" })
   }
 
-  /** POST — no redirect following. */
-  public async safePost(url: string, init: RequestInit = {}): Promise<Response> {
-    return this.safeFetch(url, { ...init, method: "POST", redirect: "manual" })
-  }
-
   /**
    * Read a response body, capped at `maxBytes`. A malicious or compromised
    * endpoint can otherwise return an unbounded or slow-trickling body and

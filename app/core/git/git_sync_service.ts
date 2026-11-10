@@ -191,6 +191,14 @@ const OPEN_MARKER = "apiweave-open"
 
 const DISPOSING_MESSAGE = "APIWeave is closing, so the workspace was not opened. Open it again after the next start."
 
+/** An open refused because the service is disposing: the app is quitting, so nothing new may start. */
+export class GitSyncDisposedError extends Error {
+  constructor() {
+    super(DISPOSING_MESSAGE)
+    this.name = "GitSyncDisposedError"
+  }
+}
+
 const NO_BRANCH_MESSAGE = "The repository has no branch checked out."
 const NOT_CONNECTED_BRANCH_MESSAGE = "Connect a remote before choosing a branch."
 const MERGE_BRANCH_MESSAGE = "This workspace is merging the remote's changes. Resolve or abandon the merge before switching branches."
@@ -278,6 +286,12 @@ export interface GitSyncServiceOptions {
    * whatever the renderer holds. Not told for an import that rolled back.
    */
   readonly onImported?: (workspaceId: string) => void
+  /**
+   * Told when {@link GitSyncService.openFromGit} created a workspace: its row
+   * and records are new, so a renderer holding the workspace list must
+   * refetch it. Not an import — nothing existed to change.
+   */
+  readonly onOpened?: (workspaceId: string) => void
   /**
    * A token for a bound account, asked for once per git call that reaches an
    * HTTPS remote (`HostCliService.token`). Rejects with a {@link GitError} —
@@ -1385,6 +1399,8 @@ export class GitSyncService {
   }
 
   private async openNow(url: string, account: GitAccountRef | null, branch: string | undefined): Promise<OpenWorkspaceFromGitResult> {
+    // An open queued behind one that dispose waited for must not start a clone the quit will not wait for.
+    this.assertNotDisposed()
     const remoteUrl = assertWorkspaceRemoteUrl(url)
     assertAccountFitsRemote(remoteUrl, account)
     if (branch !== undefined) assertRefName(branch)
@@ -1409,7 +1425,7 @@ export class GitSyncService {
    * The workspace here whose remote is `remoteUrl`, if any, matched across the
    * https, ssh:// and user@host:path spellings of one repository.
    */
-  private workspaceOnRemote(remoteUrl: string): Workspace | undefined {
+  public workspaceOnRemote(remoteUrl: string): Workspace | undefined {
     const identity = remoteIdentity(remoteUrl)
     if (identity === undefined) return undefined
     for (const binding of this.repositories.workspaceGit.listAll()) {
@@ -1483,6 +1499,11 @@ export class GitSyncService {
       })
       // The import announced its writes; the clone already holds what they wrote.
       this.committedWrites.set(workspaceId, this.writes.get(workspaceId) ?? 0)
+      try {
+        this.options.onOpened?.(workspaceId)
+      } catch (error) {
+        log.error("open observer failed for workspace", workspaceId, error)
+      }
       // The rows claim the clone now; a marker that will not go is removed by the next reconcile.
       await rm(openMarker(directory), { force: true }).catch((cleanupError: unknown) => {
         log.warn(`could not remove the open marker from the clone of workspace ${workspaceId}`, cleanupError)
@@ -1518,7 +1539,7 @@ export class GitSyncService {
   }
 
   private assertNotDisposed(): void {
-    if (this.disposed) throw new Error(DISPOSING_MESSAGE)
+    if (this.disposed) throw new GitSyncDisposedError()
   }
 
   /** A clone of a repository with branches whose default branch is not one of them has no files: say so, rather than that the repository is not a workspace. */
@@ -2395,12 +2416,17 @@ export class GitSyncService {
     })
     this.committedWrites.set(workspaceId, this.writes.get(workspaceId) ?? 0)
     for (const warning of warnings) log.warn(`import of workspace ${workspaceId}: ${warning}`)
+    this.announceImported(workspaceId)
+    return true
+  }
+
+  /** Tell the import observer; one that throws is logged, never the import's failure. */
+  private announceImported(workspaceId: string): void {
     try {
       this.options.onImported?.(workspaceId)
     } catch (error) {
       log.error("import observer failed for workspace", workspaceId, error)
     }
-    return true
   }
 
   /**
@@ -2788,16 +2814,23 @@ function authorityOf(host: string): string {
  * spellings of one repository compare equal. Undefined for a URL that is not a
  * host remote (a `file://` one), which has no other spelling to match.
  */
+// fallow-ignore-next-line complexity -- every branch is one spelling of a remote URL; the CRAP estimate is a coverage artifact, and git_sync_open.test.ts's duplicate table covers https, ssh://, scp and case variants.
 function remoteIdentity(url: string): string | undefined {
   const trimmed = url.trim().replace(/\/+$/, "")
   if (trimmed === "") return undefined
-  if (URL.canParse(trimmed)) {
-    const { protocol, hostname, port, pathname } = new URL(trimmed)
-    if (protocol !== "https:" && protocol !== "ssh:") return undefined
-    return `${authorityOf(port === "" ? hostname : `${hostname}:${port}`)}/${repositoryPath(pathname)}`
+  // The scp-like form first: `github.com:acme/tests` also parses as a URL whose "scheme" is `github.com:`.
+  // A drive letter (`C:\…`, `C:/…`) is a local path, as git reads it too.
+  if (!trimmed.includes("://")) {
+    if (/^[a-z]:[\\/]/i.test(trimmed)) return undefined
+    const scpLike = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(trimmed)
+    return scpLike === null ? undefined : `${scpLike[1]!.toLowerCase()}/${repositoryPath(scpLike[2]!)}`
   }
-  const scpLike = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(trimmed)
-  return scpLike === null ? undefined : `${authorityOf(scpLike[1]!)}/${repositoryPath(scpLike[2]!)}`
+  if (!URL.canParse(trimmed)) return undefined
+  const { protocol, hostname, port, pathname } = new URL(trimmed)
+  // `https:` drops `:443` itself; `ssh:` is not a special scheme to URL, so `:22` is dropped here.
+  if (protocol === "https:") return `${authorityOf(port === "" ? hostname : `${hostname}:${port}`)}/${repositoryPath(pathname)}`
+  if (protocol === "ssh:") return `${(port === "" || port === "22" ? hostname : `${hostname}:${port}`).toLowerCase()}/${repositoryPath(pathname)}`
+  return undefined
 }
 
 /** A repository's path as the host names it: no leading or trailing slash, no `.git`, in one case. */

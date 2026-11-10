@@ -33,7 +33,7 @@ export function isForbiddenSecretStorageKey(key: string): boolean {
 /**
  * Fail-closed guard: throw if any forbidden secret-storage key is present anywhere
  * in the structure. A leak here is a programming error, not user input, so it must
- * fail loudly before the bundle ever leaves the process (Python `_check_no_secret_values`).
+ * fail loudly before the bundle ever leaves the process.
  */
 export function assertNoSecretValues(data: JsonValue, path = ""): void {
   if (Array.isArray(data)) {

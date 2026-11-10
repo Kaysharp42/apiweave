@@ -20,6 +20,7 @@ import type { HostCliService } from "../core/git/accounts/host_cli_service"
 import { GitIdentityMissingError } from "../core/git/git_errors"
 import { GitService } from "../core/git/git_service"
 import { GitSyncService, type GitSyncRepositories } from "../core/git/git_sync_service"
+import { listTaggedWorkspaces } from "../core/git/tagged_workspaces"
 import { GIT_CHANNELS } from "../core/ipc/channels"
 import { getLogger } from "../core/logging/logger"
 
@@ -31,7 +32,7 @@ type TrustedSenderGuard = <Args extends unknown[], R>(
 ) => (event: IpcMainInvokeEvent, ...args: Args) => R | Promise<never>
 
 /** What an import from the remote can rewrite: every domain the renderer refetches for an agent's write that the workspace's tree holds. */
-const IMPORTED_DOMAINS = ["workspaces", "projects", "workflows", "environments"] as const
+const IMPORTED_DOMAINS = ["workspaces", "projects", "workflows", "environments", "nodePresets"] as const
 
 /**
  * The sync service over the user's own git: clones under `userData/git`, and
@@ -64,6 +65,8 @@ export function createGitSync(
     onImported: (workspaceId) => {
       for (const domain of IMPORTED_DOMAINS) publishRefresh({ domain, action: "gitImport", workspaceId })
     },
+    // A new workspace exists, so the switcher's list must refetch; nothing else in the app held its records yet.
+    onOpened: (workspaceId) => publishRefresh({ domain: "workspaces", action: "gitImport", workspaceId }),
     credentials: (account) => hostCli.token(account),
   })
 }
@@ -281,6 +284,10 @@ export function registerGitHandlers(
     GIT_CHANNELS.listRepositories,
     guard((account: unknown, request: unknown) => hostCli.listRepositories(requiredAccountOf(account), listRequestOf(request))),
   )
+  ipcMain.handle(
+    GIT_CHANNELS.listTaggedWorkspaces,
+    guard((account: unknown) => listTaggedWorkspaces(requiredAccountOf(account), { hostCli, gitSync })),
+  )
   return signIns
 }
 
@@ -306,12 +313,6 @@ export interface GitSignInPorts {
   readonly showPrompt: (prompt: GitSignInPrompt) => void
   /** Brings the app back to the front once the browser part is done. */
   readonly focus: () => void
-  /**
-   * Told who signed in, after the tool finished and the app is back in front:
-   * how the workspaces the account's tagged repositories hold are imported
-   * without keeping the dialog waiting.
-   */
-  readonly signedIn: (account: GitAccountRef) => void
 }
 
 /** One sign-in's tool: how to stop it, the page it printed, and when it has ended. */
@@ -374,17 +375,7 @@ export class GitSignIns {
       },
     })
     this.ports.focus()
-    this.announceSignedIn(account)
     return account
-  }
-
-  /** The dialog is done; an import that fails is the startup's to log, never the sign-in's to refuse. */
-  private announceSignedIn(account: GitAccountRef): void {
-    try {
-      this.ports.signedIn(account)
-    } catch (error) {
-      log.warn("could not start importing the signed-in account's tagged workspaces", error)
-    }
   }
 
   /** Stop the sign-in in progress, if any — its `signIn` rejects as cancelled — and resolve once its tool has gone. */

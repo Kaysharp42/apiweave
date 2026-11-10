@@ -24,8 +24,8 @@ export function GitAccountRow({ account, current = false, detail }: GitAccountRo
     <div className="flex items-start gap-3">
       <GitAvatar account={account} />
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-sm font-medium text-text-primary dark:text-text-primary-dark">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="min-w-0 max-w-full truncate text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {account.login}
           </span>
           {current && (

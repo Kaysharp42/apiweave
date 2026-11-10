@@ -1,6 +1,7 @@
 import { Frame, Redo2, Undo2, Ungroup } from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
 import { CanvasToolbarDivider } from "./CanvasToolbarDivider";
+import { shortcutLabel } from "../../constants/keyboardShortcuts";
 import type { CanvasToolbarStructureActionsProps } from "../../types";
 
 /**
@@ -28,7 +29,7 @@ export function CanvasToolbarStructureActions({
         <IconButton
           onClick={onUndo}
           disabled={!canUndo}
-          tooltip="Undo (Ctrl+Z)"
+          tooltip={`Undo (${shortcutLabel("undo")})`}
           aria-label="Undo"
           variant="ghost"
           size="sm"
@@ -38,7 +39,7 @@ export function CanvasToolbarStructureActions({
         <IconButton
           onClick={onRedo}
           disabled={!canRedo}
-          tooltip="Redo (Ctrl+Shift+Z)"
+          tooltip={`Redo (${shortcutLabel("redo")})`}
           aria-label="Redo"
           variant="ghost"
           size="sm"
@@ -55,7 +56,7 @@ export function CanvasToolbarStructureActions({
           disabled={!canGroup}
           tooltip={
             canGroup
-              ? "Frame selection (Ctrl+G)"
+              ? `Frame selection (${shortcutLabel("group")})`
               : "Select two ungrouped nodes to frame"
           }
           aria-label="Frame selection"
@@ -69,7 +70,7 @@ export function CanvasToolbarStructureActions({
           disabled={!canUngroup}
           tooltip={
             canUngroup
-              ? "Ungroup selection (Ctrl+Shift+G)"
+              ? `Ungroup selection (${shortcutLabel("ungroup")})`
               : "Select a frame or framed node to ungroup"
           }
           aria-label="Ungroup selection"

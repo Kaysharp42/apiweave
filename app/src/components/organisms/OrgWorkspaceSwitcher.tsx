@@ -281,10 +281,10 @@ function WorkspaceItem({
       aria-selected={isActive}
       onClick={() => onSelect(workspace)}
       onKeyDown={(e) => onKeyDown(e, index)}
-      className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-hidden ${
+      className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--aw-primary) ${
         isActive
           ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
-          : "text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay"
+          : "text-text-primary hover:bg-surface-overlay focus-visible:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus-visible:bg-surface-dark-overlay"
       }`}
     >
       <span
@@ -296,14 +296,14 @@ function WorkspaceItem({
       >
         {icon}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-sm font-medium">
+      <span className="block min-w-0 flex-1">
+        <span className="flex items-center gap-1 text-sm font-medium">
           <span className="truncate">{workspace.name}</span>
-        </div>
-        <div className="truncate text-xs text-text-secondary dark:text-text-secondary-dark">
+        </span>
+        <span className="block truncate text-xs text-text-secondary dark:text-text-secondary-dark">
           {source}
-        </div>
-      </div>
+        </span>
+      </span>
       {indicator !== null && indicator.icon !== null && (
         <Tooltip content={indicator.label}>
           <span

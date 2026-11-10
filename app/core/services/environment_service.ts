@@ -11,7 +11,7 @@ import type {
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
 
-/** Workspace-scoped environment CRUD + variable ops. Collapses Python `environment_service` + `scoped_environment_service`. */
+/** Workspace-scoped environment CRUD + variable ops. */
 export class EnvironmentService {
   // fallow-ignore-next-line code-duplication -- constructor DI boilerplate that mirrors the sibling services (collection, workflow, run) by construction; the dependencies are different repositories and there is no behaviour here to extract
   constructor(

@@ -1,7 +1,6 @@
 import type { Run } from "@shared/types/Run"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
-import type { RunResult } from "@shared/types/RunResult"
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
 import type { RunCreate, RunRepository, RunSummaryRow } from "../repositories"
 import { buildNodeEvidencePage, openHistoryCursor, sealHistoryCursor, type EvidenceSelection } from "./run_evidence"
@@ -52,7 +51,7 @@ export interface RunWaitOptions {
 
 /**
  * Workspace-scoped run history + the field-level write surface the executor
- * drives. Ported from Python `run_service`.
+ * drives.
  *
  * User-facing reads (get/list/cancel) check the workspace through the scope
  * resolver. The executor-internal progress writes (`appendNodeStatus`,
@@ -60,8 +59,8 @@ export interface RunWaitOptions {
  * run was checked at
  * `createRun`, and re-resolving scope on every node completion is pure overhead.
  * They delegate to the repository's JSON-patch methods (decision #6b): each write
- * touches a single column, never a whole-row replace. The IPC event emission for
- * these is Task 15's concern, not this service's.
+ * touches a single column, never a whole-row replace. Emitting IPC events for these
+ * is not this service's concern.
  */
 export class RunService {
   private readonly createDedup = new Map<string, { canonical: string; runId: string }>()
@@ -267,12 +266,6 @@ export class RunService {
   /** Merge freshly extracted variables into the run — targeted column write. */
   setExtractedVariables(runId: string, variables: Record<string, JsonValue>): void {
     this.runs.mergeExtractedVariables(runId, variables)
-  }
-
-  /** Persist one completed node's evidence so it can be inspected before run completion. */
-  // fallow-ignore-next-line code-duplication -- thin repository delegate, matches existing sibling methods
-  upsertNodeResult(runId: string, result: RunResult): void {
-    this.runs.upsertNodeResult(runId, result)
   }
 
   /** Transition the run to a terminal status (completed/failed/cancelled/interrupted). */

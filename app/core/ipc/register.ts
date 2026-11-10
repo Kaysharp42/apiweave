@@ -5,7 +5,7 @@ import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import { IpcRouter } from "./router"
 import { INVOKE_CHANNEL, runProgressChannel } from "./channels"
 
-export { INVOKE_CHANNEL, runProgressChannel }
+export { runProgressChannel }
 
 const invokeRequestSchema = z.object({
   domain: z.string().min(1),

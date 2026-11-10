@@ -1,9 +1,10 @@
-import { useState, type ChangeEvent, type DragEvent } from "react";
+import { useState } from "react";
 import { Upload, FileText, AlertCircle } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
 import { CheckboxOption } from "./molecules/CheckboxOption";
+import { ImportFilePicker } from "./molecules/ImportFilePicker";
 import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
@@ -62,43 +63,22 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   const [groupTitle, setGroupTitle] = useState("");
   const { addImportedGroup } = usePalette();
 
-  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setHarFile(file);
-      setError(null);
-      setDryRunResult(null);
+  const handleFileSelect = (file: File) => {
+    setHarFile(file);
+    setError(null);
+    setDryRunResult(null);
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const json = JSON.parse(event.target?.result as string);
-          setHarJson(json);
-        } catch (err) {
-          setError("Invalid HAR file: " + (err as Error).message);
-          setHarJson(null);
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      const syntheticEvent = {
-        target: { files: [file] },
-      } as unknown as ChangeEvent<HTMLInputElement>;
-      handleFileSelect(syntheticEvent);
-    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        setHarJson(json);
+      } catch (err) {
+        setError("Invalid HAR file: " + (err as Error).message);
+        setHarJson(null);
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handlePreview = async () => {
@@ -110,6 +90,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
     setError(null);
     setDryRunResult(null);
 
+    // fallow-ignore-next-line code-duplication -- the preview handlers of the three import dialogs share their setState preamble and try/catch by design; each calls its own IPC import with its own payload, so there is no shared behaviour to extract.
     try {
       const result = (await apiweave.workflows.importHar({
         workspaceId: workspaceId || "",
@@ -167,7 +148,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Import HAR File" size="lg">
+    <Modal isOpen onClose={onClose} title="Import HAR file" size="lg">
       <div className="p-6">
         <div className="space-y-6">
           {/* Info */}
@@ -179,42 +160,14 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           </div>
 
           {/* File Upload */}
-          <div>
-            <label
-              htmlFor="har-file-input"
-              className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
-            >
-              HAR File
-            </label>
-            <div
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded-sm p-8 text-center hover:border-primary dark:hover:border-primary transition-colors cursor-pointer"
-            >
-              <Upload className="w-12 h-12 text-text-muted dark:text-text-muted-dark mx-auto mb-4" />
-              <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
-                Drag and drop your HAR file here, or click to browse
-              </p>
-              <input
-                type="file"
-                accept=".har,.json"
-                onChange={handleFileSelect}
-                className="hidden"
-                id="har-file-input"
-              />
-              <label
-                htmlFor="har-file-input"
-                className="inline-block bg-primary hover:bg-primary-hover text-white text-sm font-medium py-2 px-4 rounded-sm cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
-              >
-                Select File
-              </label>
-              {harFile && (
-                <p className="mt-3 text-sm text-status-success">
-                  ✓ {harFile.name}
-                </p>
-              )}
-            </div>
-          </div>
+          <ImportFilePicker
+            title="Drag & drop a HAR file, or click to browse"
+            hint="Supports: .har, .json"
+            accept=".har,.json"
+            inputAriaLabel="HAR file upload"
+            file={harFile}
+            onFileSelect={handleFileSelect}
+          />
 
           {/* Import Options */}
           {harJson && (
@@ -243,7 +196,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                       {dryRunResult.stats?.totalEntries || 0}
                     </p>
                     <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                      Total Requests
+                      Total requests
                     </p>
                   </div>
                   <div>
@@ -302,8 +255,8 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
               <Input
                 value={groupTitle}
                 onChange={(e) => setGroupTitle(e.target.value)}
-                placeholder={harFile?.name || "My HAR Group"}
-                label="Palette Group Title (optional)"
+                placeholder={harFile?.name || "My HAR group"}
+                label="Palette group title (optional)"
                 size="sm"
               />
             </div>
@@ -336,11 +289,10 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
               onClick={handleImport}
               disabled={!harJson}
               variant="primary"
-              intent="info"
               icon={<Upload className="w-4 h-4" />}
               fullWidth
             >
-              Add to Nodes
+              Add to nodes
             </Button>
           </div>
         </div>

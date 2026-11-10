@@ -25,5 +25,20 @@ is published with credit to you unless you ask otherwise.
 
 ## Scope
 
-In scope: the desktop app, its local MCP bridge, the update channel, and how
-secrets are stored, resolved, masked and exported.
+In scope:
+
+- The desktop app, including how secrets are stored, resolved, masked and
+  exported.
+- The local MCP bridge: its token, origin and host checks, its tool whitelist,
+  and what tool results disclose.
+- Embedded coding agents: how APIWeave launches agent CLIs, the per-session
+  MCP config and briefing files it writes, and the PTY host process.
+- Git sync and GitHub/GitLab sign-in: how APIWeave runs `git`, `gh` and `glab`,
+  handles account tokens, and what it writes to a workspace repository.
+- The `apiweave run` CLI and the `@apiweave/cli` package, including how it reads
+  secrets and masks them in output and reports.
+- The update channel: the release manifests, update signatures and the in-app
+  updater.
+
+Vulnerabilities in the agent CLIs, `git`, `gh` or `glab` themselves belong with
+their own projects.

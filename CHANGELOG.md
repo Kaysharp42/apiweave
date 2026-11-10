@@ -9,32 +9,7 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-
-- **A sign-in opens the account's tagged workspaces.** When `gh` or `glab`
-  finishes signing in, APIWeave reads the repositories the account has tagged
-  `apiweave-workspace` and opens each one that holds a workspace, in the
-  background and one at a time. Repositories already connected here, and empty
-  ones, are skipped; a repository that cannot be opened is logged and the rest
-  continue.
-
-### Changed
-
-- **Sync status no longer re-reads git for nothing.** A workspace's status now
-  comes from what git last reported until the app next writes to the clone, so
-  an edit, a cycle starting and the status Sync now returns cost no git
-  processes of their own. On Windows, where starting git costs ~30 ms, an
-  edit-and-sync drops from 23 to 14 processes and an idle sync from 16 to 10.
-  The one thing it no longer sees is a git command run by hand inside a
-  workspace's clone, until the next sync writes there.
-- **Project bundles use the `.aweproject` extension.** The export filename, the
-  import picker and detection, the bundle's `type` identifier, the headless CLI
-  and the guides now name the format by its new extension. The JSON shape is
-  unchanged.
-
-## [1.0.0] — 2026-11-04
+## [1.0.0] — 2026-11-10
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported
 product. It brings the surface together: a visual canvas for building and
@@ -85,9 +60,33 @@ release covered by the 1.x compatibility policy.
   tool names and arguments, the workspace repository format, the
   `.aweproject` schema and CLI flags and exit codes, and how deprecations
   work.
+- **A sign-in offers the account's tagged workspaces.** When `gh` or `glab`
+  finishes signing in, the dialog lists the repositories the account has
+  tagged `apiweave-workspace` that hold a workspace not on this computer yet,
+  all ticked, and **Open N workspaces** opens the ticked ones one at a time as
+  that account. Nothing is cloned without being asked, so a workspace removed
+  here is simply left unticked. Repositories already connected here, and empty
+  ones, are not offered; each result, and any repository that could not be
+  opened, is shown in the dialog.
+- **GitHub accounts show their profile pictures.** The header's accounts menu
+  and every GitHub account row load the picture from the host's public
+  `/<login>.png` address, with no token and no tool call, and keep the initials
+  while it loads and whenever it cannot (offline, or a private Enterprise host
+  that requires sign-in). GitLab accounts keep their initials.
 
 ### Changed
 
+- **Project bundles use the `.aweproject` extension.** The export filename, the
+  import picker and detection, the bundle's `type` identifier, the headless CLI
+  and the guides now name the format by its new extension. The JSON shape is
+  unchanged.
+- **Sync status no longer re-reads git for nothing.** A workspace's status now
+  comes from what git last reported until the app next writes to the clone, so
+  an edit, a cycle starting and the status Sync now returns cost no git
+  processes of their own. On Windows, where starting git costs ~30 ms, an
+  edit-and-sync drops from 23 to 14 processes and an idle sync from 16 to 10.
+  The one thing it no longer sees is a git command run by hand inside a
+  workspace's clone, until the next sync writes there.
 - **The release pipeline builds both macOS architectures in one job.** That is
   what lets electron-builder write one `latest-mac.yml` covering both zips
   instead of two contradictory half-manifests, and it removes the finalize
@@ -1537,3 +1536,28 @@ Migration from the retired web surface to the local-first desktop app is a
 clean install. There is no automatic upgrade path from the retired stack. See
 [Installation](docs/getting-started/installation.md) and
 [Architecture](docs/reference/architecture.md) for the current product.
+
+[1.0.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v1.0.0
+[0.22.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.22.0
+[0.21.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.21.0
+[0.20.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.20.0
+[0.12.1]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.12.1
+[0.12.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.12.0
+[0.11.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.11.0
+[0.10.2]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.10.2
+[0.10.1]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.10.1
+[0.10.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.10.0
+[0.9.1]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.9.1
+[0.9.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.9.0
+[0.8.6]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.6
+[0.8.5]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.5
+[0.8.4]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.4
+[0.8.3]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.3
+[0.8.2]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.2
+[0.8.1]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.1
+[0.8.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.8.0
+[0.7.8]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.7.8
+[0.7.7]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.7.7
+[0.7.6]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.7.6
+[0.7.5]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.7.5
+[0.7.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.7.0

@@ -26,7 +26,6 @@ import {
 } from "../core/repositories"
 import type { GitSyncService } from "../core/git/git_sync_service"
 import { HostCliService } from "../core/git/accounts/host_cli_service"
-import { importTaggedWorkspaces } from "../core/git/tagged_workspace_import"
 import { cancelSignInWhenDocumentGoes, createGitSync, registerGitHandlers, type GitSignIns } from "./git_sync"
 import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
 import { osKeyProtector } from "./key_protector"
@@ -1002,25 +1001,6 @@ if (!hasSingleInstanceLock) {
       // The user signed in in the browser; bring them back to where they started.
       focus: () => {
         if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.focus()
-      },
-      // A sign-in is how a new machine gets the workspaces the account keeps
-      // in its apiweave-workspace repositories. The dialog is done with its
-      // part, so the import runs behind it and each workspace appears in the
-      // switcher as it opens.
-      signedIn: (account) => {
-        void importTaggedWorkspaces(account, {
-          hostCli,
-          gitSync: sync,
-          onOpened: (workspace) =>
-            publishDataRefresh({ domain: "workspaces", action: "gitImport", workspaceId: workspace.workspaceId }),
-        })
-          .then((result) => {
-            if (result.opened.length > 0) {
-              bootstrapLog.info(`imported ${result.opened.length} tagged workspace(s) from ${account.host} as ${account.login}`)
-            }
-            for (const problem of result.problems) bootstrapLog.warn(`tagged workspace import: ${problem}`)
-          })
-          .catch((error: unknown) => bootstrapLog.warn(`could not import ${account.login}'s tagged workspaces from ${account.host}`, error))
       },
     })
     sync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))

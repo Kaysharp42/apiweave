@@ -4,12 +4,10 @@ import { DYNAMIC_FUNCTIONS } from "@shared/constants/dynamicFunctions"
 /**
  * Dynamic functions for workflow variable substitution.
  *
- * Ported from `backend/app/runner/dynamic_functions.py`. Every function goes
- * through the injected `ClockProvider` / `RngProvider` so the parity harness
- * can pin outputs deterministically (FixedClockProvider + SeededRandomProvider).
- * Production wires `WallClockProvider` + `CryptoRandomProvider`.
- *
- * Surface mirrors Python exactly (13 functions). No new functions added.
+ * Every function goes through the injected `ClockProvider` / `RngProvider` so
+ * tests can pin outputs deterministically (FixedClockProvider +
+ * SeededRandomProvider). Production wires `WallClockProvider` +
+ * `CryptoRandomProvider`.
  */
 export class DynamicFunctions {
   public constructor(
@@ -159,11 +157,9 @@ function sampleAlphabet(rng: RngProvider, alphabet: string, length: number): str
 }
 
 /**
- * Minimal Python `strftime` subset covering the tokens Python's default
- * formats use (%Y-%m-%d, %d/%m/%Y, etc.) plus the common ones the UI exposes.
- * Anything unrecognized falls back to the literal char pair, matching the
- * Python behavior of `strftime` for unknown directives (platform-dependent,
- * but the parity harness only uses the tokens below).
+ * Minimal `strftime`-style formatter covering the common tokens (%Y-%m-%d,
+ * %d/%m/%Y, etc.) the UI exposes. Anything unrecognized is kept as the literal
+ * char pair.
  */
 function formatDate(date: Date, format: string): string {
   const pad = (n: number, w = 2): string => String(n).padStart(w, "0")

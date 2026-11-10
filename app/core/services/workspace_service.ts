@@ -14,9 +14,8 @@ export interface WorkspaceCreateInput {
 }
 
 /**
- * Workspace management. Ported from Python `workspace_service` with the
- * multi-tenant membership graph collapsed to the single local owner: the owner
- * sees every workspace that exists. Existence-hiding is preserved through
+ * Workspace management for the single local owner, who sees every workspace
+ * that exists. Existence-hiding is preserved through
  * `scopeResolver` on the by-id operations.
  */
 export class WorkspaceService {

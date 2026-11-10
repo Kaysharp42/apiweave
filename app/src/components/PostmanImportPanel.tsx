@@ -175,7 +175,7 @@ export function PostmanImportPanel({ onImported }: PostmanImportPanelProps) {
           disabled={busy || !preview || result !== null}
           onClick={() => void handleImport()}
         >
-          {busy ? "Working..." : "Import as new project"}
+          {busy ? "Working…" : "Import as new project"}
         </Button>
       </div>
     </div>

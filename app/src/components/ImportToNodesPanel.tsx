@@ -199,7 +199,7 @@ export function ImportActionButton({
       fullWidth
       loading={loading}
     >
-      {loading ? "Processing..." : "Add to Nodes"}
+      {loading ? "Processing…" : "Add to Nodes"}
     </Button>
   );
 }
@@ -575,7 +575,7 @@ export function ImportToNodesPanel({
 
             <PasteAreaField
               label="Or paste OpenAPI spec"
-              placeholder="Paste OpenAPI JSON/YAML here..."
+              placeholder="Paste OpenAPI JSON/YAML here…"
               value={pastedText}
               onChange={(val) => {
                 setPastedText(val);
@@ -618,7 +618,7 @@ export function ImportToNodesPanel({
 
             <PasteAreaField
               label="Or paste HAR content"
-              placeholder="Paste HAR JSON here..."
+              placeholder="Paste HAR JSON here…"
               value={pastedText}
               onChange={(val) => {
                 setPastedText(val);

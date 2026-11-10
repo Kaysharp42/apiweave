@@ -1,6 +1,5 @@
 /**
- * Secret detection + export sanitization — ported from the export-relevant subset
- * of `backend/app/services/secret_utils.py` and `project_export_service.py`.
+ * Secret detection + export sanitization.
  *
  * Only what export/import needs lives here: key-name secret detection, variable
  * sanitization (`<SECRET>` placeholder) and `{{secrets.NAME}}` reference
@@ -13,7 +12,7 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import { containsCredentialMaterial, isSecretKey, REF_SPAN_RE } from "@shared/credentials/credentials"
 import { isForbiddenSecretStorageKey } from "@shared/workspace-repo/secret_storage"
 
-/** Placeholder written in place of a redacted secret value (byte-compat with Python). */
+/** Placeholder written in place of a redacted secret value. */
 export const SECRET_PLACEHOLDER = "<SECRET>"
 
 /**
@@ -30,7 +29,7 @@ export const SECRET_PLACEHOLDER = "<SECRET>"
 export type SanitizeMode = "export" | "agent-read"
 
 /**
- * Value-level secret heuristic — ported from Python `SECRET_PATTERNS`. Used by
+ * Value-level secret heuristic. Used by
  * import parsers to decide whether a header value, cookie, or body string looks
  * like it contains a secret and should be replaced with `[FILTERED]`. Intentionally
  * broader than `isSecretKey` (which is key-name-only for export sanitization).
@@ -866,8 +865,8 @@ export interface SecretReference {
 
 /**
  * Walk a JSON-like structure collecting every `{{secrets.NAME}}` reference into
- * `into`, deduped by (name, scopeType, scopeId) via `seen`. Covers Python's
- * `_collect_refs` + `_collect_refs_from_config` (dicts, lists, nested strings).
+ * `into`, deduped by (name, scopeType, scopeId) via `seen`. Descends through
+ * objects, arrays and nested strings.
  */
 export function collectSecretRefs(
   data: JsonValue,

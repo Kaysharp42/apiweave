@@ -337,7 +337,8 @@ accounts, GitLab's one-account-per-host limit); update
 
 ## 9. Out of scope
 
-- Brand logos, avatars fetched from the network.
+- Brand logos. (GitHub profile pictures shipped later, loaded from the
+  host's public `/<login>.png` address; GitLab has no such address.)
 - Bitbucket, Gitea and other hosts' APIs.
 - Reading every repository's content to find workspaces (the topic stands in).
 - Storing tokens in APIWeave.

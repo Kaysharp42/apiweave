@@ -12,9 +12,9 @@ import type {
   AssertionNodeProps,
   AssertionItem,
 } from "../../types/AssertionNodeProps";
+import type { AssertionOperator } from "../../types";
 
 type AssertionSource = AssertionItem["source"];
-type AssertionOperator = AssertionItem["operator"];
 
 const ASSERTION_SOURCES = [
   { value: "prev", label: "Previous Node Result (prev.*)" },

@@ -17,9 +17,9 @@ export const MCP_SERVER_NAME = "APIWeave"
  * instance is created per HTTP request (stateless transport — see host.ts), which
  * is cheap: registration is a loop over the whitelisted tool specs.
  *
- * ponytail: no custom "discovery" tool is ported from Python (~490 LOC). MCP's
- * native `tools/list` already enumerates every tool with its schema + description,
- * which is exactly what an agent needs to discover the surface.
+ * There is no custom "discovery" tool: MCP's native `tools/list` already
+ * enumerates every tool with its schema + description, which is exactly what an
+ * agent needs to discover the surface.
  */
 export function createMcpServer(router: IpcRouter, version: string, broker?: RunEventBroker): McpServer {
   // `instructions` rides along in the `initialize` result, which is the only

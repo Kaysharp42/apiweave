@@ -197,8 +197,8 @@ export function CommandPalette({
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={
                   workspaceId
-                    ? "Search commands, workflows and nodes..."
-                    : "Search commands..."
+                    ? "Search commands, workflows and nodes…"
+                    : "Search commands…"
                 }
                 aria-label="Search commands, workflows and nodes"
                 size="lg"
@@ -271,7 +271,7 @@ export function CommandPalette({
                 role="status"
                 className="px-5 py-8 text-center text-sm text-text-secondary dark:text-text-secondary-dark"
               >
-                {searching ? "Searching..." : `Nothing matches “${query}”.`}
+                {searching ? "Searching…" : `Nothing matches “${query}”.`}
               </p>
             )}
           </Combobox>

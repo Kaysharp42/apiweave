@@ -1,7 +1,7 @@
 # APIWeave Design System
 
 > **Established:** 2026-02-09 (Phase 1)
-> **Updated:** 2026-05-16 (TypeScript Migration + UI Overhaul)
+> **Updated:** 2026-11-09 (palette pointers to DESIGN.md for 1.0)
 > **Component Library:** DaisyUI 5.x (Tailwind CSS plugin) + Custom Atoms/Molecules
 > **Architecture:** Atomic Design (atoms → molecules → organisms → layout → pages)
 > **Language:** TypeScript (strict mode)
@@ -33,60 +33,33 @@
 
 ## Color Tokens
 
-### Brand / Primary
+The palette is defined once. **[DESIGN.md](../DESIGN.md)** (its front matter and
+§2) is the source of truth for every colour and its intent, and
+`src/styles/base.css` holds the values as `--aw-*` custom properties, with a
+light set under `[data-theme="apiweave"]` and a dark set under
+`[data-theme="apiweave-dark"]`. `src/index.css` maps them to
+Tailwind colours in its `@theme` block (`bg-primary`, `text-text-secondary`,
+`border-border`, and so on) and to the two daisyUI themes. Do not copy hex
+values into components or into this file; use the token names below.
 
-| Token           | Light                | Dark      | Usage                                  |
-| --------------- | -------------------- | --------- | -------------------------------------- |
-| `primary`       | `#0d5c6e` (ink-teal) | `#2dd4bf` | Primary actions, active states         |
-| `primary-light` | `#0f766e`            | `#2dd4bf` | Secondary emphasis, accent text, focus |
-| `primary-hover` | `#0b4a59`            | `#5eead4` | Hover state                            |
-| `primary-dark`  | `#0b3d49`            | —         | Deep emphasis                          |
-| `on-primary`    | `#ffffff`            | `#0b3d49` | Labels and glyphs on a primary fill    |
+| Family       | Tokens                                                                                                      | Notes                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Brand        | `primary`, `primary-hover`, `primary-light`, `primary-dark`, `on-primary`                                   | One ink-teal accent. See the note on `primary-dark` below. |
+| Surfaces     | `surface`, `surface-raised`, `surface-overlay`, `surface-sunken`                                            | Warm paper in light mode, zinc in dark mode.               |
+| Text         | `text-primary`, `text-secondary`, `text-muted`                                                              | Each has a `-dark` counterpart for the `dark:` variant.    |
+| Borders      | `border`, `border-focus`                                                                                    | Hairline borders, not shadows, separate surfaces.          |
+| Status       | `status-success`, `status-error`, `status-warning`, `status-running`, `status-info`                         | Separate light and dark values.                            |
+| HTTP methods | `method-get`, `method-post`, `method-put`, `method-patch`, `method-delete`, `method-head`, `method-options` | Always paired with the uppercase method label.             |
 
-### Surfaces
-
-| Token             | Light                 | Dark                 | Usage                 |
-| ----------------- | --------------------- | -------------------- | --------------------- |
-| `surface`         | `#f8fafc` (slate-50)  | `#111827` (gray-900) | Page background       |
-| `surface-raised`  | `#ffffff`             | `#1f2937` (gray-800) | Cards, panels, modals |
-| `surface-overlay` | `#f1f5f9` (slate-100) | `#1e293b` (gray-850) | Dropdowns, popovers   |
-
-### Text
-
-| Token            | Light                | Dark                 | Usage                |
-| ---------------- | -------------------- | -------------------- | -------------------- |
-| `text-primary`   | `#111827` (gray-900) | `#f3f4f6` (gray-100) | Body text, headings  |
-| `text-secondary` | `#4b5563` (gray-600) | `#9ca3af` (gray-400) | Labels, descriptions |
-| `text-muted`     | `#9ca3af` (gray-400) | `#4b5563` (gray-600) | Placeholders, hints  |
-
-### Borders
-
-| Token          | Light                 | Dark                 | Usage              |
-| -------------- | --------------------- | -------------------- | ------------------ |
-| `border`       | `#cbd5e1` (slate-300) | `#374151` (gray-700) | Default borders    |
-| `border-focus` | `#164e63`             | `#22d3ee`            | Focus ring borders |
-
-### Status
-
-| Token            | Value                 | Usage                  |
-| ---------------- | --------------------- | ---------------------- |
-| `status-success` | `#15803d` / `#4ade80` | Pass, success          |
-| `status-error`   | `#b91c1c` / `#f87171` | Fail, error            |
-| `status-warning` | `#b45309` / `#fbbf24` | Warning, caution       |
-| `status-running` | `#a16207` / `#facc15` | In-progress, executing |
-| `status-info`    | `#1d4ed8` / `#3b82f6` | Informational          |
+**`primary-light` vs `primary-dark`.** `primary-light` switches with the theme:
+a teal in light mode and the bright teal of `--aw-primary-light` in dark mode,
+so `text-primary dark:text-primary-light` is the pattern for accent text that
+must read on both surfaces. `primary-dark` is a fixed deep ink-teal that does
+**not** change in dark mode. It is for deep emphasis on light surfaces only.
+Never use it as a dark-mode text colour (`dark:text-primary-dark`) or on a dark
+surface: it is nearly invisible there.
 
 `status-running` must stay off the outcome hues. It was briefly set to the success green — a run in flight and a run that passed being "the same story at different stages" — and the result was a node that sat there green-bordered with a green spinner, indistinguishable from a pass, then flipped to a red `400`. A status colour that has to be withdrawn was never reporting. `status-hue.test.ts` guards the invariant, not the hex.
-
-### HTTP Method Colors
-
-| Method | Color  | Hex       |
-| ------ | ------ | --------- |
-| GET    | Green  | `#16a34a` |
-| POST   | Blue   | `#2563eb` |
-| PUT    | Orange | `#ea580c` |
-| PATCH  | Violet | `#7c3aed` |
-| DELETE | Red    | `#dc2626` |
 
 ---
 
@@ -147,17 +120,11 @@ smallest size allowed anywhere in the app.**
 
 Two custom themes are defined in `src/index.css` with `@plugin "daisyui/theme"`:
 
-### `apiweave` (Light)
+- `apiweave` (light): ink-teal primary on warm paper surfaces.
+- `apiweave-dark` (dark): bright teal primary on zinc surfaces.
 
-- Primary: cyan-900 (`#164e63`) — deep, professional
-- Base: slate-50 → white surface hierarchy
-- Text: gray-900 for max readability
-
-### `apiweave-dark` (Dark)
-
-- Primary: cyan-400 (`#22d3ee`) — vibrant on dark
-- Base: gray-900 → gray-800 surface hierarchy
-- Text: gray-100 for readability on dark backgrounds
+Both take their values from the same tokens as the Tailwind colours; see
+[Color Tokens](#color-tokens) and DESIGN.md.
 
 ### Theme Switching
 
@@ -352,12 +319,12 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 
 ## File Structure
 
-```
+```text
 app/
 ├── tsconfig.json              — TypeScript strict mode configuration
 ├── postcss.config.js          — @tailwindcss/postcss
 ├── vite.config.js             — Vite build configuration
-├── index.html                 — Google Fonts import
+├── index.html                 — Renderer entry document (fonts are bundled via @fontsource)
 ├── src/
 │   ├── types/
 │   │   ├── index.ts           — Barrel export (re-exports all types)
@@ -428,8 +395,8 @@ app/
 
 ## Full Redesign Contract
 
-> **Status:** Design contract for upcoming token migration.  
-> **Scope:** Defines intent, rules, and constraints for the redesign. Does NOT yet change code tokens — those remain as documented above until Task 4.  
+> **Status:** Implemented. The tokens it describes are the ones in DESIGN.md and `src/styles/base.css`.
+> **Scope:** Intent, rules, and constraints for the redesign.
 > **Date:** 2026-06-04
 
 This contract is the single source of truth for all redesign decisions. Any deviation requires explicit amendment.
@@ -439,31 +406,22 @@ This contract is the single source of truth for all redesign decisions. Any devi
 ### 1. Palette Intent
 
 - **Balanced light/dark mode** — both themes are first-class citizens. The app is NOT dark-only or OLED-only. Light mode is the default; dark mode is an equally polished alternative.
-- **Warm neutral surfaces** — replace cool slate/gray neutrals with warmer, more inviting tones that reduce eye strain in long sessions.
-- **Cyan/teal primary** — retain the current cyan-900 (light) / cyan-400 (dark) primary hue but refine saturation and lightness for better accessibility.
+- **Warm neutral surfaces** — warm paper tones in light mode and zinc neutrals in dark mode, to reduce eye strain in long sessions.
+- **Ink-teal primary** — a single deep teal accent in light mode and a bright teal in dark mode. The values are in DESIGN.md.
 - **Semantic status colors** — success, error, warning, running, and info must be distinguishable by users with color-vision deficiencies (never rely on hue alone).
 
-**Token mapping decisions (pending implementation):**
+**Token rules:**
 
-- `surface` family will shift from slate-50/white/slate-100 to a warmer neutral scale.
-- `text-primary` will maintain ~4.5:1 minimum contrast against `surface` in both themes.
-- `border` will use mid-tone values that are visible in both light and dark without being visually heavy.
+- `text-primary` keeps at least 4.5:1 contrast against `surface` in both themes.
+- `border` is a hairline tint that stays visible in both themes without being visually heavy.
 
 ---
 
 ### 2. Typography
 
-- **Plus Jakarta Sans** — the new default font family for all UI and display text (body, headings, labels, buttons, inputs). Replaces Open Sans (body) and Montserrat (display).
-- **JetBrains Mono** — the dedicated monospace font for code blocks, JSON, URLs, and any monospace context. Retained from current system.
-- **Size scale:**
-  - `xs`: 0.75rem (12px)
-  - `sm`: 0.875rem (14px)
-  - `base`: 1rem (16px)
-  - `lg`: 1.125rem (18px)
-  - `xl`: 1.25rem (20px)
-  - `2xl`: 1.5rem (24px)
-  - `3xl`: 1.875rem (30px)
-  - `4xl`: 2.25rem (36px)
+- **Inter** — the one family for all UI and display text (body, headings, labels, buttons, inputs), bundled with the app.
+- **JetBrains Mono** — the dedicated monospace font for code blocks, JSON, URLs, and any monospace context, also bundled.
+- **Size scale:** the four steps and the 11px floor in [Size Scale](#size-scale) above. Display and headline sizes are fluid (`clamp()`); see DESIGN.md §3.
 - **Weight scale:**
   - `regular`: 400
   - `medium`: 500
@@ -474,11 +432,11 @@ This contract is the single source of truth for all redesign decisions. Any devi
   - `normal`: 1.5 (body text)
   - `relaxed`: 1.625 (long-form, descriptions)
 
-**Tailwind mapping (pending):**
+**Tailwind mapping:**
 
-- `font-sans` → Plus Jakarta Sans
-- `font-display` → Plus Jakarta Sans (unified with sans)
-- `font-mono` → JetBrains Mono (unchanged)
+- `font-sans` → Inter
+- `font-display` → Inter (unified with sans)
+- `font-mono` → JetBrains Mono
 
 ---
 
@@ -529,7 +487,7 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 | **Modal**   | `0 10px 25px rgba(0,0,0,0.1), 0 8px 10px rgba(0,0,0,0.04)`   | `0 10px 25px rgba(0,0,0,0.35), 0 8px 10px rgba(0,0,0,0.2)`  | Modals, dialogs, slide panels    |
 | **Popover** | `0 20px 50px rgba(0,0,0,0.12), 0 12px 24px rgba(0,0,0,0.06)` | `0 20px 50px rgba(0,0,0,0.4), 0 12px 24px rgba(0,0,0,0.25)` | Context menus, floating palettes |
 
-**Current token mapping (to be updated in Task 4):**
+**Token mapping:**
 
 - `shadow-node` → Raised level
 - `shadow-node-hover` → Overlay level
@@ -591,7 +549,7 @@ The canvas uses the four-step easing/duration set in the Animations table above 
 ### 8. Focus Ring Rules
 
 - **2px ring/outline** — all interactive elements (buttons, inputs, links, checkboxes, radio buttons, tabs, nodes) must show a visible focus indicator.
-- **Visible in both themes** — light mode uses primary-900 at 50% opacity; dark mode uses primary-400 at 50% opacity.
+- **Visible in both themes** — the ring is `--aw-primary`, which switches between the light and dark teal with the theme. The canonical classes are `focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)`; ESLint rejects the legacy `focus:ring-*` spelling.
 - **Contrast requirements:** focus rings and non-text UI elements (icons, borders, checkboxes) must achieve at least **3:1** contrast against adjacent colors.
 - **`focus-visible` preferred over `focus`** — focus styles should only appear on keyboard navigation, not on mouse click.
 - **Outline offset:** 2px from the element edge.
@@ -610,14 +568,7 @@ The canvas uses the four-step easing/duration set in the Animations table above 
 - **Never color alone** — a status indicator that relies solely on hue fails WCAG 1.4.1 (Use of Color).
 - **Never motion alone, either** — a state that is only distinguishable while it is animating is not distinguishable in a screenshot, under `prefers-reduced-motion`, or by a user who looked away. This is why `running` is amber and `success` is green: they differ by hue in a still frame.
 - **One fact, one rendering.** Multi-channel means the status survives the loss of any one channel — not that it is drawn three separate times. On the node layer, a status badge *and* a colored dot *and* an icon is redundancy, not accessibility: a node renders one 16px status affordance, plus the border and glow that state implies. Elsewhere, `StatusBadge` remains the single renderer.
-- **HTTP methods** use distinct colors + uppercase text labels:
-  - GET: green (`#16a34a`)
-  - POST: blue (`#2563eb`)
-  - PUT: orange (`#ea580c`)
-  - PATCH: violet (`#7c3aed`)
-  - DELETE: red (`#dc2626`)
-  - HEAD: cyan (`#0e7490`)
-  - OPTIONS: violet (`#7c3aed`)
+- **HTTP methods** use distinct colors (the `method-*` tokens) plus uppercase text labels: GET green, POST blue, PUT amber, PATCH violet, DELETE red, HEAD teal, OPTIONS violet. The values are in DESIGN.md.
 
 ---
 
@@ -712,7 +663,7 @@ The following patterns are **explicitly forbidden** in the redesign and in all f
 
 | Intent    | Color          | Usage                       |
 | --------- | -------------- | --------------------------- |
-| `default` | Primary (cyan) | Standard actions            |
+| `default` | Primary (teal) | Standard actions            |
 | `success` | Green          | Create, save, confirm       |
 | `error`   | Red            | Delete, cancel, destructive |
 | `warning` | Yellow/amber   | Caution actions             |

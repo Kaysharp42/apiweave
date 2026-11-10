@@ -6,7 +6,7 @@ Visual API Test Story Builder. Build, run, and inspect API test workflows on a c
 
 APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a React Flow canvas from drag-and-drop nodes (HTTP request, SSE stream, assertion, delay, merge, call workflow, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group related workflows in a fixed order. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
 
-APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
+APIWeave ships as a self-contained Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
 Git sync is built in: a workspace can be tracked in git and kept in step with a remote you own, on GitHub, GitLab or any host. See [Keep Tests in a Git Repository](docs/guides/git-workflows.md).
 
@@ -14,19 +14,19 @@ Git sync is built in: a workspace can be tracked in git and kept in step with a 
 
 **Recommended for most users:** download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). The installer puts a self-contained app on your machine. No Python, no Node, no database, no Docker.
 
-**For contributors:** clone the repo, install the desktop and frontend dependencies, and run the dev shell. See the [Developer Guide](AGENTS.md) for the dev workflow.
+**For contributors:** clone the repo, install the single `app/` package with `scripts/setup.sh` (Linux/macOS) or `scripts/setup.ps1` (Windows), then run `npm run dev` from `app/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Developer Guide](AGENTS.md) for the dev workflow.
 
 > **npm 12+ note:** If your global npm config has `allow-scripts=false`, Electron's postinstall will be blocked; `scripts/setup.sh` downloads the binary manually in that case.
 
 ## Desktop App
 
-APIWeave ships as a self-contained Electron app. The app is single-process: the renderer (the React UI), the main process (the Node.js execution engine), the embedded SQLite store, and the optional local MCP bridge all run inside one process, talking to each other over Electron IPC. No external services. No open ports on your network. No telemetry.
+APIWeave ships as a self-contained Electron app. The main process owns workflow execution, the embedded SQLite store and the optional local MCP bridge; the renderer (the React UI) talks to it over typed IPC. Embedded coding-agent terminals run in a separate PTY host utility process. No external services to install or run. No open ports on your network. No telemetry.
 
 Download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases), or build it locally with `scripts/desktop.ps1 build` (Windows) or `scripts/desktop.sh build` (Linux/macOS).
 
 ### Windows
 
-Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published for managed, per-machine deployment. Release installers are code-signed when the project's certificate is configured; a build without a signature may make SmartScreen warn on first launch — choose **More info → Run anyway**.
+Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published, for deployment tools that expect an MSI package. Release installers are code-signed when the project's certificate is configured; a build without a signature may make SmartScreen warn on first launch — choose **More info → Run anyway**.
 
 ### macOS
 
@@ -62,6 +62,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 - [Keep Tests in a Git Repository](docs/guides/git-workflows.md): track a workspace in git and sync it with a remote, sign in to GitHub or GitLab from the header, create the workspace's repository from the app, and open it on another machine.
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [Network](docs/features/network.md): proxy, private certificate authorities and client certificates for every request.
+- [Coding Agents](docs/features/coding-agents.md): launch Claude Code, Codex CLI, Gemini CLI, OpenCode or another installed agent CLI beside the canvas, already connected to the MCP bridge and briefed on the workflow.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
 - [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.aweproject` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
@@ -69,7 +70,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 
 ## Documentation
 
-The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
+The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths and the first-workflow tutorial. When something breaks, each feature guide ends with its own Troubleshooting section.
 
 There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.aweproject` bundles and the CLI. The [known limitations](docs/reference/known-limitations.md) list the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
 
@@ -88,7 +89,7 @@ There is no operations section in the desktop app: no authentication to set up, 
 apiweave/
   app/
     src/       React app, ReactFlow canvas, contexts, components (the renderer)
-    electron/  Electron main process and preload entry points
+    electron/  Electron main process, preload entry points and the PTY host
     core/      IPC handlers, repositories, runner, services, MCP bridge, and the headless CLI (core/cli)
     shared/    Cross-process TypeScript contracts and Zod schemas
     package.json

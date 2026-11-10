@@ -44,11 +44,11 @@ import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyz
 import type { JsonValueType } from "@shared/types/JsonValueType"
 
 /**
- * Workflow executor — ported from `backend/app/runner/executor.py`.
+ * Workflow executor.
  *
  * Processes workflow nodes in graph order, resolves templates, executes HTTP requests,
  * evaluates assertions, handles delays and merge nodes, and writes field-level updates.
- * Emits `node.status` events for the renderer (decision #6, (c)).
+ * Emits `node.status` events for the renderer.
  */
 
 // -------------------- Types --------------------

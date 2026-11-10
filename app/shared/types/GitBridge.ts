@@ -203,4 +203,11 @@ export interface GitBridge {
    * tool cannot hand it over.
    */
   readonly listRepositories: (account: GitAccountRef, request: GitRepositoryListRequest) => Promise<GitRepositoryList>
+  /**
+   * The repositories `account` has tagged `apiweave-workspace` that hold a
+   * workspace not already here: non-empty, and not the remote of a workspace
+   * in this app. Nothing is cloned; each is opened with `openFromGit`.
+   * `problems` is `listRepositories`'.
+   */
+  readonly listTaggedWorkspaces: (account: GitAccountRef) => Promise<GitRepositoryList>
 }

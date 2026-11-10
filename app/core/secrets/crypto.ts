@@ -1,11 +1,9 @@
 /**
- * AES-256-GCM encryption — ported from `backend/app/services/secret_crypto.py`.
+ * AES-256-GCM encryption at rest.
  *
- * The wire format is byte-identical to the Python `cryptography` AESGCM output
- * — `ciphertext || tag(16)` — so the fixtures captured from Python round-trip
- * exactly.
- *
- * Node's `crypto` returns the GCM tag separately; we append it (Python style).
+ * The wire format is `ciphertext || tag(16)`, pinned by the known-answer vectors
+ * under `core/runner/harness/fixtures/crypto`. Node's `crypto` returns the GCM tag
+ * separately; we append it.
  */
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
@@ -13,9 +11,9 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
 export const NONCE_SIZE = 12 // AES-GCM standard nonce
 export const TAG_SIZE = 16 // AES-GCM authentication tag
 export const DEK_SIZE = 32 // 256-bit DEK
-export const ALGORITHM = "aes-256-gcm"
+const ALGORITHM = "aes-256-gcm"
 
-/** An encrypted secret payload. `ciphertext` is `body || tag`, matching Python. */
+/** An encrypted secret payload. `ciphertext` is `body || tag`. */
 export interface EncryptedBlob {
   readonly ciphertext: Uint8Array
   readonly nonce: Uint8Array

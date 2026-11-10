@@ -1,9 +1,7 @@
 /**
- * Scoped secret resolution — the override chain ported from
- * `backend/app/services/secret_service.py::resolve_effective_secret`.
+ * Scoped secret resolution — the override chain.
  *
- * Precedence (most specific wins): environment > workspace. Organization is
- * dropped in the desktop single-user model (decision #12).
+ * Precedence (most specific wins): environment > workspace.
  *
  * `resolve(...)` returns METADATA ONLY — never a ciphertext or plaintext. Secrets
  * are write-only; the masked display and listing paths go through here. The
@@ -38,7 +36,7 @@ export interface ResolvedSecret {
 }
 
 /**
- * The metadata lookup seam. Repositories (Task 6) implement this against SQLite;
+ * The metadata lookup seam. Repositories implement this against SQLite;
  * tests pass a fake. Returns metadata only — implementations must never expose
  * ciphertext or plaintext here.
  */

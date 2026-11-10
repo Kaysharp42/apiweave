@@ -89,7 +89,7 @@ const buildDesktop = () => Promise.all([
     outfile: "dist/desktop/preload.cjs",
   }),
   // The PTY host runs as an Electron utilityProcess, forked by
-  // core/agents/agent_process_manager.ts from `__dirname` next to main.cjs. A
+  // electron/agent_process_manager.ts from `__dirname` next to main.cjs. A
   // third entry point rather than a lazy import inside main: the whole point of
   // the utility process is that node-pty's native addon is loaded in a process
   // that can crash without taking main or a renderer with it.

@@ -1,21 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { AppNavBarItems } from "../constants/AppNavBar";
-import type { NavSection } from "../types/NavSection";
-
-interface NavigationState {
-  selectedNavVal: NavSection;
-  collapseNavBar: boolean;
-  /** Whether the workflow/project list beside the icon rail is showing. */
-  sidebarVisible: boolean;
-  mobileSidebarOpen: boolean;
-  setNavState: (navVal: NavSection) => void;
-  toggleNavBarCollapse: () => void;
-  setNavBarCollapsed: (collapsed: boolean) => void;
-  toggleSidebar: () => void;
-  setMobileSidebarOpen: (open: boolean) => void;
-  toggleMobileSidebar: () => void;
-}
+import type { NavigationState, NavSection } from "../types";
 
 /**
  * Only `collapseNavBar` survives a restart. The selected section and the
