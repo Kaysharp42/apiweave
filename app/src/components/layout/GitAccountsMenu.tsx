@@ -8,13 +8,13 @@ import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
 import { GitAccountRow } from "../molecules/GitAccountRow";
 import { GitAccountsNotice } from "../molecules/GitAccountsNotice";
+import { GitAvatar } from "../molecules/GitAvatar";
 import { GitSignInDialog } from "../organisms/GitSignInDialog";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { git } from "../../utils/apiweaveClient";
 import {
   GIT_PROVIDERS,
-  gitAccountInitials,
   groupGitAccountsByHost,
   sameGitAccount,
 } from "../../utils/gitAccounts";
@@ -195,12 +195,7 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
                   aria-hidden="true"
                 />
               ) : (
-                <span
-                  className="select-none text-xs font-semibold text-primary dark:text-primary-light"
-                  aria-hidden="true"
-                >
-                  {gitAccountInitials(account.login)}
-                </span>
+                <GitAvatar account={account} className="h-full w-full rounded-xs text-xs" />
               )}
             </PopoverButton>
             {/* A plain square trigger, matching the header's other 36px

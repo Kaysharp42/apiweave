@@ -1,5 +1,6 @@
 import { Badge } from "../atoms/Badge";
-import { GIT_PROVIDERS, gitAccountInitials } from "../../utils/gitAccounts";
+import { GIT_PROVIDERS } from "../../utils/gitAccounts";
+import { GitAvatar } from "./GitAvatar";
 import type { GitAccountRowProps } from "../../types";
 
 /**
@@ -21,12 +22,7 @@ export function GitAccountRow({ account, current = false, detail }: GitAccountRo
 
   return (
     <div className="flex items-start gap-3">
-      <span
-        aria-hidden="true"
-        className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary dark:bg-primary-light/10 dark:text-primary-light"
-      >
-        {gitAccountInitials(account.login)}
-      </span>
+      <GitAvatar account={account} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-medium text-text-primary dark:text-text-primary-dark">

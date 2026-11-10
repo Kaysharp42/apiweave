@@ -73,6 +73,21 @@ export function gitAccountInitials(login: string): string {
 }
 
 /**
+ * Where an account's profile picture is served: both GitHub and GitLab answer
+ * `https://<host>/<login>.png` with a redirect to the user's avatar, which
+ * needs no token on the public hosts. Null when the host is not a valid one.
+ * A host that wants a sign-in for it (a private instance) fails to load, and
+ * the avatar falls back to the initials.
+ */
+export function gitAvatarUrl({ provider, host, login }: GitAccountRef): string | null {
+  const url = `https://${host}/${encodeURIComponent(login)}.png`;
+  if (!URL.canParse(url)) return null;
+  const parsed = new URL(url);
+  parsed.searchParams.set(provider === "github" ? "size" : "width", "128");
+  return parsed.toString();
+}
+
+/**
  * Accounts grouped by provider and host, GitHub first and each host's
  * accounts in the order the tools listed them. A bound account no tool lists
  * any more (`extra`) joins its host's group, so it is still shown.
