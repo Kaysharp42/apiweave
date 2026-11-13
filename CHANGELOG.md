@@ -76,6 +76,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   iteration's results. The console and HTML reports carry a latency table.
   See [Load Runs](docs/features/load-runs.md).
 
+- **gRPC server streaming.** A gRPC Call node's `callType` also accepts
+  `server-streaming`: the call is opened once and its decoded responses are
+  collected until the server ends the stream, a finish rule matches, a response
+  limit is reached or the deadline expires. Like SSE and WebSocket it has
+  **Ready** and **Complete** outputs, and `response.body` carries `messages`,
+  `messageCount` and `termination` beside the final status, status message and
+  trailers. A non-OK final status fails the node unless it is the expected one.
+  The Finish tab is shared by every stream node, so the finish-rule editor now
+  lives in `StreamFinishConditionsEditor`.
+
 ### Changed
 
 - **SSE and WebSocket share one stream-listener lifecycle.** The executor's

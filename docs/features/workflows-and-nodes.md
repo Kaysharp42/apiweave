@@ -232,7 +232,7 @@ The output body has `events`, `eventCount`, and `termination`. Each event record
 
 ### gRPC Call
 
-**Purpose:** Calls one **unary** gRPC method and asserts on the result, the way an HTTP Request node does for REST. Streaming methods (server, client and bidirectional) are not supported yet; `callType` accepts only `unary`.
+**Purpose:** Calls a gRPC method and asserts on the result, the way an HTTP Request node does for REST. `callType` is **unary** (one request, one response) or **server streaming** (one request, a stream of responses with **Ready** and **Complete** outputs, like SSE and WebSocket). Client and bidirectional streaming are not supported.
 
 | Field | What it does |
 | --- | --- |
@@ -243,14 +243,18 @@ The output body has `events`, `eventCount`, and `termination`. Each event record
 | `message` | The request as JSON text, with field names as written in the `.proto`. Placeholders are substituted JSON-aware. int64 values may be strings and bytes are base64. |
 | `metadata` / `auth` | Metadata pairs (keys are sent in lowercase). Bearer and API-key auth become `authorization` or the named metadata key. Digest and AWS Signature V4 are not available. |
 | `deadline` | Seconds before the call ends with `DEADLINE_EXCEEDED` (default 30). |
-| `expected status` | A gRPC code name. The node passes on a match and fails otherwise; empty expects `OK`. Use it for negative tests, such as `NOT_FOUND`. |
+| `expected status` | A gRPC code name. The node passes on a match and fails otherwise; empty expects `OK`. Use it for negative tests, such as `NOT_FOUND`. On a server stream it is checked against the final status. |
+| `max responses` | Server streaming only: the most responses retained (default 1000, so a normal stream is captured whole). Without finish rules the call also closes when this limit is reached. |
+| `finish rules` | Server streaming only: all rules must match one received response to close the call and fire **Complete**. Paths address the decoded message (`status`, `$.items[0].done`). |
 | `continue on fail` / `extractors` | As on the HTTP Request node. |
 
 **Choosing the schema.** In the editor, enter the target and click **Discover**. With *Server reflection* that queries the server (`grpc.reflection.v1`, falling back to `v1alpha`); with *Proto files* it reads the files you chose or pasted, where imports resolve among the files and Google's well-known types are built in. Pick a service and a unary method from the lists and the message is filled with a skeleton generated from the request type. Because the `.proto` text is saved in the workflow, it travels in `.aweproject` exports and git; reflection needs the server to be reachable.
 
-**Result.** `response.body` is the decoded message (int64 as strings, enums as names, bytes as base64); `response.status` is the code name (`OK`, `NOT_FOUND`), `response.statusCode` its number, plus `response.statusMessage`, `response.headers` (initial metadata), `response.trailers` and `response.duration`. Extractors and assertions use the same paths as for HTTP, including `$` JSONPath: `response.body.order_id`, `$.response.body.items[0].id`, `response.trailers.x-request-id`.
+**Result.** For a unary call `response.body` is the decoded message (int64 as strings, enums as names, bytes as base64); `response.status` is the code name (`OK`, `NOT_FOUND`), `response.statusCode` its number, plus `response.statusMessage`, `response.headers` (initial metadata), `response.trailers` and `response.duration`. For a server stream the same status and metadata fields describe the final state, and `response.body` is `messages` (the decoded responses, in order), `messageCount` and `termination` (`finish-condition`, `message-limit` or `stream-ended`). Extractors and assertions use the same paths as for HTTP, including `$` JSONPath: `response.body.order_id`, `$.response.body.items[0].id`, `response.trailers.x-request-id`.
 
-**Limits.** A gRPC channel is not proxied (Settings → Network's proxy does not apply), the response is bounded to gRPC's default 4 MiB message size, and reflection reads at most 500 files. Agents can list a server's schema with the read-only `grpc_discover` tool.
+**Ready and Complete (server streaming).** The node's **Ready** output fires once the call is accepted (initial metadata, the first response, or the final status); the **Complete** output fires when the stream closes, and the node's result carries the final status and trailers. A non-OK status that the node does not expect fails it; an expected one is the call's outcome. The `deadline` bounds the whole call, so it is also the listener's timeout.
+
+**Limits.** A gRPC channel is not proxied (Settings → Network's proxy does not apply), a unary response is bounded to gRPC's default 4 MiB message size, a server stream captures at most 1 MiB of decoded responses, and reflection reads at most 500 files. Agents can list a server's schema with the read-only `grpc_discover` tool.
 
 **Handles:** one input, one output.
 

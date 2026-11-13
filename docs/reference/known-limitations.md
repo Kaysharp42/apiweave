@@ -149,8 +149,10 @@ page or through the CLI flags.
 - **gRPC calls are not proxied.** The gRPC node uses the CA, client certificate
   and TLS verification settings, but connects directly: the proxy does not apply
   to it.
-- **gRPC is unary only.** A method that streams is refused. Server streaming is
-  planned; client and bidirectional streaming are not.
+- **gRPC is unary or server streaming.** A client-streaming or bidirectional
+  method is refused, and a server stream is a bounded probe: it captures at most
+  1 MiB of decoded responses and closes on the finish rules, the response limit,
+  the deadline or the server ending the stream.
 
 ## Execution
 

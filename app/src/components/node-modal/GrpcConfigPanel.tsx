@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileText, KeyRound, Search, Settings, Waypoints } from "lucide-react";
+import { FileText, KeyRound, Search, Settings, SlidersHorizontal, Waypoints } from "lucide-react";
 import type { GrpcDiscoveryResult } from "@shared/types/GrpcDiscoveryResult";
 import { apiweave } from "../../utils/apiweaveClient";
 import { Input } from "../atoms/Input";
@@ -9,6 +9,7 @@ import { Toggle } from "../atoms/Toggle";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
+import { StreamFinishConditionsEditor } from "../molecules/StreamFinishConditionsEditor";
 import { TemplateInput, useTemplateAutocomplete } from "../molecules/TemplateAutocomplete";
 import ButtonSelect from "../ButtonSelect";
 import type { AuthConfig } from "@shared/types/AuthConfig";
@@ -24,6 +25,12 @@ const WaypointsCardIcon = createCardIcon(Waypoints);
 const FileCardIcon = createCardIcon(FileText);
 const KeyCardIcon = createCardIcon(KeyRound);
 const SettingsCardIcon = createCardIcon(Settings);
+const SlidersHorizontalIcon = createCardIcon(SlidersHorizontal);
+
+const CALL_TYPE_OPTIONS: SelectOption[] = [
+  { label: "Unary", value: "unary" },
+  { label: "Server streaming", value: "server-streaming" },
+];
 
 const SCHEMA_SOURCE_OPTIONS: SelectOption[] = [
   { label: "Server reflection", value: "reflection" },
@@ -40,7 +47,7 @@ const EMPTY_MESSAGE = "{}";
 
 function defaultConfig(config: Partial<NodeModalGrpcConfig>): NodeModalGrpcConfig {
   return {
-    callType: "unary",
+    callType: config.callType ?? "unary",
     target: config.target ?? "",
     tls: config.tls ?? false,
     sslVerify: config.sslVerify ?? true,
@@ -54,6 +61,8 @@ function defaultConfig(config: Partial<NodeModalGrpcConfig>): NodeModalGrpcConfi
     protoFiles: config.protoFiles ?? {},
     continueOnFail: config.continueOnFail ?? false,
     ...(config.expectedStatus === undefined ? {} : { expectedStatus: config.expectedStatus }),
+    maxMessages: config.maxMessages ?? 1000,
+    finishConditions: config.finishConditions ?? [],
     extractors: config.extractors ?? {},
   };
 }
@@ -145,8 +154,15 @@ export function GrpcConfigPanel({ initialConfig, workingDataRef, activeTab }: Gr
     updateProtoRows([...kept, ...added]);
   };
 
-  const unaryMethods = (service: string) =>
-    discovery?.services.find((candidate) => candidate.name === service)?.methods.filter((method) => !method.requestStreaming && !method.responseStreaming) ?? [];
+  /** The methods the chosen call type can invoke: unary, or server streaming (never client streaming). */
+  const callableMethods = (service: string) =>
+    discovery?.services
+      .find((candidate) => candidate.name === service)
+      ?.methods.filter((method) =>
+        config.callType === "server-streaming"
+          ? method.responseStreaming && !method.requestStreaming
+          : !method.requestStreaming && !method.responseStreaming,
+      ) ?? [];
 
   const skeletonOf = (service: string, method: string): string | undefined =>
     discovery?.services.find((candidate) => candidate.name === service)?.methods.find((candidate) => candidate.name === method)?.requestSkeleton;
@@ -163,12 +179,12 @@ export function GrpcConfigPanel({ initialConfig, workingDataRef, activeTab }: Gr
   };
 
   const chooseService = (service: string) => {
-    const first = unaryMethods(service)[0]?.name ?? "";
+    const first = callableMethods(service)[0]?.name ?? "";
     chooseMethod(service, first);
   };
 
   const serviceOptions: SelectOption[] = (discovery?.services ?? []).map((service) => ({ label: service.name, value: service.name }));
-  const methodOptions: SelectOption[] = unaryMethods(config.service).map((method) => ({ label: method.name, value: method.name }));
+  const methodOptions: SelectOption[] = callableMethods(config.service).map((method) => ({ label: method.name, value: method.name }));
 
   const updateAuth = (auth: AuthConfig) => updateConfig({ auth });
   const authType = config.auth?.type === "bearer" || config.auth?.type === "apiKey" ? config.auth.type : "none";
@@ -245,6 +261,14 @@ export function GrpcConfigPanel({ initialConfig, workingDataRef, activeTab }: Gr
         </Card>
         <Card title="Method" icon={WaypointsCardIcon}>
           <div className="space-y-4">
+            <FormField label="Call type" hint="Server streaming opens a stream: the Ready output fires once the call is accepted, and the Complete output fires when it closes.">
+              <ButtonSelect
+                options={CALL_TYPE_OPTIONS}
+                value={config.callType}
+                onChange={(callType) => updateConfig({ callType: callType as NodeModalGrpcConfig["callType"] })}
+                buttonClass="flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+              />
+            </FormField>
             {discovery !== null && discovery.services.length > 0 ? (
               <>
                 <FormField label="Service">
@@ -256,7 +280,7 @@ export function GrpcConfigPanel({ initialConfig, workingDataRef, activeTab }: Gr
                     buttonClass="flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 font-mono text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
                   />
                 </FormField>
-                <FormField label="Method" hint="Only unary methods are listed.">
+                <FormField label="Method" hint={config.callType === "server-streaming" ? "Only server-streaming methods are listed." : "Only unary methods are listed."}>
                   <ButtonSelect
                     options={methodOptions}
                     value={config.method}
@@ -272,7 +296,7 @@ export function GrpcConfigPanel({ initialConfig, workingDataRef, activeTab }: Gr
                   <Input value={config.service} onChange={(event) => updateConfig({ service: event.target.value })} placeholder="helloworld.Greeter" className="font-mono" />
                 </FormField>
                 <FormField label="Method">
-                  <Input value={config.method} onChange={(event) => updateConfig({ method: event.target.value })} placeholder="SayHello" className="font-mono" />
+                  <Input value={config.method} onChange={(event) => updateConfig({ method: event.target.value })} placeholder={config.callType === "server-streaming" ? "Watch" : "SayHello"} className="font-mono" />
                 </FormField>
               </div>
             )}
@@ -349,12 +373,36 @@ export function GrpcConfigPanel({ initialConfig, workingDataRef, activeTab }: Gr
     );
   }
 
+  if (activeTab === "finish") {
+    return (
+      <Card title="Finish trigger" icon={SlidersHorizontalIcon}>
+        <div className="space-y-4">
+          {config.callType !== "server-streaming" && (
+            <div className="rounded-xs border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-(--aw-status-info)/30 dark:bg-(--aw-status-info)/10 dark:text-(--aw-status-info)">
+              Finish rules close a server-streaming call. A unary call ends on its own, so these rules are unused.
+            </div>
+          )}
+          <StreamFinishConditionsEditor
+            conditions={config.finishConditions}
+            onChange={(finishConditions) => updateConfig({ finishConditions })}
+            hint={<>The call closes when every rule matches the same response. Paths read the decoded message, for example <code className="font-mono">status</code> or a JSONPath such as <code className="font-mono">$.items[0].done</code>.</>}
+          />
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card title="Call settings" icon={SettingsCardIcon}>
       <div className="space-y-4">
-        <FormField label="Deadline (seconds)">
+        <FormField label="Deadline (seconds)" {...(config.callType === "server-streaming" ? { hint: "Bounds the whole call, so it is also the listener's timeout." } : {})}>
           <Input type="number" min={1} max={3600} value={config.deadline} onChange={(event) => updateConfig({ deadline: positiveInteger(event.target.value, config.deadline) })} className="max-w-40 font-mono" />
         </FormField>
+        {config.callType === "server-streaming" && (
+          <FormField label="Max responses" hint="The most responses retained. Without finish rules, reaching this limit closes the call.">
+            <Input type="number" min={1} max={1000} value={config.maxMessages} onChange={(event) => updateConfig({ maxMessages: positiveInteger(event.target.value, config.maxMessages) })} className="max-w-40 font-mono" />
+          </FormField>
+        )}
         <FormField label="Expected status" hint="A gRPC code name such as NOT_FOUND. Empty expects OK; any other status fails the node.">
           <Input
             value={config.expectedStatus ?? ""}

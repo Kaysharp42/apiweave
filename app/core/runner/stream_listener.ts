@@ -33,7 +33,13 @@ export interface StreamCollection {
 /** What the handshake reported: an HTTP status (101 for WebSocket) and response headers. */
 export interface StreamHandshake {
   readonly statusCode: number
+  /** A protocol status name when the numeric code is not meaningful on its own (gRPC's `OK`, `NOT_FOUND`). */
+  readonly status?: string
+  /** The status detail message (gRPC's `status.details`). */
+  readonly statusMessage?: string
   readonly headers: Record<string, string>
+  /** Trailing metadata, for protocols that have it (gRPC). */
+  readonly trailers?: Record<string, string>
 }
 
 /**
@@ -55,6 +61,12 @@ export interface StreamAdapter {
   readonly unit: string
   /** The termination reported when the message limit closes the stream. */
   readonly limitTermination: "event-limit" | "message-limit"
+  /**
+   * True when the server ending the stream is the normal completion of the
+   * call (gRPC server streaming), so reaching the end before the message limit
+   * is a pass rather than an incomplete capture.
+   */
+  readonly endsCleanly?: boolean
   /** Complete the handshake. Resolves when ready; rejects to fail the node. */
   open(): Promise<void>
   /** The normalized messages, yielded as they arrive. */

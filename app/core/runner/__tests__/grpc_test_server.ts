@@ -50,7 +50,23 @@ export async function startGrpcServer(options: { reflection?: boolean; tls?: { r
         trailers(),
       )
     },
-    watch: (call: grpc.ServerWritableStream<unknown, unknown>) => call.end(),
+    watch: (call: grpc.ServerWritableStream<unknown, unknown>) => {
+      const orderId = String(call.request["order_id"])
+      if (orderId === "missing") {
+        // grpc-js turns a stream handler's emitted error into the call's status on end().
+        call.emit("error", { code: grpc.status.NOT_FOUND, details: "no such order", metadata: trailers() })
+        call.end()
+        return
+      }
+      call.sendMetadata(headers())
+      // `many` streams five orders so the message limit can close a call early;
+      // any other id streams three so a stream can also run to its natural end.
+      const count = orderId === "many" ? 5 : 3
+      for (let index = 1; index <= count; index++) {
+        call.write({ order_id: `${orderId}-${index}`, total: { currency: "EUR", cents: String(index * 100) } })
+      }
+      call.end(trailers())
+    },
   })
   if (options.reflection) new ReflectionService(schema.definition).addToServer(server)
   const credentials = options.tls
