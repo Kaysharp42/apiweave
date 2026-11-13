@@ -14,6 +14,7 @@ import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { assertionExpectedProblem } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
+import { isValidJsonPath } from "../extractors/extractorPath"
 
 const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
@@ -247,8 +248,30 @@ function statusCodeOf(result: RunResult): number | undefined {
 function pathTargetsResponseBody(path: string): boolean {
   // Persisted graphs are read without re-validation, so a path may be non-string.
   if (typeof path !== "string") return false
+  // A JSONPath extractor addresses the body when its first property after the
+  // root is `body` (directly or via `response.body`), in dot or bracket form.
+  if (path.startsWith("$")) return jsonPathTargetsResponseBody(path)
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   return normalized === "body" || normalized.startsWith("body.") || normalized.startsWith("body[")
+}
+
+/**
+ * A cheap, conservative read of whether a JSONPath expression's first property
+ * selector names `body` (or `response` immediately followed by `body`). It only
+ * needs to drive a "was the body captured" diagnostic, so it recognises the
+ * common dot and bracket spellings and lets a false negative merely skip a
+ * warning.
+ */
+function jsonPathTargetsResponseBody(path: string): boolean {
+  const rest = path.slice(1) // drop the leading `$`
+  const first = rest.match(/^(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\])/)
+  const firstProperty = first?.[1] ?? first?.[2]
+  if (firstProperty === undefined) return false
+  if (firstProperty === "body") return true
+  if (firstProperty !== "response") return false
+  const afterResponse = rest.slice(first![0].length)
+  const second = afterResponse.match(/^(?:\.([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\])/)
+  return (second?.[1] ?? second?.[2]) === "body"
 }
 
 /**
@@ -261,10 +284,13 @@ function pathTargetsResponseBody(path: string): boolean {
  * Mirrors `WorkflowExecutor.evaluateAssertion`, which strips a leading
  * `response.` and reads the rest off the node result — so `body.id`,
  * `response.body.id`, `response.headers.content-type`, `statusCode` and
- * `duration` all address something real, and anything else does not.
+ * `duration` all address something real, and anything else does not. A `$`
+ * prefixed path is an RFC 9535 JSONPath expression rooted at the node result
+ * and is valid whenever the parser accepts it.
  */
 export function isValidRuntimePath(path: string, includeDuration: boolean): boolean {
   if (typeof path !== "string") return false
+  if (path.startsWith("$")) return isValidJsonPath(path)
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   const parts = normalized.split(".")
   if (parts.length === 0 || parts.some((part) => part.length === 0)) return false
@@ -631,8 +657,11 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
       // Persisted graphs are read without re-validation, so a drifted/imported
       // config can carry a non-string extractor value — treat it as invalid
-      // rather than letting `path.startsWith` throw.
-      if (typeof path !== "string" || !path.startsWith("response.") || !isValidRuntimePath(path, false)) {
+      // rather than letting `path.startsWith` throw. Dot paths must be rooted
+      // at `response.`; a `$`-prefixed path is an RFC 9535 JSONPath expression.
+      const dotPath = typeof path === "string" && path.startsWith("response.")
+      const jsonPath = typeof path === "string" && path.startsWith("$")
+      if (typeof path !== "string" || (!dotPath && !jsonPath) || !isValidRuntimePath(path, false)) {
         diagnostics.push(diagnostic(
           "extractor_path_invalid",
           "error",
@@ -801,19 +830,22 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
       for (const outcome of result.extractorOutcomes ?? []) {
         if (!outcome.matched) {
           const typeMismatch = outcome.failureReason === "type-mismatch"
+          const invalidPath = outcome.failureReason === "invalid-path"
           diagnostics.push(diagnostic(
-            typeMismatch ? "extractor_type_mismatch" : "extractor_path_missing",
+            invalidPath ? "extractor_path_invalid" : typeMismatch ? "extractor_type_mismatch" : "extractor_path_missing",
             "error",
             "dataflow",
             [outcome.producerNodeId],
-            typeMismatch
-              ? "An extractor traversed a response value with an incompatible JSON type."
-              : "An extractor matched no response field in the selected run.",
+            invalidPath
+              ? "An extractor JSONPath expression is invalid."
+              : typeMismatch
+                ? "An extractor traversed a response value with an incompatible JSON type."
+                : "An extractor matched no response field in the selected run.",
             {
               producerNodeId: outcome.producerNodeId,
               variableName: outcome.variableName,
               path: outcome.path,
-              observed: typeMismatch ? "type_mismatch" : "path_missing",
+              observed: invalidPath ? "invalid_path" : typeMismatch ? "type_mismatch" : "path_missing",
             },
             { kind: "update_extractor_path", nodeId: outcome.producerNodeId, path: outcome.path, variableName: outcome.variableName },
           ))

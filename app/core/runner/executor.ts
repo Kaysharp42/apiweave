@@ -1530,7 +1530,12 @@ export class WorkflowExecutor {
       const expected = this.resolveAssertionExpected(toAssertionOperator(condition.operator), condition.expectedValue)
       if (expected.state === "unresolved-template") return false
       try {
-        return this.compareValues(this.getNestedValue(value, condition.path), condition.operator, expected.value)
+        // A `$`-prefixed finish path is JSONPath rooted at the normalized event
+        // (`{ event, id, data }`); otherwise it is a dot path off the same value.
+        const actual = condition.path.startsWith("$")
+          ? this.resolveJsonPathValue(value, condition.path)
+          : this.getNestedValue(value, condition.path)
+        return this.compareValues(actual, condition.operator, expected.value)
       } catch {
         return false
       }
@@ -1756,7 +1761,16 @@ export class WorkflowExecutor {
 
   /** The value a rule on a response `source` reads from `result`. */
   private readAssertionActual(source: AssertionSource, path: string, result: NodeResult): unknown {
-    if (source === "prev") return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+    if (source === "prev") {
+      // A `$`-prefixed path is JSONPath rooted at the node result; a dot path
+      // strips the optional `response.` prefix and reads the rest off the
+      // result directly. Both address the same value.
+      if (path.startsWith("$")) {
+        const resolution = resolveExtractorPath(result, path)
+        return resolution.failureReason === null ? resolution.value : undefined
+      }
+      return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+    }
     if (source === "headers") return this.getResponseHeader(result, path)
     if (source === "cookies") return this.getResponseCookie(result, path)
     return result.statusCode
@@ -2367,6 +2381,12 @@ export class WorkflowExecutor {
 
   private resolveExtractorValue(obj: unknown, path: string): ExtractorResolution {
     return resolveExtractorPath(obj, path)
+  }
+
+  /** Resolves a `$`-prefixed JSONPath against `data`, reading `undefined` when it fails. */
+  private resolveJsonPathValue(data: unknown, path: string): unknown {
+    const resolution = resolveExtractorPath(data, path)
+    return resolution.failureReason === null ? resolution.value : undefined
   }
 
   private getNestedValue(obj: unknown, path: string): unknown {

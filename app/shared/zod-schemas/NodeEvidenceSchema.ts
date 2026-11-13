@@ -21,7 +21,7 @@ const EvidenceResponseSchema = z
     previewTruncated: z.boolean().optional(),
     storedTruncated: z.boolean(),
     totalBytes: z.number().int().nonnegative().optional(),
-    pathStatus: z.enum(["resolved", "path-missing", "type-mismatch"]).optional(),
+    pathStatus: z.enum(["resolved", "path-missing", "type-mismatch", "invalid-path"]).optional(),
   })
   .strict()
 

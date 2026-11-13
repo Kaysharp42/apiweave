@@ -1,3 +1,4 @@
+import { parse as parseJsonPath, paths as jsonPathNodes, query as queryJsonPath } from "jsonpathly"
 import type { ExtractorPathBuild } from "../types/ExtractorPathBuild"
 import type { ExtractorResolution } from "../types/ExtractorResolution"
 
@@ -7,10 +8,16 @@ import type { ExtractorResolution } from "../types/ExtractorResolution"
  * `response.headers.etag`, `response.statusCode`. An array element is addressed
  * by suffixing its owning key: `response.body.items[0].id`.
  *
- * The grammar is deliberately small. Anything it cannot express (a key holding
- * a dot, an array of arrays, a non-identifier key in front of an index) must be
- * reported as unsupported instead of silently producing a path that never
- * resolves at run time.
+ * A path beginning with `$` is instead an RFC 9535 JSONPath expression rooted
+ * at the same node result, so `$.response.body.items[?@.id==3].name` addresses
+ * the same value `response.body.items[0].id` would when the first item has
+ * `id == 3`. The two grammars are dispatched in `resolveExtractorPath`, the
+ * single entry point every consumer shares.
+ *
+ * The dot grammar is deliberately small. Anything it cannot express (a key
+ * holding a dot, an array of arrays, a non-identifier key in front of an index)
+ * must be reported as unsupported instead of silently producing a path that
+ * never resolves at run time.
  */
 export const EXTRACTOR_ROOT = "response"
 
@@ -57,15 +64,64 @@ function resolvePathSegment(value: unknown, part: string): SegmentStep {
 }
 
 /**
- * Walks `path` over `data`. Shared by the runner (which extracts the real value
- * after a request) and the renderer (which previews what an extractor would
- * capture from the response already on screen), so both agree on what resolves.
+ * True when `path` is a JSONPath expression -- a path whose first character is
+ * `$`. Every other path stays on the dot grammar.
+ */
+export function isJsonPath(path: string): boolean {
+  return path.startsWith("$")
+}
+
+/**
+ * True when `path` is a syntactically valid RFC 9535 JSONPath expression. Used
+ * by validation (`isValidRuntimePath`) so an invalid expression is rejected
+ * before it reaches the runner, and by the authoring service's evidence reads.
+ */
+export function isValidJsonPath(path: string): boolean {
+  if (!path.startsWith("$")) return false
+  try {
+    return parseJsonPath(path) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Evaluates an RFC 9535 JSONPath expression against `data`. A query that
+ * selects no nodes is `path-missing`; an expression the parser rejects is
+ * `invalid-path`. A singular query returns the selected value, and a
+ * non-singular query returns an array of every selected value, so `count` and
+ * `contains` assertions operate on it.
+ */
+function resolveJsonPath(data: unknown, path: string): ExtractorResolution {
+  try {
+    if (jsonPathNodes(data, path).length === 0) {
+      return { value: undefined, failureReason: "path-missing" }
+    }
+    return { value: queryJsonPath(data, path), failureReason: null }
+  } catch {
+    return { value: undefined, failureReason: "invalid-path" }
+  }
+}
+
+/**
+ * The single path resolver shared by extractors, assertions, stream finish
+ * conditions and the renderer's preview, so every consumer agrees on what a
+ * path addresses. Grammar dispatch lives here: a `$`-prefixed path is RFC 9535
+ * JSONPath, and everything else stays on the dot grammar. (Task D adds a third
+ * `xpath:` branch to this dispatch.)
  */
 export function resolveExtractorPath(data: unknown, path: string): ExtractorResolution {
   if (data === null || data === undefined || !path) {
     return { value: undefined, failureReason: "path-missing" }
   }
+  if (isJsonPath(path)) return resolveJsonPath(data, path)
+  return resolveDotPath(data, path)
+}
 
+/**
+ * Walks a dot-grammar `path` over `data`.
+ */
+function resolveDotPath(data: unknown, path: string): ExtractorResolution {
   const parts = path.split(".")
   let value: unknown = data
 

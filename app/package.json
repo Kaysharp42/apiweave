@@ -49,6 +49,7 @@
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.11",
+    "jsonpathly": "^4.0.0",
     "libsodium-wrappers": "^0.8.4",
     "node-pty": "1.1.0",
     "zod": "^4.6.7"

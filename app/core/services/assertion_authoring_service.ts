@@ -22,7 +22,7 @@ type Suggestion = AssertionSuggestionResult["suggestions"][number]
 /** Spelled out rather than "invalid path" — the accepted shapes are not
  *  guessable, and a bare field name (`id`) is the common first attempt. */
 export const PREV_PATH_MESSAGE =
-  'A prev path addresses the upstream response object: "response.body.<field>" (dots and [0] indexes, e.g. response.body.data[0].id), "response.headers.<name>", "response.statusCode" or "response.duration". A bare field name like "id" is not a path — write "response.body.id". Use the status, headers or variables source instead of prev when asserting on those directly.'
+  'A prev path addresses the upstream response object: "response.body.<field>" (dots and [0] indexes, e.g. response.body.data[0].id), "response.headers.<name>", "response.statusCode" or "response.duration". A "$"-prefixed path is RFC 9535 JSONPath rooted at the same result (e.g. $.response.body.items[?@.id==3].name). A bare field name like "id" is not a path — write "response.body.id". Use the status, headers or variables source instead of prev when asserting on those directly.'
 
 export class AssertionAuthoringService {
   public constructor(
@@ -392,12 +392,17 @@ function validateEvidencePath(rule: AssertionItem, ruleIndex: number, result: Ru
     return { ruleIndex, code: "response_truncated", severity: "warning", message: "Body-path compatibility is unavailable because the response was truncated." }
   }
   // Shared evidence-path semantics: the authoritative extractor grammar
-  // (`response.body.items[0].id`), resolved against the stored response object.
+  // (`response.body.items[0].id`, or `$.response.body.items[0].id` as RFC 9535
+  // JSONPath), resolved against the stored response object.
   // `resolveExtractorPath` distinguishes a path that addresses nothing
-  // (path-missing) from one that traverses a non-object (type-mismatch); both
-  // are errors here, with distinct codes.
+  // (path-missing) from one that traverses a non-object (type-mismatch) from
+  // one the parser rejects (invalid-path); all are errors here, with distinct
+  // codes.
   const resolution = resolveExtractorPath({ response }, rule.path)
   if (resolution.failureReason === null) return undefined
+  if (resolution.failureReason === "invalid-path") {
+    return { ruleIndex, code: "invalid_path", severity: "error", message: "The target path is not a valid expression." }
+  }
   if (resolution.failureReason === "type-mismatch") {
     return { ruleIndex, code: "path_type_mismatch", severity: "error", message: "The target path traverses a non-object value in the selected run evidence." }
   }

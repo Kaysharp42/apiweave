@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest"
 import {
   buildBodyExtractorPath,
+  isJsonPath,
+  isValidJsonPath,
   resolveExtractorPath,
 } from "../extractors/extractorPath"
 
@@ -110,5 +112,85 @@ describe("resolveExtractorPath", () => {
     expect(resolveExtractorPath(null, "response.body.id").failureReason).toBe(
       "path-missing",
     )
+  })
+})
+
+describe("resolveExtractorPath JSONPath", () => {
+  test("resolves a singular JSONPath to the selected value", () => {
+    expect(resolveExtractorPath(nodeResult, "$.response.body.id")).toEqual({
+      value: "abc",
+      failureReason: null,
+    })
+    expect(
+      resolveExtractorPath(nodeResult, "$.response.body.nested.deep.value")
+        .value,
+    ).toBe(7)
+    expect(resolveExtractorPath(nodeResult, "$.response.body.items[1].id").value).toBe(
+      "second",
+    )
+  })
+
+  test("resolves a non-singular JSONPath to an array of matches", () => {
+    expect(
+      resolveExtractorPath(nodeResult, "$.response.body.items[*].id").value,
+    ).toEqual(["first", "second"])
+    expect(
+      resolveExtractorPath(nodeResult, "$.response.body.items[?@.id=='second'].id")
+        .value,
+    ).toEqual(["second"])
+  })
+
+  test("supports RFC 9535 filter syntax without parentheses", () => {
+    expect(
+      resolveExtractorPath(nodeResult, "$.response.body.items[?@.id=='first'].id")
+        .value,
+    ).toEqual(["first"])
+  })
+
+  test("a query that matches nothing is path-missing", () => {
+    expect(
+      resolveExtractorPath(nodeResult, "$.response.body.missing").failureReason,
+    ).toBe("path-missing")
+    expect(
+      resolveExtractorPath(nodeResult, "$.response.body.items[?@.id=='nope'].id")
+        .failureReason,
+    ).toBe("path-missing")
+    expect(resolveExtractorPath(nodeResult, "$..missing").failureReason).toBe(
+      "path-missing",
+    )
+  })
+
+  test("an invalid expression is a distinct invalid-path failure", () => {
+    expect(resolveExtractorPath(nodeResult, "$.response.body[").failureReason).toBe(
+      "invalid-path",
+    )
+    expect(resolveExtractorPath(nodeResult, "$.").failureReason).toBe(
+      "invalid-path",
+    )
+  })
+
+  test("a singular query selecting an array returns the array itself", () => {
+    expect(resolveExtractorPath(nodeResult, "$.response.body.items").value).toEqual([
+      { id: "first" },
+      { id: "second" },
+    ])
+  })
+})
+
+describe("isJsonPath / isValidJsonPath", () => {
+  test("dispatches only $-prefixed paths to JSONPath", () => {
+    expect(isJsonPath("$.a")).toBe(true)
+    expect(isJsonPath("$")).toBe(true)
+    expect(isJsonPath("response.body.id")).toBe(false)
+    expect(isJsonPath("")).toBe(false)
+  })
+
+  test("accepts valid RFC 9535 expressions and rejects invalid ones", () => {
+    expect(isValidJsonPath("$.response.body.items[?@.id==3].name")).toBe(true)
+    expect(isValidJsonPath("$")).toBe(true)
+    expect(isValidJsonPath("$.response.body[")).toBe(false)
+    expect(isValidJsonPath("$.")).toBe(false)
+    expect(isValidJsonPath("response.body.id")).toBe(false)
+    expect(isValidJsonPath("")).toBe(false)
   })
 })
