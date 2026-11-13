@@ -72,12 +72,13 @@ interface ImportToNodesPanelProps {
   onTemplatesSaved: (workflow: Workflow) => void;
 }
 
-type ActiveTab = "openapi" | "har" | "curl";
+type ActiveTab = "openapi" | "har" | "curl" | "wsdl";
 
 const IMPORT_TABS: TabItem[] = [
   { key: "openapi", icon: Upload, label: "OpenAPI" },
   { key: "har", icon: Upload, label: "HAR" },
   { key: "curl", icon: Terminal, label: "Curl" },
+  { key: "wsdl", icon: Upload, label: "WSDL" },
 ];
 
 interface FileUploadDropzoneProps {
@@ -506,6 +507,45 @@ export function ImportToNodesPanel({
     }
   };
 
+  const handleImportWsdl = async (): Promise<void> => {
+    setIsLoading(true);
+    setMessage(null);
+    try {
+      if (!pastedText.trim()) {
+        setMessage({ type: "error", title: "Error", text: "Paste a WSDL document or choose a file" });
+        return;
+      }
+      const result = (await apiweave.workflows.importWsdl({
+        workspaceId: workspaceId || "",
+        wsdlText: pastedText,
+      })) as { nodes?: Node[] };
+      const nodes = result.nodes || [];
+      if (nodes.length === 0) {
+        setMessage({ type: "error", title: "No Operations Found", text: "The WSDL declares no SOAP operation with an address" });
+        return;
+      }
+      await saveTemplatesToWorkflow(nodes, "wsdl");
+      addImportedGroup({
+        title: "WSDL Operations",
+        id: `wsdl-${workflowId}`,
+        items: nodesToPaletteItems(nodes),
+      } as ImportedGroupPayload);
+      setMessage({
+        type: "success",
+        title: "Import Successful",
+        text: `${nodes.length} SOAP request(s) saved and added to Add Nodes panel`,
+      });
+      setTimeout(() => {
+        onClose();
+        setPastedText("");
+      }, 2000);
+    } catch (error) {
+      setMessage({ type: "error", title: "Error", text: error instanceof Error ? error.message : "An error occurred" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleImport = (): void => {
     if (activeTab === "openapi") {
       handleImportOpenAPI();
@@ -513,6 +553,8 @@ export function ImportToNodesPanel({
       handleImportHAR();
     } else if (activeTab === "curl") {
       handleImportCurl();
+    } else if (activeTab === "wsdl") {
+      void handleImportWsdl();
     }
   };
 
@@ -676,6 +718,42 @@ export function ImportToNodesPanel({
               loading={isLoading}
               onClick={handleImport}
             />
+          </div>
+        )}
+
+        {/* WSDL Tab */}
+        {activeTab === "wsdl" && (
+          <div className="space-y-4">
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-xs flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="shrink-0 mt-0.5" />
+              <span>
+                Paste a WSDL 1.1 document or choose a file. Each SOAP operation
+                becomes one POST node that sends an envelope to the address its
+                port declares.
+              </span>
+            </div>
+            <FileUploadDropzone
+              accept=".wsdl,.xml"
+              description="Drop a .wsdl or .xml file here, or click to choose one"
+              fileInputRef={fileInputRef}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onFileInputChange={handleFileInputChange}
+            />
+            <div>
+              <label htmlFor="import-to-nodes-wsdl" className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
+                WSDL
+              </label>
+              <TextArea
+                id="import-to-nodes-wsdl"
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder={'Paste a WSDL 1.1 document here, for example a <definitions xmlns="http://schemas.xmlsoap.org/wsdl/" ...> block.'}
+                className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-xs"
+              />
+            </div>
+            <ImportActionButton disabled={isLoading || !pastedText.trim()} loading={isLoading} onClick={handleImport} />
           </div>
         )}
       </div>

@@ -9,7 +9,7 @@ import type { Workflow } from "@shared/types/Workflow"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { isValidRuntimePath } from "@shared/analysis/workflow_graph_analyzer"
 import { assertionExpectedProblem } from "@shared/analysis/assertion_expected"
-import { resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { isSecretKey } from "@shared/credentials/credentials"
 import { isSecretReference, looksLikeSecretValue } from "./secret_utils"
@@ -22,7 +22,7 @@ type Suggestion = AssertionSuggestionResult["suggestions"][number]
 /** Spelled out rather than "invalid path" — the accepted shapes are not
  *  guessable, and a bare field name (`id`) is the common first attempt. */
 export const PREV_PATH_MESSAGE =
-  'A prev path addresses the upstream response object: "response.body.<field>" (dots and [0] indexes, e.g. response.body.data[0].id), "response.headers.<name>", "response.statusCode" or "response.duration". A "$"-prefixed path is RFC 9535 JSONPath rooted at the same result (e.g. $.response.body.items[?@.id==3].name). A bare field name like "id" is not a path — write "response.body.id". Use the status, headers or variables source instead of prev when asserting on those directly.'
+  'A prev path addresses the upstream response object: "response.body.<field>" (dots and [0] indexes, e.g. response.body.data[0].id), "response.headers.<name>", "response.statusCode" or "response.duration". A "$"-prefixed path is RFC 9535 JSONPath rooted at the same result (e.g. $.response.body.items[?@.id==3].name). An "xpath:"-prefixed path is XPath 1.0 over the XML body (e.g. xpath://*[local-name()="Total"]/text()). A bare field name like "id" is not a path — write "response.body.id". Use the status, headers or variables source instead of prev when asserting on those directly.'
 
 export class AssertionAuthoringService {
   public constructor(
@@ -291,7 +291,7 @@ function canonicalDraft(value: unknown): unknown {
   // before reading, so both forms run identically — canonicalize the bare form
   // (`body.id`, `statusCode`) rather than rejecting it, which is the shape an
   // agent naturally writes after reading a captured response.
-  if (source === "prev" && path.length > 0 && !path.startsWith("response.")) {
+  if (source === "prev" && path.length > 0 && !path.startsWith("response.") && !isQueryPath(path)) {
     path = `response.${path}`
   }
   return {

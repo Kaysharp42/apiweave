@@ -86,6 +86,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
   The Finish tab is shared by every stream node, so the finish-rule editor now
   lives in `StreamFinishConditionsEditor`.
 
+- **SOAP and XML requests, XPath, and WSDL import.** An HTTP Request node takes
+  `bodyType: "soap"` with a version (1.1 or 1.2), an action and a complete
+  envelope, and sends the Content-Type and SOAPAction each version prescribes. A
+  SOAP Fault fails the node unless its status is expected, with the fault's code
+  and reason on `response.fault`. A path beginning with `xpath:` is now evaluated
+  as XPath 1.0 over the response body as XML, with inline namespace declarations
+  (`xpath[s=https://...]:/s:Envelope/...`), alongside dot paths and JSONPath.
+  WSDL 1.1 import (**Import to Add Nodes → WSDL**) creates one POST node per
+  operation from its port's `soap:address`. XML is parsed by
+  `@xmldom/xmldom` and queried by `xpath`, both pure JavaScript; DTDs are
+  refused so entity attacks never parse.
+
 ### Changed
 
 - **SSE and WebSocket share one stream-listener lifecycle.** The executor's

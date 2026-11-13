@@ -47,11 +47,13 @@
     "mcp:baseline": "tsx --tsconfig tsconfig.desktop.json core/mcp/harness/run-baseline.cts"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.11",
     "jsonpathly": "^4.0.0",
     "libsodium-wrappers": "^0.8.4",
     "node-pty": "1.1.0",
+    "xpath": "^0.0.36",
     "zod": "^4.6.7"
   },
   "devDependencies": {

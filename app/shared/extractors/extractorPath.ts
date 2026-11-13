@@ -1,6 +1,8 @@
 import { parse as parseJsonPath, paths as jsonPathNodes, query as queryJsonPath } from "jsonpathly"
 import type { ExtractorPathBuild } from "../types/ExtractorPathBuild"
 import type { ExtractorResolution } from "../types/ExtractorResolution"
+export { isXPath, isValidXPath } from "./xpathQuery"
+import { isXPath, resolveXPath } from "./xpathQuery"
 
 /**
  * Extractor paths are dot-separated segments resolved against the whole node
@@ -13,6 +15,12 @@ import type { ExtractorResolution } from "../types/ExtractorResolution"
  * the same value `response.body.items[0].id` would when the first item has
  * `id == 3`. The two grammars are dispatched in `resolveExtractorPath`, the
  * single entry point every consumer shares.
+ *
+ * A path beginning with `xpath:` (or `xpath[prefix=uri]:`) is instead XPath 1.0
+ * evaluated against the response body as XML, so
+ * `xpath://*[local-name()='Total']/text()` reads a SOAP response the way a
+ * stored dot path can never address it. See `xpathQuery.ts` for the grammar
+ * and its namespace handling.
  *
  * The dot grammar is deliberately small. Anything it cannot express (a key
  * holding a dot, an array of arrays, a non-identifier key in front of an index)
@@ -72,6 +80,15 @@ export function isJsonPath(path: string): boolean {
 }
 
 /**
+ * True when `path` is evaluated by a query engine rather than the dot grammar
+ * -- RFC 9535 JSONPath or XPath -- and is therefore rooted at the node result
+ * as a whole instead of at `response.`.
+ */
+export function isQueryPath(path: string): boolean {
+  return isJsonPath(path) || isXPath(path)
+}
+
+/**
  * True when `path` is a syntactically valid RFC 9535 JSONPath expression. Used
  * by validation (`isValidRuntimePath`) so an invalid expression is rejected
  * before it reaches the runner, and by the authoring service's evidence reads.
@@ -107,14 +124,16 @@ function resolveJsonPath(data: unknown, path: string): ExtractorResolution {
  * The single path resolver shared by extractors, assertions, stream finish
  * conditions and the renderer's preview, so every consumer agrees on what a
  * path addresses. Grammar dispatch lives here: a `$`-prefixed path is RFC 9535
- * JSONPath, and everything else stays on the dot grammar. (Task D adds a third
- * `xpath:` branch to this dispatch.)
+ * JSONPath, an `xpath:`-prefixed path is XPath 1.0 over the XML body, and
+ * everything else stays on the dot grammar.
  */
 export function resolveExtractorPath(data: unknown, path: string): ExtractorResolution {
-  if (data === null || data === undefined || !path) {
+  // Persisted graphs are read without re-validation, so a path may not be a string.
+  if (data === null || data === undefined || typeof path !== "string" || path === "") {
     return { value: undefined, failureReason: "path-missing" }
   }
   if (isJsonPath(path)) return resolveJsonPath(data, path)
+  if (isXPath(path)) return resolveXPath(data, path)
   return resolveDotPath(data, path)
 }
 

@@ -164,6 +164,19 @@ The same `$` grammar applies everywhere a path appears — extractors, Assertion
 
 For the full placeholder grammar and resolution order, see the [Placeholders Reference](../reference/placeholders.md).
 
+### XPath (`xpath:`-prefixed)
+
+A path beginning with `xpath:` is evaluated as XPath 1.0 against the response body parsed as XML, which is how a SOAP response is read. A node-set selecting one node returns its text, several return an array of texts, and a number, string or boolean result is returned as is.
+
+```text
+xpath://*[local-name()="Total"]/text()          # the text of every Total element
+xpath://*[local-name()="Total"]/@unit           # an attribute
+xpath:count(//*[local-name()="Reading"])        # a number
+xpath[s=http://schemas.xmlsoap.org/soap/envelope/;t=urn:x]:/s:Envelope/s:Body/t:Result
+```
+
+XPath 1.0 has no default namespace, so an unprefixed name never matches a namespaced element. Use `*[local-name()="Name"]`, or declare prefixes inline in square brackets (`xpath[prefix=uri;other=uri]:`); prefixes the document declares are bound automatically, an inline declaration winning. A body that is not XML is `type-mismatch`, a DTD is refused outright (SOAP forbids one, and a DTD is where entity attacks live), and an expression the parser rejects is `invalid-path`.
+
 ## Managing Variables
 
 Open the side panel and switch to the **Variables** tab to work with workflow variables directly.

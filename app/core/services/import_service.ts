@@ -15,6 +15,7 @@ import type {
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
+import { parseWsdlSpec, type WsdlImportOptions } from "./wsdl_parsers"
 import {
   collectSecretRefs,
   sanitizeExportValue,
@@ -653,6 +654,11 @@ export class ImportService {
 
   parseCurl(input: string, opts: CurlParseOptions = {}): ParsedWorkflow {
     return parseCurlCommands(input, opts)
+  }
+
+  /** WSDL 1.1: one SOAP request per operation, addressed from the port's soap:address. */
+  parseWsdl(input: string, opts: WsdlImportOptions = {}): ParsedWorkflow {
+    return parseWsdlSpec(input, opts)
   }
 
   dryRunCurl(input: string, opts: CurlParseOptions = {}): CurlDryRunResult {

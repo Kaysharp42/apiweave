@@ -451,6 +451,12 @@ export const apiweave = {
       readonly workflowId?: string;
       readonly collectionId?: string;
     }) => invoke<unknown>("workflows", "importCurl", input),
+    importWsdl: (input: {
+      readonly workspaceId: string;
+      readonly wsdlText: string;
+      readonly endpointUrl?: string;
+      readonly forceHttps?: boolean;
+    }) => invoke<unknown>("workflows", "importWsdl", input),
     saveTemplates: (
       workspaceId: string,
       workflowId: string,
