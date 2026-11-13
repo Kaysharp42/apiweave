@@ -335,6 +335,10 @@ environment this one inherits plain variables from; `null` clears it. See
 - `nodePresets_update`
 - `nodePresets_delete`
 
+### gRPC
+
+- `grpc_discover` (read) — list the services, unary and streaming methods and request skeletons of a gRPC server (reflection, with a literal `host:port` target) or of inline `.proto` files, before writing a `grpc` node. It sends only a reflection query, never a call.
+
 ### Assertions
 
 - `assertion_suggest` (read) — derive deterministic assertion candidates from one HTTP node's stored run result without changing the workflow.

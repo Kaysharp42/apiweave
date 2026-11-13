@@ -3,6 +3,7 @@ import { AssertionNodeDataSchema } from "./AssertionNodeDataSchema"
 import { DelayNodeDataSchema } from "./DelayNodeDataSchema"
 import { EndNodeDataSchema } from "./EndNodeDataSchema"
 import { GroupNodeDataSchema } from "./GroupNodeDataSchema"
+import { GrpcNodeDataSchema } from "./GrpcNodeDataSchema"
 import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
 import { NoteNodeDataSchema } from "./NoteNodeDataSchema"
@@ -71,12 +72,21 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     .describe('Opens a WebSocket connection, sends its configured messages, and collects the incoming ones. Its "ready" output runs after the handshake succeeds; its "complete" output runs after the bounded stream ends. Finish rules may close on a matching message. The complete path can feed an assertion node using the collected messages.'),
   baseNode
     .extend({
+      type: z.literal("grpc"),
+      config: GrpcNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe(
+      'Calls one unary gRPC method. The schema comes from server reflection or inline .proto files. One input, one output. The result has response.body (the decoded message), response.status (the gRPC code name, e.g. "OK"), response.statusCode, response.statusMessage, response.headers and response.trailers. Any non-OK status fails the node unless it is the configured expectedStatus.',
+    ),
+  baseNode
+    .extend({
       type: z.literal("assertion"),
       config: AssertionNodeDataSchema.optional(),
     })
     .strict()
     .describe(
-      'Checks values from the single upstream response-producing node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one HTTP request or SSE node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
+      'Checks values from the single upstream response-producing node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one HTTP request, gRPC or SSE node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
     ),
   baseNode
     .extend({

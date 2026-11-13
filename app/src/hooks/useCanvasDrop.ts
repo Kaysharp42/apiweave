@@ -60,6 +60,19 @@ function getDefaultConfig(type: string): NodeConfig {
         maxMessages: 1,
         finishConditions: [],
         sslVerify: true,
+      };
+    case "grpc":
+      return {
+        callType: "unary",
+        target: "",
+        tls: false,
+        sslVerify: true,
+        service: "",
+        method: "",
+        message: "{}",
+        metadata: [],
+        deadline: 30,
+        schemaSource: "reflection",
         extractors: {},
       };
     case "assertion":

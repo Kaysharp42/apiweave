@@ -244,7 +244,7 @@ function countSuggestion(path: string, count: number, kind: "array" | "object"):
 
 function requireResponseNode(workflow: Workflow, sourceNodeId: string): void {
   const node = workflow.nodes.find((candidate) => candidate.nodeId === sourceNodeId)
-  if (!node || (node.type !== "http-request" && node.type !== "sse" && node.type !== "websocket")) {
+  if (!node || (node.type !== "http-request" && node.type !== "sse" && node.type !== "websocket" && node.type !== "grpc")) {
     throw new NotFoundError(`Response node ${sourceNodeId} not found`)
   }
 }
@@ -266,7 +266,7 @@ function resolveAssertionSource(workflow: Workflow, assertionNodeId: string): st
     if (current === undefined || visited.has(current)) continue
     visited.add(current)
     const node = nodes.get(current)
-    if (node?.type === "http-request" || node?.type === "sse" || node?.type === "websocket") {
+    if (node?.type === "http-request" || node?.type === "sse" || node?.type === "websocket" || node?.type === "grpc") {
       sources.add(current)
       continue
     }

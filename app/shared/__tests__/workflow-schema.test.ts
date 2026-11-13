@@ -193,3 +193,18 @@ describe("WorkflowSchema", () => {
     expect(WorkflowNodeSchema.safeParse({ ...base, config: { messages: [{ data: "x", type: "json" }] } }).success).toBe(false)
   })
 })
+
+describe("WorkflowNodeSchema — grpc node", () => {
+  const grpc = (config: unknown) => WorkflowNodeSchema.safeParse({ nodeId: "g", type: "grpc", position: { x: 0, y: 0 }, config })
+
+  it("accepts a unary call with reflection or inline protos", () => {
+    expect(grpc({ callType: "unary", target: "localhost:50051", tls: true, service: "a.B", method: "C", message: "{}", metadata: [{ key: "k", value: "v" }], deadline: 5, schemaSource: "reflection", expectedStatus: "NOT_FOUND" }).success).toBe(true)
+    expect(grpc({ schemaSource: "proto", protoFiles: { "a.proto": "syntax = \"proto3\";" } }).success).toBe(true)
+  })
+
+  it("accepts only unary for callType, and rejects unknown fields", () => {
+    expect(grpc({ callType: "server-streaming" }).success).toBe(false)
+    expect(grpc({ callType: "unary", surprise: 1 }).success).toBe(false)
+    expect(grpc({ deadline: 0 }).success).toBe(false)
+  })
+})

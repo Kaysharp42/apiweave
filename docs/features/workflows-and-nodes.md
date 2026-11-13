@@ -18,6 +18,7 @@
   - [HTTP Request](#http-request)
   - [SSE Stream](#sse-stream)
   - [WebSocket](#websocket)
+  - [gRPC Call](#grpc-call)
   - [Assertion](#assertion)
   - [Delay](#delay)
   - [Merge](#merge)
@@ -228,6 +229,30 @@ with ordinary rules on `response.body.error.code` and
 The output body has `events`, `eventCount`, and `termination`. Each event records its `event` type, optional `id`, and exact `data` string, including multi-line data. A downstream Assertion can validate a frontend-facing payload directly, for example `response.body.events[0].data` or `response.body.eventCount`.
 
 **Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final bounded result exists. Use the Complete path for a regular Assertion node that checks `response.body.events`.
+
+### gRPC Call
+
+**Purpose:** Calls one **unary** gRPC method and asserts on the result, the way an HTTP Request node does for REST. Streaming methods (server, client and bidirectional) are not supported yet; `callType` accepts only `unary`.
+
+| Field | What it does |
+| --- | --- |
+| `target` | `host:port`. Supports environment and variable placeholders (not secrets). |
+| `tls` / `verify TLS` | Use a TLS channel. The trusted CAs and the client certificate for the host come from [Settings → Network](network.md); `verify TLS` off accepts an untrusted server. |
+| `schema source` | `reflection` asks the server for its schema at run time; `proto` uses `.proto` files stored **inside the workflow**. |
+| `service` / `method` | The fully-qualified service (`shop.Orders`) and the method. |
+| `message` | The request as JSON text, with field names as written in the `.proto`. Placeholders are substituted JSON-aware. int64 values may be strings and bytes are base64. |
+| `metadata` / `auth` | Metadata pairs (keys are sent in lowercase). Bearer and API-key auth become `authorization` or the named metadata key. Digest and AWS Signature V4 are not available. |
+| `deadline` | Seconds before the call ends with `DEADLINE_EXCEEDED` (default 30). |
+| `expected status` | A gRPC code name. The node passes on a match and fails otherwise; empty expects `OK`. Use it for negative tests, such as `NOT_FOUND`. |
+| `continue on fail` / `extractors` | As on the HTTP Request node. |
+
+**Choosing the schema.** In the editor, enter the target and click **Discover**. With *Server reflection* that queries the server (`grpc.reflection.v1`, falling back to `v1alpha`); with *Proto files* it reads the files you chose or pasted, where imports resolve among the files and Google's well-known types are built in. Pick a service and a unary method from the lists and the message is filled with a skeleton generated from the request type. Because the `.proto` text is saved in the workflow, it travels in `.aweproject` exports and git; reflection needs the server to be reachable.
+
+**Result.** `response.body` is the decoded message (int64 as strings, enums as names, bytes as base64); `response.status` is the code name (`OK`, `NOT_FOUND`), `response.statusCode` its number, plus `response.statusMessage`, `response.headers` (initial metadata), `response.trailers` and `response.duration`. Extractors and assertions use the same paths as for HTTP, including `$` JSONPath: `response.body.order_id`, `$.response.body.items[0].id`, `response.trailers.x-request-id`.
+
+**Limits.** A gRPC channel is not proxied (Settings → Network's proxy does not apply), the response is bounded to gRPC's default 4 MiB message size, and reflection reads at most 500 files. Agents can list a server's schema with the read-only `grpc_discover` tool.
+
+**Handles:** one input, one output.
 
 #### OAuth 2.0
 

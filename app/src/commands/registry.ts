@@ -37,6 +37,7 @@ const nodeCommands: readonly CanvasNodeTemplate[] = [
     label: "WebSocket",
     config: { maxMessages: 1, timeout: 30 },
   },
+  { type: "grpc", label: "gRPC Call" },
   { type: "assertion", label: "Assertion" },
   { type: "delay", label: "Delay" },
   { type: "merge", label: "Merge" },

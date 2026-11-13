@@ -47,6 +47,7 @@ import {
   ImportService,
   OAuthService,
   NetworkSettingsService,
+  GrpcDiscoveryService,
 } from "../core/services"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
@@ -721,6 +722,7 @@ if (!hasSingleInstanceLock) {
         () => clock.isoNow(),
       ),
       imports: new ImportService(workflows, environments, collections, scopeResolver, http),
+      grpcDiscovery: new GrpcDiscoveryService(http),
       projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, scopeResolver),
     }
     registerAllHandlers(ipcRouter, deps)

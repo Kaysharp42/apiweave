@@ -74,6 +74,7 @@ import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
 import type { AssertionItem } from "@shared/types/AssertionItem";
 import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
 import type { AssertionValidationResult } from "@shared/types/AssertionValidationResult";
+import type { GrpcDiscoveryResult } from "@shared/types/GrpcDiscoveryResult";
 import type { NodePreset } from "../types/NodePreset";
 import type { NodePresetNodeType } from "../types/NodePresetNodeType";
 import type { Project } from "../types/Project";
@@ -460,6 +461,16 @@ export const apiweave = {
         workflowId,
         templates,
       }),
+  },
+  /** gRPC schema discovery for the gRPC node: reflection or inline .proto files in, services and methods out. */
+  grpc: {
+    discover: (input: {
+      readonly schemaSource: "reflection" | "proto";
+      readonly target?: string;
+      readonly tls?: boolean;
+      readonly sslVerify?: boolean;
+      readonly protoFiles?: Readonly<Record<string, string>>;
+    }) => invoke<GrpcDiscoveryResult>("grpc", "discover", input),
   },
   assertions: {
     suggest: (

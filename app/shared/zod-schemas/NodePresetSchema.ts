@@ -5,6 +5,7 @@ import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
 import { NodePresetNodeTypeSchema } from "./NodePresetNodeTypeSchema"
+import { GrpcNodeDataSchema } from "./GrpcNodeDataSchema"
 import { SseNodeDataSchema } from "./SseNodeDataSchema"
 import { WebsocketNodeDataSchema } from "./WebsocketNodeDataSchema"
 import { RevisionSchema } from "./RevisionSchema"
@@ -40,6 +41,7 @@ const CONFIG_SCHEMA_BY_NODE_TYPE = {
   "http-request": HTTPNodeDataSchema,
   sse: SseNodeDataSchema,
   websocket: WebsocketNodeDataSchema,
+  grpc: GrpcNodeDataSchema,
   assertion: AssertionNodeDataSchema,
   delay: DelayNodeDataSchema,
   merge: MergeNodeDataSchema,

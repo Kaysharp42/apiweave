@@ -25,6 +25,8 @@ export function NodeModalHeader({
         ? "SSE Stream"
       : nodeType === "websocket"
         ? "WebSocket"
+      : nodeType === "grpc"
+        ? "gRPC Call"
       : nodeType === "assertion"
         ? "Assertion"
         : nodeType === "delay"
