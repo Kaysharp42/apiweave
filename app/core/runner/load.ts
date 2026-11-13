@@ -1,4 +1,3 @@
-import type { JsonValue } from "@shared/types/JsonValue"
 import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { RunResult } from "@shared/types/RunResult"
 import type { LoadNodeStats } from "@shared/types/LoadNodeStats"
