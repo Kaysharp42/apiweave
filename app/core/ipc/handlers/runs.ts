@@ -209,6 +209,26 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     },
   })
 
+  router.register("runs", "acceptSnapshot", {
+    input: z
+      .object({
+        workspaceId: ws,
+        workflowId: z.string().min(1),
+        nodeId: z.string().min(1),
+        ruleIndex: z.number().int().min(0).max(1000),
+        value: JsonValueSchema,
+      })
+      .strict(),
+    output: z.object({ accepted: z.boolean(), updatedAt: z.string() }).strict(),
+    handle: async (i) => {
+      if (deps.snapshots === undefined) throw new ValidationError("Snapshot storage is unavailable")
+      await deps.workflows.get(i.workspaceId, i.workflowId)
+      const updatedAt = new Date().toISOString()
+      deps.snapshots.write(i.workflowId, i.nodeId, i.ruleIndex, i.value, updatedAt)
+      return { accepted: true, updatedAt }
+    },
+  })
+
   router.register("runs", "history", {
     input: historyInput,
     output: RunHistoryPageSchema,

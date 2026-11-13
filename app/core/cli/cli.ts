@@ -4,6 +4,7 @@ import { parseArgs } from "node:util"
 import type { RequestInit, Response } from "undici"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { ContractMode } from "@shared/types/ContractMode"
+import { FileSnapshotStore } from "../runner/snapshot_file"
 import type { Environment } from "@shared/types/Environment"
 import type { Workflow } from "@shared/types/Workflow"
 import { nameSlug } from "@shared/workspace-repo/format"
@@ -112,6 +113,8 @@ Options:
                                   metrics: min mean p50 p90 p95 p99 max errors throughput)
       --bail                      Stop at the first failed workflow, iteration or project
       --timeout-request <ms>      Timeout for every request, overriding each node's
+      --snapshots <file>          Snapshot baselines file (default: .apiweave-snapshots.json)
+      --update-snapshots          Record every snapshot baseline again instead of comparing
       --contract <off|warn|fail>  Override every node's contract check (default: each node's
                                   own setting, fail for OpenAPI-imported nodes)
   -k, --insecure                  Do not verify TLS certificates
@@ -176,6 +179,9 @@ interface CliOptions {
   readonly bail: boolean
   readonly timeoutMs: number | undefined
   readonly contract: ContractMode | undefined
+  /** Where snapshot baselines are read and written. */
+  readonly snapshotsPath: string
+  readonly updateSnapshots: boolean
   readonly insecure: boolean
   readonly proxy: string | undefined
   readonly caCerts: readonly string[]
@@ -208,6 +214,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       bail: { type: "boolean" },
       "timeout-request": { type: "string" },
       contract: { type: "string" },
+      snapshots: { type: "string" },
+      "update-snapshots": { type: "boolean" },
       insecure: { type: "boolean", short: "k" },
       proxy: { type: "string" },
       "ca-cert": { type: "string", multiple: true },
@@ -222,6 +230,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
   const timeoutMs = positiveInteger(values["timeout-request"], "--timeout-request must be a positive whole number of milliseconds")
   const iterationCount = positiveInteger(values["iteration-count"], "--iteration-count must be a positive whole number")
   const contract = parseContract(values.contract)
+  const snapshotsPath = path.resolve(cwd, values.snapshots ?? ".apiweave-snapshots.json")
   const concurrency = positiveInteger(values.concurrency, "--concurrency must be a positive whole number")
   const durationMs = parseDuration(values.duration, "--duration")
   const rampUpMs = parseDuration(values["ramp-up"], "--ramp-up")
@@ -257,6 +266,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     bail: values.bail === true,
     timeoutMs,
     contract,
+    snapshotsPath,
+    updateSnapshots: values["update-snapshots"] === true,
     insecure: values.insecure === true,
     proxy: values.proxy,
     caCerts: (values["ca-cert"] ?? []).map((file) => path.resolve(cwd, file)),
@@ -452,6 +463,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     )
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
+    const snapshots = new FileSnapshotStore(options.snapshotsPath)
     const runScheduler = new RunScheduler({
       runs: repos.runs,
       workflows: repos.workflows,
@@ -463,6 +475,8 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       // One OAuth 2.0 token cache per invocation: iterations reuse a client-credentials token.
       oauthTokens: new Map(),
       ...(options.contract !== undefined ? { contract: options.contract } : {}),
+      snapshots,
+      ...(options.updateSnapshots ? { updateSnapshots: true } : {}),
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }

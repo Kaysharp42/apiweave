@@ -615,6 +615,14 @@ export const apiweave = {
       invoke<null>("nodePresets", "delete", { workspaceId, presetId }),
   },
   runs: {
+    /** Records the response a run just produced as the baseline for a "matchesSnapshot" rule. */
+    acceptSnapshot: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly nodeId: string;
+      readonly ruleIndex: number;
+      readonly value: JsonValue;
+    }) => invoke<{ accepted: boolean; updatedAt: string }>("runs", "acceptSnapshot", input),
     create: (
       input: {
         readonly workspaceId: string;

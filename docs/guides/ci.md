@@ -93,6 +93,8 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--bail` | Stop a project run at its first failed workflow, whatever its row says, a repository run at the first project that did not complete, and a data-driven run at its first failed iteration. |
 | `--timeout-request <ms>` | Timeout for every request, replacing each node's own timeout. |
 | `--contract <off\|warn\|fail>` | Override every node's contract check against its `responseSchemas` (default: each node's own setting, `fail` for OpenAPI-imported nodes). |
+| `--snapshots <file>` | Where `matchesSnapshot` baselines live (default `.apiweave-snapshots.json`). Commit it so CI compares against the accepted responses. |
+| `--update-snapshots` | Record every snapshot baseline again instead of comparing. Use it when a response change is intended, then commit the updated file. |
 | `-k, --insecure` | Do not verify TLS certificates (self-signed test servers). |
 | `--proxy <url>` | Send every request through this proxy. Default: the `HTTPS_PROXY` (or `HTTP_PROXY`) variable. See [Network](#network-proxy-and-certificates). |
 | `--ca-cert <file>` | Also trust this CA certificate (PEM). Repeatable. |

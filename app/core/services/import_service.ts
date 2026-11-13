@@ -287,8 +287,14 @@ export class ImportService {
       : ((bundle.workflow.variables ?? {}) as Record<string, JsonValue>)
 
     // Everything that can reject the bundle runs before the first write.
+    // An export's id is kept when this workspace does not already hold it, so
+    // importing the same bundle again (the CLI does, every run) keeps the
+    // identity snapshot baselines and other by-id records are keyed on.
+    const declaredId = bundle.workflow.workflowId
+    const keepId = declaredId !== undefined && declaredId !== "" && this.workflows.getByIdInWorkspace(declaredId, targetWorkspaceId) === undefined
     const create: WorkflowCreate = {
       workspaceId: targetWorkspaceId,
+      ...(keepId ? { workflowId: declaredId } : {}),
       name: bundle.workflow.name || "Imported Workflow",
       description: bundle.workflow.description ?? null,
       // A workflow export carries none of its Call Workflow targets: a target

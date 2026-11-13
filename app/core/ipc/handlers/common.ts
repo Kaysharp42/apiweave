@@ -12,6 +12,7 @@ import type { ImportService } from "../../services/import_service"
 import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import type { GrpcDiscoveryService } from "../../services/grpc_discovery_service"
 import type { AssertionAuthoringService } from "../../services/assertion_authoring_service"
+import type { SnapshotRepository } from "../../repositories/SnapshotRepository"
 import { NotFoundError } from "../errors"
 import type { AppHandlerDeps } from "./app"
 
@@ -37,6 +38,8 @@ export interface HandlerDeps {
   readonly grpcDiscovery?: GrpcDiscoveryService
   /** Absent where nothing executes runs (a test router without a scheduler). */
   readonly projectRuns?: ProjectRunService
+  /** Snapshot baselines, for accepting the response a run just produced. Absent: the route refuses. */
+  readonly snapshots?: SnapshotRepository
   /**
    * The running app's versions, platform and data folder, and the file-manager
    * action About offers. Absent where there is no Electron app to describe — a

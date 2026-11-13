@@ -146,6 +146,9 @@ platform can self-install.
 Private certificate authorities, the operating system certificate store and
 client certificates (mTLS) are supported and configured in the same settings
 page or through the CLI flags.
+- **Snapshot baselines do not travel in `.aweproject` exports.** The app keeps
+  them in its local database; the CLI keeps them in `.apiweave-snapshots.json`,
+  which is meant to be committed beside the workflows it runs.
 - **gRPC calls are not proxied.** The gRPC node uses the CA, client certificate
   and TLS verification settings, but connects directly: the proxy does not apply
   to it.

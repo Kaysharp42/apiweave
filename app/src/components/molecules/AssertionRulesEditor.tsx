@@ -79,8 +79,10 @@ const OPERATORS: AssertionItem["operator"][] = [
   "notMatches",
   "type",
   "matchesSchema",
+  "matchesSnapshot",
 ];
-const VALUELESS_OPERATORS: AssertionItem["operator"][] = ["exists", "notExists"];
+/** Operators whose rule compares against a value the author types; a snapshot compares against its baseline. */
+const VALUELESS_OPERATORS: AssertionItem["operator"][] = ["exists", "notExists", "matchesSnapshot"];
 const TYPE_OPTIONS: SelectOption[] = ASSERTION_VALUE_TYPES.map((type) => ({
   label: type,
   value: type,
@@ -92,6 +94,8 @@ function getExpectedHint(operator: AssertionItem["operator"]): string {
     return "A regular expression: ^ord_\\d+$, or /pattern/flags such as /^ok$/i. Values over 100,000 characters fail the rule.";
   if (operator === "matchesSchema")
     return "A JSON Schema (draft 2020-12, or the draft its $schema names). Point the path at response.body to check the whole body.";
+  if (operator === "matchesSnapshot")
+    return "The first run records this value as the baseline; later runs must match it. Ignore paths mask values that change every run.";
   return "Strings, numbers, booleans, and template variables are accepted.";
 }
 
@@ -122,7 +126,7 @@ function getRuleSummary(rule: AssertionItem): string {
       ? "status"
       : `${rule.source}${rule.path ? `.${rule.path}` : ""}`;
   const expected =
-    rule.operator === "matchesSchema"
+    rule.operator === "matchesSchema" || rule.operator === "matchesSnapshot"
       ? ""
       : rule.expectedValue
         ? ` ${rule.expectedValue}`
@@ -265,6 +269,28 @@ export function AssertionRulesEditor({
                   placeholder="Choose a type"
                   onChange={(value) => updateRule(index, { expectedValue: value })}
                   buttonClass={SELECT_BUTTON_CLASS}
+                />
+              </FormField>
+            )}
+
+            {rule.operator === "matchesSnapshot" && (
+              <FormField
+                label="Ignore paths"
+                hint="JSONPath expressions whose values are ignored, separated by commas. e.g. $..updatedAt, $..requestId"
+              >
+                <Input
+                  aria-label="Ignore paths"
+                  value={(rule.ignorePaths ?? []).join(", ")}
+                  onChange={(event) =>
+                    updateRule(index, {
+                      ignorePaths: event.target.value
+                        .split(",")
+                        .map((path) => path.trim())
+                        .filter((path) => path !== ""),
+                    })
+                  }
+                  placeholder="$..updatedAt, $..requestId"
+                  className="font-mono"
                 />
               </FormField>
             )}

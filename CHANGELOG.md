@@ -98,6 +98,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `@xmldom/xmldom` and queried by `xpath`, both pure JavaScript; DTDs are
   refused so entity attacks never parse.
 
+- **Snapshot assertions.** The Assertion node has a `matchesSnapshot`
+  operator: the first run records the value at the rule's path and passes, and
+  later runs compare against it and fail with the differing locations and both
+  values. `ignorePaths` (JSONPath) masks values that change every run. In the
+  app a baseline lives in the local database and the response view offers
+  **Accept snapshot**; the CLI reads and writes `.apiweave-snapshots.json`
+  (`--snapshots`, `--update-snapshots`) so CI can commit it.
+
 ### Changed
 
 - **SSE and WebSocket share one stream-listener lifecycle.** The executor's

@@ -52,6 +52,7 @@ import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorP
 import { findSoapFault } from "@shared/extractors/xmlDocument"
 import type { SoapBody } from "@shared/types/SoapBody"
 import type { SoapFault } from "@shared/types/SoapFault"
+import { compareSnapshot, describeSnapshotDifference, snapshotValue, type SnapshotStore } from "./snapshots"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
@@ -178,6 +179,12 @@ export interface ExecutorDeps {
    * when it has OpenAPI metadata and `off` otherwise.
    */
   readonly contract?: ContractMode
+  /** The workflow this executor runs, which keys its snapshot baselines. Absent: snapshots cannot be stored. */
+  readonly workflowId?: string
+  /** Baseline storage for the `matchesSnapshot` operator. Undefined: that operator fails the rule. */
+  readonly snapshots?: SnapshotStore
+  /** Records every snapshot baseline again instead of comparing (the CLI's `--update-snapshots`). */
+  readonly updateSnapshots?: boolean
   /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
   readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
@@ -1403,7 +1410,7 @@ export class WorkflowExecutor {
     } else {
       const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
       await this.prepareRules([rule])
-      evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }))
+      evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }), node.nodeId)
     }
 
     const checked: NodeResult = { ...result, assertionEvaluations: [evaluation] }
@@ -1521,7 +1528,7 @@ export class WorkflowExecutor {
     if (!sent) return true
     if (until.length === 0) return attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500
     return until.every((rule, index) =>
-      this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt })).outcome === "pass")
+      this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt }), nodeId).outcome === "pass")
   }
 
   // -------------------- gRPC --------------------
@@ -2056,7 +2063,7 @@ export class WorkflowExecutor {
         continue
       }
 
-      const evaluation = this.evaluateAssertion(index, assertion, () => this.resolveAssertionResponseSource(node.nodeId, edges))
+      const evaluation = this.evaluateAssertion(index, assertion, () => this.resolveAssertionResponseSource(node.nodeId, edges), node.nodeId)
       evaluations.push(evaluation)
       if (evaluation.outcome === "fail" && failureMode === "first") stopped = true
     }
@@ -2089,8 +2096,10 @@ export class WorkflowExecutor {
       readonly expected?: unknown
       readonly expectedValue?: unknown
       readonly source?: string
+      readonly ignorePaths?: readonly string[] | undefined
     },
     resolveSource: () => AssertionResponseSource,
+    nodeId: string,
   ): AssertionEvaluation {
     const source = toAssertionSource(assertion.source)
     const path = assertion.path ?? assertion.field ?? ""
@@ -2139,7 +2148,7 @@ export class WorkflowExecutor {
     }
 
     const evaluated = { ...base, sourceNodeId, actualState: actual === undefined ? "missing" : "present", actualType: jsonValueType(actual) } as const
-    return this.compareAssertion(evaluated, actual, expected.value)
+    return this.compareAssertion(evaluated, actual, expected.value, nodeId, assertion.ignorePaths)
   }
 
   /** The verdict on `actual` once it was read; `evaluated` is everything else the evaluation reports. */
@@ -2147,8 +2156,11 @@ export class WorkflowExecutor {
     evaluated: Omit<AssertionEvaluation, "outcome" | "reasonCode" | "detail" | "schemaErrors">,
     actual: unknown,
     expected: unknown,
+    nodeId: string,
+    ignorePaths?: readonly string[],
   ): AssertionEvaluation {
     const operator = evaluated.operator
+    if (operator === "matchesSnapshot") return this.compareSnapshotBaseline(evaluated, actual, nodeId, evaluated.ruleIndex, ignorePaths ?? [])
     try {
       const violations = operator === "matchesSchema" ? this.schemaCheck(actual, expected) : null
       const passed = violations ? violations.length === 0 : this.compareValues(actual, operator, expected)
@@ -2171,6 +2183,54 @@ export class WorkflowExecutor {
         // The engine's own words for a bad pattern or schema; they carry the rule's text, not the response's.
         ...(error instanceof Error ? { detail: error.message.slice(0, 300) } : {}),
       }
+    }
+  }
+
+  /**
+   * The `matchesSnapshot` verdict: compare the response with its baseline, or
+   * record one when the rule has none yet or the run asked to update them. A
+   * missing store is a failure, not a silent pass — a rule that cannot compare
+   * has not checked anything.
+   */
+  private compareSnapshotBaseline(
+    evaluated: Omit<AssertionEvaluation, "outcome" | "reasonCode" | "detail" | "schemaErrors">,
+    actual: unknown,
+    nodeId: string,
+    ruleIndex: number,
+    ignorePaths: readonly string[],
+  ): AssertionEvaluation {
+    const store = this.deps.snapshots
+    const workflowId = this.deps.workflowId
+    if (store === undefined || workflowId === undefined) {
+      return { ...evaluated, outcome: "fail", reasonCode: "comparison-error", detail: "Snapshot storage is unavailable for this run" }
+    }
+    const value = snapshotValue(actual)
+    const baseline = store.read(workflowId, nodeId, ruleIndex)
+    if (baseline === undefined || this.deps.updateSnapshots === true) {
+      store.write(workflowId, nodeId, ruleIndex, value, this.deps.clock.isoNow())
+      return {
+        ...evaluated,
+        outcome: "pass",
+        reasonCode: "passed",
+        detail: baseline === undefined ? "Snapshot recorded" : "Snapshot updated",
+      }
+    }
+    let comparison
+    try {
+      comparison = compareSnapshot(baseline.value, value, ignorePaths)
+    } catch (error) {
+      return { ...evaluated, outcome: "fail", reasonCode: "comparison-error", detail: error instanceof Error ? error.message.slice(0, 300) : "Invalid ignore path" }
+    }
+    if (comparison.equal) {
+      return { ...evaluated, outcome: "pass", reasonCode: "passed", detail: "Snapshot matched" }
+    }
+    const first = comparison.differences[0]
+    return {
+      ...evaluated,
+      outcome: "fail",
+      reasonCode: "comparison-failed",
+      detail: `Snapshot differs in ${comparison.differenceCount} place${comparison.differenceCount === 1 ? "" : "s"}${first === undefined ? "" : ` (first: ${first.path})`}`,
+      schemaErrors: comparison.differences.map((difference) => ({ path: difference.path, message: describeSnapshotDifference(difference) })).slice(0, MAX_SCHEMA_VIOLATIONS),
     }
   }
 
@@ -3708,6 +3768,7 @@ function toAssertionOperator(value: string): AssertionOperator {
     case "notMatches":
     case "type":
     case "matchesSchema":
+    case "matchesSnapshot":
       return value
     case "equals":
     default:

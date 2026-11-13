@@ -35,5 +35,7 @@ export type { AgentRunApprovalCreate, AgentRunApprovalLookup } from "./AgentRunA
 export { NodePresetRepository } from "./NodePresetRepository"
 export type { NodePresetCreate, NodePresetUpdate } from "./NodePresetRepository"
 export { SecretRepository } from "./SecretRepository"
+export { SnapshotRepository } from "./SnapshotRepository"
+export type { StoredSnapshot } from "./SnapshotRepository"
 export { WorkspaceGitRepository } from "./WorkspaceGitRepository"
 export type { WorkspaceGitBinding, WorkspaceMerge } from "./WorkspaceGitRepository"

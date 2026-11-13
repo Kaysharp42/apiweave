@@ -14,6 +14,7 @@ import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
 import type { ContractMode } from "@shared/types/ContractMode"
 import type { AgentRunApprovalCreate, AgentRunApprovalLookup } from "../repositories/AgentRunApprovalRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
+import type { SnapshotStore } from "./snapshots"
 import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
@@ -113,6 +114,10 @@ export interface SchedulerDeps {
   readonly oauthTokens?: OAuthTokenCache
   /** Overrides every node's `contract` setting for the run (the CLI's `--contract` flag). */
   readonly contract?: ContractMode
+  /** Snapshot baselines for the `matchesSnapshot` operator (the workspace database). */
+  readonly snapshots?: SnapshotStore
+  /** Records every snapshot baseline again instead of comparing (the CLI's `--update-snapshots`). */
+  readonly updateSnapshots?: boolean
   /**
    * Writes a secret back into the scope it resolved from — a refreshed OAuth
    * token set replacing the one it was refreshed from. Absent: never written.
@@ -432,6 +437,9 @@ export class RunScheduler {
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         ...(data ? { data } : {}),
         ...(this.deps.contract !== undefined ? { contract: this.deps.contract } : {}),
+        workflowId: run.workflowId,
+        ...(this.deps.snapshots !== undefined ? { snapshots: this.deps.snapshots } : {}),
+        ...(this.deps.updateSnapshots === true ? { updateSnapshots: true } : {}),
         oauthTokens: this.deps.oauthTokens ?? new Map(),
         maskValue,
         ...(saveSecret
@@ -465,7 +473,12 @@ export class RunScheduler {
               runId: child.runId,
               // Spreading `executorDeps` carries `subRun` itself down, so a
               // sub-workflow that calls a sub-workflow is recorded too.
-              deps: { ...executorDeps, emitProgress: (event) => this.handleProgress(child.runId, mask(event)) },
+              deps: {
+                ...executorDeps,
+                // The child run's baselines belong to the workflow it runs, not the caller's.
+                workflowId,
+                emitProgress: (event) => this.handleProgress(child.runId, mask(event)),
+              },
             }
           },
           finish: (childRunId, childOutput) => {

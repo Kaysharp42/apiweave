@@ -381,8 +381,9 @@ Each assertion rule:
 | --- | --- |
 | `source` | Where the value comes from: `prev` (the upstream response object), `status`, `headers`, `cookies`, or `variables` |
 | `path` | What it means depends on `source` — see the table below |
-| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists`, `matches`, `notMatches`, `type`, `matchesSchema` — see [Validation operators](#validation-operators) |
-| `expectedValue` | Value to compare against (omitted for `exists` and `notExists`) |
+| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists`, `matches`, `notMatches`, `type`, `matchesSchema`, `matchesSnapshot` — see [Validation operators](#validation-operators) |
+| `expectedValue` | Value to compare against (omitted for `exists`, `notExists` and `matchesSnapshot`) |
+| `ignorePaths` | Only for `matchesSnapshot`: JSONPath expressions whose values are ignored when comparing |
 
 | `source` | `path` |
 | --- | --- |
@@ -394,6 +395,24 @@ A bare field name is not a path: the value at the top of a JSON body is
 `response.body.id`, not `id`. `count` takes a non-negative integer and compares
 the length of an array or string; `status` accepts only the numeric comparison
 operators.
+
+#### Snapshots
+
+`matchesSnapshot` records the value at `path` on the first run that has no
+baseline yet, and passes. Later runs compare against that baseline and fail
+with the differing locations when it changed. Values that change every run
+(timestamps, ids, etags) go in `ignorePaths` as JSONPath expressions, for
+example `$..updatedAt` and `$..requestId`; a location one selects is equal on
+both sides, whatever it holds.
+
+The baseline belongs to the rule, so a node can snapshot several values
+separately. In the app, the node's response view offers **Accept snapshot** for
+each snapshot rule, which records the response just received as the new
+baseline. In the CLI, `--update-snapshots` records every baseline again instead
+of comparing, and `--snapshots <file>` (default `.apiweave-snapshots.json`)
+names the file the baselines live in, so committing that file lets CI compare
+against what was accepted locally. The app keeps its baselines in its local
+database.
 
 #### Validation operators
 
