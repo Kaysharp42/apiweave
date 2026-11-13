@@ -6,4 +6,5 @@ export type HTTPRequestBodyType =
   | "x-www-form-urlencoded"
   | "binary"
   | "graphql"
-  | "jsonrpc";
+  | "jsonrpc"
+  | "soap";

@@ -32,6 +32,9 @@ export interface HttpRequestNode {
     readonly queryParams: KeyValuePair[]
     readonly cookies: KeyValuePair[]
     readonly body?: string | undefined
+    /** Present on a WSDL-imported operation, which sends a SOAP envelope. */
+    readonly bodyType?: "soap" | undefined
+    readonly soap?: { readonly version: "1.1" | "1.2"; readonly action?: string | undefined; readonly envelope: string } | undefined
     readonly timeout: number
     readonly followRedirects: boolean
     readonly extractors: Record<string, string>

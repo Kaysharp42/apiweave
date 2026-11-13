@@ -61,6 +61,7 @@ import { JwtAuthFields } from "./JwtAuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
 import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
 import { JsonrpcBodyEditor } from "./JsonrpcBodyEditor";
+import { SoapBodyEditor } from "./SoapBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
 import type {
   AuthConfig,
@@ -258,6 +259,7 @@ const BODY_TYPES: SelectOption[] = [
   { label: "Binary", value: "binary" },
   { label: "GraphQL", value: "graphql" },
   { label: "JSON-RPC", value: "jsonrpc" },
+  { label: "SOAP", value: "soap" },
 ];
 
 function JsonBodyEditor({
@@ -952,6 +954,14 @@ export function HTTPRequestConfigPanel({
             allowRpcError={draftConfig.allowRpcError ?? false}
             onChange={(jsonrpc) => updateConfig({ jsonrpc })}
             onAllowRpcErrorChange={(allowRpcError) => updateConfig({ allowRpcError })}
+          />
+        )}
+
+        {draftConfig.bodyType === "soap" && (
+          <SoapBodyEditor
+            soap={draftConfig.soap}
+            isDarkMode={isDarkMode}
+            onChange={(soap) => updateConfig({ soap })}
           />
         )}
 

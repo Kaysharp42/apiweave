@@ -54,6 +54,12 @@ const ImportedNodeSchema: z.ZodType<ImportedNode> = z.discriminatedUnion("type",
       queryParams: z.array(KeyValuePairSchema),
       cookies: z.array(KeyValuePairSchema),
       body: z.string().optional(),
+      bodyType: z.literal("soap").optional(),
+      soap: z.object({
+        version: z.enum(["1.1", "1.2"]),
+        action: z.string().optional().describe("The operation's SOAP action."),
+        envelope: z.string(),
+      }).strict().optional(),
       timeout: z.number(),
       followRedirects: z.boolean(),
       extractors: z.record(z.string(), z.string()),
@@ -215,6 +221,23 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
         return imports.parseCurl(i.curlCommand, sanitizeOpts)
       }
       return await imports.importCurlAsWorkflow(i.workspaceId, i.curlCommand, sanitizeOpts)
+    },
+  })
+
+  router.register("workflows", "importWsdl", {
+    input: z.object({
+      workspaceId: ws,
+      wsdlText: z.string().min(1),
+      endpointUrl: z.string().optional(),
+      forceHttps: z.boolean().optional(),
+    }).strict(),
+    output: z.unknown(),
+    handle: async (i) => {
+      await deps.workspaces.get(i.workspaceId)
+      return imports.parseWsdl(i.wsdlText, {
+        ...(i.endpointUrl === undefined ? {} : { endpointUrl: i.endpointUrl }),
+        ...(i.forceHttps === undefined ? {} : { forceHttps: i.forceHttps }),
+      })
     },
   })
 

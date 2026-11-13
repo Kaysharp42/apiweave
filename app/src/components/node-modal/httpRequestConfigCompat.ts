@@ -8,6 +8,7 @@ import {
 import type {
   AssertionItem,
   GraphqlBody,
+  SoapBody,
   JsonrpcBody,
   AuthConfig,
   FormDataEntry,
@@ -387,6 +388,18 @@ export function normalizeGraphql(value: unknown): GraphqlBody | undefined {
   };
 }
 
+/** A missing version and an empty action are dropped, so the request leaves them out. */
+export function normalizeSoap(value: unknown): SoapBody | undefined {
+  if (!isRecord(value)) return undefined;
+  const action = getString(value.action);
+  const version = value.version === "1.2" ? "1.2" : value.version === "1.1" ? "1.1" : undefined;
+  return {
+    envelope: getString(value.envelope),
+    ...(version === undefined ? {} : { version }),
+    ...(action ? { action } : {}),
+  };
+}
+
 /** Empty params and a falsy notification flag are dropped, so the request leaves them out. */
 export function normalizeJsonrpc(value: unknown): JsonrpcBody | undefined {
   if (!isRecord(value)) return undefined;
@@ -412,6 +425,7 @@ function normalizeBodyType(value: unknown): HTTPRequestBodyType {
     value === "x-www-form-urlencoded" ||
     value === "binary" ||
     value === "graphql" ||
+    value === "soap" ||
     value === "jsonrpc"
   ) {
     return value;
@@ -433,6 +447,7 @@ export function normalizeHttpRequestConfig(
     body: bodyToString(config.body),
     bodyType: normalizeBodyType(config.bodyType),
     graphql: normalizeGraphql(config.graphql),
+    soap: normalizeSoap(config.soap),
     jsonrpc: normalizeJsonrpc(config.jsonrpc),
     allowRpcError: getBoolean(config.allowRpcError, false),
     timeout: Math.min(Math.max(getNumber(config.timeout, 30), 1), 300),

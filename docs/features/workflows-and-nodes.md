@@ -106,6 +106,8 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
 
+**SOAP bodies.** Set `bodyType` to `soap` to send a SOAP envelope. `soap.version` (`1.1` default, `1.2`) decides the Content-Type: 1.1 sends `text/xml` with a quoted `SOAPAction` header, 1.2 sends `application/soap+xml` with the action in the Content-Type parameter. `soap.action` and `soap.envelope` are substituted, and the envelope is sent exactly as written. A SOAP Fault in the response fails the node (unless its status is the `expectedStatus`) with the fault's code and reason, and `response.fault` holds them; read other fields with XPath extractors (`xpath://*[local-name()="Total"]/text()`), which parse the XML body on demand. Import a WSDL 1.1 document from **Import to Add Nodes → WSDL** to get one POST node per operation, addressed from its port's `soap:address` and pre-filled with an envelope skeleton.
+
 **Handles:** one input, one output.
 
 #### Cookies

@@ -49,6 +49,9 @@ import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS } from "@shared/zod-schemas/WorkflowCallForEachSchema"
 import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { findSoapFault } from "@shared/extractors/xmlDocument"
+import type { SoapBody } from "@shared/types/SoapBody"
+import type { SoapFault } from "@shared/types/SoapFault"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
@@ -496,6 +499,13 @@ export function retryDelayMs(retry: HttpRetryConfig, attempt: number): number {
  * with a `code` and a `message`; both are read leniently so a malformed error
  * still fails the node rather than passing through.
  */
+/** The node's failure message for a SOAP Fault: its code and reason, whichever the version supplied. */
+function soapFaultText(fault: SoapFault): string {
+  const code = fault.code === undefined ? "" : ` ${fault.code}`
+  const reason = fault.reason === undefined ? "" : `: ${fault.reason}`
+  return `SOAP Fault${code}${reason}`
+}
+
 function jsonRpcErrorFailure(body: unknown): string | undefined {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined
   const record = body as Record<string, unknown>
@@ -1168,7 +1178,9 @@ export class WorkflowExecutor {
         ? this.buildGraphqlRequest(config["graphql"] as GraphqlBody | undefined, method, headers, queryParams)
         : bodyType === "jsonrpc"
           ? this.buildJsonrpcRequest(config["jsonrpc"] as JsonrpcBody | undefined, headers)
-          : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+          : bodyType === "soap"
+            ? this.buildSoapRequest(config["soap"] as SoapBody | undefined, headers)
+            : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
       return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url: appendQueryParams(url, queryParams), duration: 0 })
     }
@@ -1305,6 +1317,13 @@ export class WorkflowExecutor {
         status = "error"
       }
 
+      // A SOAP Fault is the message's own failure report on an HTTP 200. It
+      // fails the node unless the expected status says this outcome was wanted.
+      const soapFault = bodyType === "soap" && typeof responseBody === "string" ? findSoapFault(responseBody) : undefined
+      if (soapFault !== undefined && expectedStatus === undefined) {
+        status = "error"
+      }
+
       const responseHeaders = toHeaderRecord(response.headers)
 
       const result: NodeResult = {
@@ -1312,6 +1331,7 @@ export class WorkflowExecutor {
         statusCode,
         ...(expectedStatus !== undefined ? { expectedStatus } : {}),
         ...(rpcErrorFailure !== undefined ? { error: rpcErrorFailure } : {}),
+        ...(soapFault !== undefined && status === "error" ? { error: soapFaultText(soapFault) } : {}),
         headers: responseHeaders,
         body: responseBody,
         duration,
@@ -1324,6 +1344,7 @@ export class WorkflowExecutor {
           ...(truncated ? { truncated: true } : {}),
           ...(responseText === null ? { bodyEncoding: "base64" as const } : {}),
           ...(responseSizeBytes !== undefined ? { responseSizeBytes } : {}),
+          ...(soapFault === undefined ? {} : { fault: soapFault }),
         },
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
@@ -3374,6 +3395,29 @@ export class WorkflowExecutor {
       headers["Content-Type"] = "application/json"
     }
     return JSON.stringify({ query, ...(variables === undefined ? {} : { variables }), ...(operationName === undefined ? {} : { operationName }) })
+  }
+
+  /**
+   * A SOAP request: the envelope as XML, with the Content-Type the version
+   * prescribes. SOAP 1.1 sends `text/xml` plus a `SOAPAction` header; SOAP 1.2
+   * sends `application/soap+xml` with the action in the Content-Type parameter.
+   * An explicit Content-Type or SOAPAction header on the node wins.
+   */
+  private buildSoapRequest(soap: SoapBody | undefined, headers: Record<string, string>): string {
+    const envelope = this.substituteVariables(soap?.envelope ?? "").trim()
+    if (envelope === "") throw new Error("SOAP envelope is required")
+    const version = soap?.version ?? "1.1"
+    const action = this.substituteVariables(soap?.action ?? "").trim()
+    const hasHeader = (name: string): boolean => Object.keys(headers).some((key) => key.toLowerCase() === name)
+    if (!hasHeader("content-type")) {
+      headers["Content-Type"] = version === "1.2"
+        ? `application/soap+xml; charset=utf-8${action === "" ? "" : `; action="${action.replace(/"/g, "")}"`}`
+        : "text/xml; charset=utf-8"
+    }
+    if (version === "1.1" && !hasHeader("soapaction") && action !== "") {
+      headers["SOAPAction"] = `"${action.replace(/"/g, "")}"`
+    }
+    return envelope
   }
 
   /**
