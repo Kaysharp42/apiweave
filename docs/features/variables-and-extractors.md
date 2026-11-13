@@ -124,7 +124,11 @@ You can add more than one extractor per node. Each extractor writes to its own w
 
 ## Path Syntax
 
-Paths are written in dot notation with `[index]` for arrays. They start with `response.` because every extractor reads from a node's response object. This is not JSONPath: there is no `$` root, no wildcards (`*`), no recursive descent (`..`), no filters, no bracketed keys (`['a.b']`) and no nested array indices (`[0][1]`). A key that contains a dot cannot be addressed.
+An extractor path selects a value from the node's response object. Two grammars are supported and are chosen by the first character of the path.
+
+### Dot notation (default)
+
+Paths are written in dot notation with `[index]` for arrays. They start with `response.` because every extractor reads from a node's response object. This grammar is deliberately small: there are no wildcards, no recursive descent, no filters, no bracketed keys (`['a.b']`) and no nested array indices (`[0][1]`). A key that contains a dot cannot be addressed.
 
 ```text
 response.statusCode                 # integer status code
@@ -139,7 +143,23 @@ response.body.errors[0].message     # first error message
 response.headers.x-request-id       # custom header
 ```
 
-For a full grammar, see the [Placeholders Reference](../reference/placeholders.md).
+### JSONPath (`$`-prefixed)
+
+A path beginning with `$` is evaluated as an RFC 9535 JSONPath expression rooted at the same node result, so `$.response.body.items[?@.id==3].name` addresses the same value `response.body.items[0].id` does when the first item has `id == 3`. JSONPath adds the missing expressiveness: recursive descent, wildcards, filters, unions, slices and bracketed keys.
+
+```text
+$.response.body.items[*].id                    # every item id, as an array
+$.response.body.items[?@.active].name          # names of active items
+$.response.body.items[0].id                    # first item id (a scalar)
+$..id                                           # every "id" anywhere in the body
+$.response.body.store.book[-1].title           # last book, via a negative slice
+```
+
+A JSONPath query that is singular (only child, name and index selectors) returns the selected value directly; a non-singular query (a wildcard, recursive descent, filter, union or slice anywhere in the path) returns an array of every match, so `count` and `contains` assertions operate on it. A query that matches nothing is reported as `path-missing`, and an expression the parser rejects is a distinct `invalid-path` failure, surfaced in the node's extractor row and in the graph diagnostics.
+
+The same `$` grammar applies everywhere a path appears — extractors, Assertion rules, stream finish conditions and the response-tree preview — so the runner and the editor always agree on what a path addresses.
+
+For the full placeholder grammar and resolution order, see the [Placeholders Reference](../reference/placeholders.md).
 
 ## Managing Variables
 
