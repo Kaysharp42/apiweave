@@ -225,6 +225,16 @@ export class RunScheduler {
     return run.runId
   }
 
+  /** A finished run's per-node results, for a load run to fold before clearing them. */
+  public resultsOf(runId: string): readonly RunResult[] {
+    return this.deps.runs.getById(runId)?.results ?? []
+  }
+
+  /** Drop a finished iteration's per-node results and bodies: load-mode retention. */
+  public clearIterationResults(runId: string): void {
+    this.deps.runs.clearNodeResults(runId)
+  }
+
   public cancel(runId: string): boolean {
     const controller = this.activeRuns.get(runId)
     if (controller) {
