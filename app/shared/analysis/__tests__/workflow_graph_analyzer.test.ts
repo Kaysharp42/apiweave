@@ -95,6 +95,60 @@ describe("workflow graph analyzer", () => {
     })
   })
 
+  it("accepts a $-prefixed JSONPath extractor and assertion path", () => {
+    const workflow = healthyWorkflow()
+    const jsonPathWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? {
+            ...node,
+            config: {
+              ...node.config,
+              extractors: { firstId: "$.response.body.items[*].id" },
+            },
+          }
+        : node.nodeId === "assert-login"
+          ? {
+              ...node,
+              config: {
+                assertions: [{ source: "prev", path: "$.response.body.items[?@.id==3].name", operator: "exists" }],
+              },
+            }
+          : node),
+    })
+
+    const codes = analyzeWorkflowGraph(jsonPathWorkflow).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("extractor_path_invalid")
+    expect(codes).not.toContain("assertion_source_path_invalid")
+  })
+
+  it("flags an invalid $-prefixed JSONPath as an invalid path", () => {
+    const workflow = healthyWorkflow()
+    const jsonPathWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? {
+            ...node,
+            config: {
+              ...node.config,
+              extractors: { bad: "$.response.body[" },
+            },
+          }
+        : node.nodeId === "assert-login"
+          ? {
+              ...node,
+              config: {
+                assertions: [{ source: "prev", path: "$.response.body[", operator: "exists" }],
+              },
+            }
+          : node),
+    })
+
+    const codes = analyzeWorkflowGraph(jsonPathWorkflow).diagnostics.map((item) => item.code)
+    expect(codes).toContain("extractor_path_invalid")
+    expect(codes).toContain("assertion_source_path_invalid")
+  })
+
   it("accepts an assertion immediately downstream from an SSE stream", () => {
     const workflow = healthyWorkflow()
     const streamWorkflow = WorkflowSchema.parse({

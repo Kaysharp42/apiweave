@@ -9,6 +9,19 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **RFC 9535 JSONPath in the path resolver.** An extractor or assertion path
+  beginning with `$` is now evaluated as JSONPath rooted at the node result
+  (`$.response.body.items[?@.id==3].name`), alongside the existing dot grammar.
+  A singular query returns the selected value, a non-singular query returns an
+  array of every match, a query that matches nothing reports `path-missing`,
+  and an expression the parser rejects reports a new `invalid-path` failure
+  reason, surfaced in validation and the extractor preview. The grammar
+  dispatch lives in `resolveExtractorPath`.
+
 ## [1.0.0] — 2026-11-10
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported

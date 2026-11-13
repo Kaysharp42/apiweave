@@ -445,10 +445,18 @@ function ExtractorRow({
               {previewValue(resolution.value, EXTRACTOR_PREVIEW_LIMIT)}
             </span>
           ) : (
-            <span className="text-status-warning">
-              {resolution.failureReason === "path-missing"
-                ? "Not found in the last response"
-                : "The last response had a different shape at this path"}
+            <span
+              className={
+                resolution.failureReason === "invalid-path"
+                  ? "text-status-error"
+                  : "text-status-warning"
+              }
+            >
+              {resolution.failureReason === "invalid-path"
+                ? "Invalid path expression"
+                : resolution.failureReason === "path-missing"
+                  ? "Not found in the last response"
+                  : "The last response had a different shape at this path"}
             </span>
           )}
         </p>

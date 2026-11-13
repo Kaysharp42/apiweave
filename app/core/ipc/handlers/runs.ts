@@ -72,7 +72,7 @@ const nodeResultInput = z.object({
   nodeId: z.string().min(1).optional().describe("One node to inspect. Prefer nodeIds for up to 50 nodes in one call."),
   nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes to inspect, in the order to return. Combined with nodeId at most 50."),
   sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). Omitted sections are named, never silently absent."),
-  path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) selecting within the RESPONSE body. A miss reports path-missing or type-mismatch distinctly."),
+  path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) or RFC 9535 JSONPath ($.response.body.items[?@.id==3].name) selecting within the RESPONSE body. A miss reports path-missing, type-mismatch or invalid-path distinctly."),
   maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per body in bytes (default 2048)."),
   start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
   end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),

@@ -9,7 +9,7 @@ import { JsonValueSchema } from "./JsonValueSchema"
  */
 export const SseFinishConditionSchema = z
   .object({
-    path: z.string().min(1).max(1024).describe('Event value to inspect: "event", "id", "data", or a JSON payload path such as "data.status".'),
+    path: z.string().min(1).max(1024).describe('Event value to inspect: "event", "id", "data", or a JSON payload path such as "data.status"; a "$"-prefixed path is JSONPath rooted at the event, e.g. "$.data.status".'),
     operator: AssertionOperatorSchema.describe("Comparison to apply to the event value."),
     expectedValue: JsonValueSchema.optional().describe("Expected value. Omit for exists and notExists."),
   })
