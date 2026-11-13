@@ -21,13 +21,19 @@ export const STREAM_MAX_CAPTURE_BYTES = 1024 * 1024
 export type StreamMessage = Readonly<Record<string, unknown>>
 
 /** Why a stream listener closed. */
-export type StreamTermination = "message-limit" | "finish-condition" | "stream-ended"
+export type StreamTermination = "event-limit" | "message-limit" | "finish-condition" | "stream-ended"
 
 /** The collected messages plus why the listener stopped. */
 export interface StreamCollection {
   readonly messages: readonly StreamMessage[]
   readonly messageCount: number
   readonly termination: StreamTermination
+}
+
+/** What the handshake reported: an HTTP status (101 for WebSocket) and response headers. */
+export interface StreamHandshake {
+  readonly statusCode: number
+  readonly headers: Record<string, string>
 }
 
 /**
@@ -43,6 +49,12 @@ export interface StreamCollection {
  * executor stays protocol-agnostic.
  */
 export interface StreamAdapter {
+  /** Names the protocol in node errors: `SSE`, `WebSocket`. */
+  readonly label: string
+  /** What one message is called in node errors: `event`, `message`. */
+  readonly unit: string
+  /** The termination reported when the message limit closes the stream. */
+  readonly limitTermination: "event-limit" | "message-limit"
   /** Complete the handshake. Resolves when ready; rejects to fail the node. */
   open(): Promise<void>
   /** The normalized messages, yielded as they arrive. */
@@ -50,7 +62,7 @@ export interface StreamAdapter {
   /** Close the connection, releasing any socket. Idempotent. */
   close(): Promise<void>
   /** Handshake facts merged into the node result (SSE's statusCode and headers). */
-  readonly handshake: Readonly<Record<string, unknown>>
+  readonly handshake: StreamHandshake
   /** The collected `response.body`: shared fields plus protocol extras. */
   resultBody(collection: StreamCollection): Record<string, unknown>
 }
@@ -93,7 +105,7 @@ export async function collectStreamMessages(
       if (finished) {
         termination = "finish-condition"
       } else if (options.finishWhen === undefined && messages.length >= options.maxMessages) {
-        termination = "message-limit"
+        termination = adapter.limitTermination
       }
       if (termination !== null) break
     }

@@ -2,7 +2,7 @@ import type { Response } from "undici"
 import type { CookieJar } from "tough-cookie"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../../db/constants"
 import { toHeaderRecord, type SafeHttp } from "../safe_http"
-import { STREAM_MAX_CAPTURE_BYTES, StreamHandshakeError, type StreamAdapter, type StreamCollection, type StreamMessage } from "../stream_listener"
+import { STREAM_MAX_CAPTURE_BYTES, StreamHandshakeError, type StreamAdapter, type StreamCollection, type StreamHandshake, type StreamMessage } from "../stream_listener"
 
 export interface SseAdapterOptions {
   readonly http: SafeHttp
@@ -13,10 +13,15 @@ export interface SseAdapterOptions {
   readonly followRedirects: boolean
   readonly cookieJar?: CookieJar
   readonly timeoutMs: number
+  /** Only events whose `event` field equals this are yielded. */
+  readonly eventType?: string
 }
 
 /** A Server-Sent Events stream: the HTTP handshake, then parsed event messages. */
 export class SseAdapter implements StreamAdapter {
+  public readonly label = "SSE"
+  public readonly unit = "event"
+  public readonly limitTermination = "event-limit"
   private response: Response | undefined
   private statusCode = 0
   private responseHeaders: Record<string, string> = {}
@@ -54,7 +59,7 @@ export class SseAdapter implements StreamAdapter {
     }
   }
 
-  public get handshake(): Record<string, unknown> {
+  public get handshake(): StreamHandshake {
     return { statusCode: this.statusCode, headers: this.responseHeaders }
   }
 
@@ -69,13 +74,17 @@ export class SseAdapter implements StreamAdapter {
 
   public async *[Symbol.asyncIterator](): AsyncGenerator<StreamMessage> {
     if (!this.response) return
-    yield* iterateSseEvents(this.response, (retryMs) => {
+    for await (const message of iterateSseEvents(this.response, (retryMs) => {
       this.retryMsValue = retryMs
-    })
+    })) {
+      if (this.options.eventType === undefined || message["event"] === this.options.eventType) yield message
+    }
   }
 
   public async close(): Promise<void> {
-    await this.response?.body?.cancel()
+    // A body the iterator is reading is cancelled by the iterator's own cleanup.
+    const body = this.response?.body
+    if (body && !body.locked) await body.cancel()
   }
 }
 
@@ -139,18 +148,22 @@ export async function* iterateSseEvents(
     }
   }
 
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    receivedBytes += value.byteLength
-    if (receivedBytes > STREAM_MAX_CAPTURE_BYTES) {
-      await reader.cancel()
-      throw new Error(`SSE response exceeded ${STREAM_MAX_CAPTURE_BYTES} byte capture limit`)
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      receivedBytes += value.byteLength
+      if (receivedBytes > STREAM_MAX_CAPTURE_BYTES) {
+        throw new Error(`SSE response exceeded ${STREAM_MAX_CAPTURE_BYTES} byte capture limit`)
+      }
+      buffer += decoder.decode(value, { stream: true })
+      for (const message of flushBufferedLines()) yield message
     }
-    buffer += decoder.decode(value, { stream: true })
-    for (const message of flushBufferedLines()) yield message
-  }
 
-  buffer += decoder.decode()
-  for (const message of flushBufferedLines(true)) yield message
+    buffer += decoder.decode()
+    for (const message of flushBufferedLines(true)) yield message
+  } finally {
+    // Stopping early (limit reached, finish rule matched) or failing: drop the connection.
+    await reader.cancel().catch(() => undefined)
+  }
 }

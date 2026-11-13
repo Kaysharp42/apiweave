@@ -97,8 +97,8 @@ export class SafeHttp {
 
   /**
    * The dispatcher (proxy, trusted CAs, client certificate) for a request to
-   * `url`, or undefined for undici's global agent. Exposed so a non-fetch
-   * protocol (WebSocket) can reuse the same network settings.
+   * `url` (an http(s) URL), or undefined for undici's global agent. Exposed so
+   * a non-fetch protocol (WebSocket) can reuse the same network settings.
    */
   public dispatcherFor(url: string, rejectUnauthorized: boolean): Dispatcher | undefined {
     return this.network.dispatcherFor(url, rejectUnauthorized)
@@ -122,6 +122,26 @@ export class SafeHttp {
   public validateUrl(url: string): void {
     if (!this.isSafeUrl(url)) {
       throw new SafeUrlError(`Not a requestable http(s) URL: ${url}`)
+    }
+  }
+
+  /**
+   * Throw `SafeUrlError` if `url` is not a connectable ws(s) URL, or names a
+   * host this view was not allowed to reach. WebSocket nodes call it before
+   * connecting, since they do not go through `safeFetch`.
+   */
+  public validateWebSocketUrl(url: string): void {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      throw new SafeUrlError(`Not a WebSocket (ws:// or wss://) URL: ${url}`)
+    }
+    if ((parsed.protocol !== "ws:" && parsed.protocol !== "wss:") || stripIpv6Brackets(parsed.hostname).length === 0) {
+      throw new SafeUrlError(`Not a WebSocket (ws:// or wss://) URL: ${url}`)
+    }
+    if (this.allowedHosts && !this.allowedHosts.has(parsed.host)) {
+      throw new SafeUrlError(`Refused: ${parsed.host} is not among the hosts this run was allowed to reach`)
     }
   }
 
