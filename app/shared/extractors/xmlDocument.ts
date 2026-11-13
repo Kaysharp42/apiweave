@@ -1,4 +1,5 @@
 import { DOMParser } from "@xmldom/xmldom"
+import type { Attr, Document, Element } from "@xmldom/xmldom"
 import type { SoapFault } from "../types/SoapFault"
 
 /** The largest XML text this module parses, a guard against pathological nesting. */
@@ -62,9 +63,10 @@ export function documentNamespaces(document: Document): Record<string, string> {
   const namespaces: Record<string, string> = {}
   const visit = (element: Element): void => {
     for (let index = 0; index < element.attributes.length; index++) {
-      const attribute = element.attributes.item(index)
-      if (attribute?.prefix === "xmlns" && !(attribute.localName in namespaces)) {
-        namespaces[attribute.localName] = attribute.value
+      const attribute = element.attributes.item(index) as Attr | null
+      const prefix = attribute?.localName
+      if (attribute?.prefix === "xmlns" && prefix && !(prefix in namespaces)) {
+        namespaces[prefix] = attribute.value
       }
     }
     for (let child = element.firstChild; child; child = child.nextSibling) {

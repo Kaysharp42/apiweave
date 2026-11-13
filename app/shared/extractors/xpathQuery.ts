@@ -80,8 +80,10 @@ export function resolveXPath(data: unknown, path: string): ExtractorResolution {
 
   let selected: xpath.SelectReturnType
   try {
+    // `xpath` types its context node as the DOM's `Node`; an xmldom document is
+    // a structurally compatible node from a different type namespace.
     const namespaces = { ...documentNamespaces(document), ...parsed.namespaces }
-    selected = xpath.parse(parsed.expression).evaluate({ node: document, namespaces }) as unknown as xpath.SelectReturnType
+    selected = xpath.useNamespaces(namespaces)(parsed.expression, document as unknown as Node)
   } catch {
     return { value: undefined, failureReason: "invalid-path" }
   }

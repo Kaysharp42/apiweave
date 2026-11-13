@@ -48,7 +48,7 @@ import type { JsonrpcBody } from "@shared/types/JsonrpcBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS } from "@shared/zod-schemas/WorkflowCallForEachSchema"
-import { resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
@@ -1924,7 +1924,12 @@ export class WorkflowExecutor {
       const expected = this.resolveAssertionExpected(toAssertionOperator(condition.operator), condition.expectedValue)
       if (expected.state === "unresolved-template") return false
       try {
-        return this.compareValues(this.resolveJsonPathValue(value, condition.path), condition.operator, expected.value)
+        // A query path is rooted at the whole message; a dot path reads off the
+        // same value. Both go through the shared resolver's grammar.
+        const actual = isQueryPath(condition.path)
+          ? this.resolveQueryPathValue(value, condition.path)
+          : this.getNestedValue(value, condition.path)
+        return this.compareValues(actual, condition.operator, expected.value)
       } catch {
         return false
       }
@@ -2154,7 +2159,7 @@ export class WorkflowExecutor {
       // A `$`-prefixed path is JSONPath rooted at the node result; a dot path
       // strips the optional `response.` prefix and reads the rest off the
       // result directly. Both address the same value.
-      if (path.startsWith("$")) {
+      if (isQueryPath(path)) {
         const resolution = resolveExtractorPath(result, path)
         return resolution.failureReason === null ? resolution.value : undefined
       }
@@ -3031,8 +3036,8 @@ export class WorkflowExecutor {
     return resolveExtractorPath(obj, path)
   }
 
-  /** Resolves a `$`-prefixed JSONPath against `data`, reading `undefined` when it fails. */
-  private resolveJsonPathValue(data: unknown, path: string): unknown {
+  /** Resolves a query path (JSONPath or XPath) against `data`, reading `undefined` when it fails. */
+  private resolveQueryPathValue(data: unknown, path: string): unknown {
     const resolution = resolveExtractorPath(data, path)
     return resolution.failureReason === null ? resolution.value : undefined
   }

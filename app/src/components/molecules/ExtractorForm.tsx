@@ -10,9 +10,12 @@ import type { ExtractorFormProps } from "../../types";
 
 const RESPONSE_PATH_PREFIX = "response.body.";
 
+/** A `$` JSONPath or `xpath:` expression is already rooted at the response; a bare field is not. */
 export function normalizeExtractorPath(path: string): string {
   const trimmed = path.trim();
-  return trimmed.startsWith("response.")
+  return trimmed.startsWith("response.") ||
+    trimmed.startsWith("$") ||
+    trimmed.startsWith("xpath:")
     ? trimmed
     : `${RESPONSE_PATH_PREFIX}${trimmed}`;
 }

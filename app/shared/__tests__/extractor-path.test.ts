@@ -3,6 +3,8 @@ import {
   buildBodyExtractorPath,
   isJsonPath,
   isValidJsonPath,
+  isXPath,
+  isValidXPath,
   resolveExtractorPath,
 } from "../extractors/extractorPath"
 
@@ -192,5 +194,83 @@ describe("isJsonPath / isValidJsonPath", () => {
     expect(isValidJsonPath("$.")).toBe(false)
     expect(isValidJsonPath("response.body.id")).toBe(false)
     expect(isValidJsonPath("")).toBe(false)
+  })
+})
+
+/** A SOAP 1.1 envelope with a namespaced payload, the shape the XPath branch reads. */
+const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="urn:temperature">
+  <soap:Body>
+    <t:GetTemperatureResponse>
+      <t:Place>Oslo</t:Place>
+      <t:Total unit="C">-4.5</t:Total>
+      <t:Reading hour="06">-6</t:Reading>
+      <t:Reading hour="12">-3</t:Reading>
+    </t:GetTemperatureResponse>
+  </soap:Body>
+</soap:Envelope>`
+
+const soapResult = {
+  statusCode: 200,
+  response: { statusCode: 200, body: soapEnvelope, headers: { "content-type": "text/xml" } },
+}
+
+describe("resolveExtractorPath XPath", () => {
+  test("reads a namespaced element by a prefix the document declares", () => {
+    expect(resolveExtractorPath(soapResult, "xpath:/soap:Envelope/soap:Body/t:GetTemperatureResponse/t:Total")).toEqual({
+      value: "-4.5",
+      failureReason: null,
+    })
+  })
+
+  test("reads a namespaced element through local-name(), which needs no prefix", () => {
+    expect(resolveExtractorPath(soapResult, "xpath://*[local-name()=\"Total\"]/text()")).toEqual({ value: "-4.5", failureReason: null })
+    expect(resolveExtractorPath(soapResult, "xpath://*[local-name()=\"Place\"]/text()")).toEqual({ value: "Oslo", failureReason: null })
+  })
+
+  test("binds a prefix declared inline, which wins over the document's own", () => {
+    const path = "xpath[s=http://schemas.xmlsoap.org/soap/envelope/;t=urn:temperature]:/s:Envelope/s:Body/t:GetTemperatureResponse/t:Reading"
+    expect(resolveExtractorPath(soapResult, path)).toEqual({ value: ["-6", "-3"], failureReason: null })
+  })
+
+  test("returns an attribute's value and a count() number", () => {
+    expect(resolveExtractorPath(soapResult, "xpath://*[local-name()=\"Total\"]/@unit")).toEqual({ value: "C", failureReason: null })
+    expect(resolveExtractorPath(soapResult, "xpath:count(//*[local-name()=\"Reading\"])")).toEqual({ value: 2, failureReason: null })
+  })
+
+  test("is path-missing when nothing matches, invalid-path when the expression is bad", () => {
+    expect(resolveExtractorPath(soapResult, "xpath://*[local-name()=\"Nope\"]")).toEqual({ value: undefined, failureReason: "path-missing" })
+    expect(resolveExtractorPath(soapResult, "xpath://*[local-name(")).toEqual({ value: undefined, failureReason: "invalid-path" })
+    expect(resolveExtractorPath(soapResult, "xpath[s=urn:x]:/s:Envelope")).toEqual({ value: undefined, failureReason: "path-missing" })
+  })
+
+  test("is type-mismatch for a JSON body, a truncated body or a DTD", () => {
+    const json = { response: { body: { total: 1 } } }
+    expect(resolveExtractorPath(json, "xpath://total")).toEqual({ value: undefined, failureReason: "type-mismatch" })
+    const dtd = { response: { body: '<!DOCTYPE r [<!ENTITY e "x">]><r>&e;</r>' } }
+    expect(resolveExtractorPath(dtd, "xpath:/r")).toEqual({ value: undefined, failureReason: "type-mismatch" })
+    expect(resolveExtractorPath(soapResult, 42 as unknown as string)).toEqual({ value: undefined, failureReason: "path-missing" })
+  })
+
+  test("does not expand an internal entity, so a billion-laughs bomb is never parsed", () => {
+    const bomb = `<!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;">]><lolz>&lol2;</lolz>`
+    expect(resolveExtractorPath({ response: { body: bomb } }, "xpath:/lolz")).toEqual({ value: undefined, failureReason: "type-mismatch" })
+  })
+
+  test("isXPath and isValidXPath agree with the dispatch", () => {
+    expect(isXPath("xpath://a")).toBe(true)
+    expect(isXPath("xpath[t=urn:x]:/t:a")).toBe(true)
+    expect(isXPath("$..a")).toBe(false)
+    expect(isXPath("response.body.a")).toBe(false)
+    expect(isValidXPath("xpath://a")).toBe(true)
+    expect(isValidXPath("xpath:")).toBe(false)
+    expect(isValidXPath("xpath[bad]:/a")).toBe(false)
+    expect(isValidXPath("xpath:not-a-path(")).toBe(false)
+    expect(isValidXPath("response.body.a")).toBe(false)
+  })
+
+  test("keeps the dot and JSONPath grammars intact", () => {
+    expect(resolveExtractorPath(soapResult, "response.statusCode")).toEqual({ value: 200, failureReason: null })
+    expect(resolveExtractorPath(soapResult, "$.response.statusCode")).toEqual({ value: 200, failureReason: null })
   })
 })
