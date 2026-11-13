@@ -226,6 +226,7 @@ function loadSuite(loadRun: LoadRun): ReportSuite {
       details: [],
       attempts: null,
       logs: [],
+      warnings: [],
     }
   })
   if (loadRun.settings.thresholds.length > 0) {
@@ -238,6 +239,7 @@ function loadSuite(loadRun: LoadRun): ReportSuite {
       details: loadRun.breachedThresholds,
       attempts: null,
       logs: [],
+      warnings: [],
     })
   }
   return {
