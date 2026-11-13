@@ -810,6 +810,10 @@ describe("analyzeWorkflowGraph — gRPC node", () => {
       { edgeId: "e2", source: "rpc", target: "check" },
       { edgeId: "e3", source: "check", target: "end", sourceHandle: "pass" },
     ],
+    variables: {},
+    tags: [],
+    nodeTemplates: [],
+    rev: 1,
     createdAt: timestamp,
     updatedAt: timestamp,
   })
