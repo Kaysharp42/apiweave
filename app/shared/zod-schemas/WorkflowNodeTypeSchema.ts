@@ -9,6 +9,7 @@ import { z } from "zod"
 export const WorkflowNodeTypeSchema = z.enum([
   "http-request",
   "sse",
+  "websocket",
   "assertion",
   "delay",
   "merge",

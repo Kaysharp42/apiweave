@@ -8,6 +8,7 @@ import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
 import { NoteNodeDataSchema } from "./NoteNodeDataSchema"
 import { PositionSchema } from "./PositionSchema"
 import { SseNodeDataSchema } from "./SseNodeDataSchema"
+import { WebsocketNodeDataSchema } from "./WebsocketNodeDataSchema"
 import { StartNodeDataSchema } from "./StartNodeDataSchema"
 import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
 
@@ -61,6 +62,13 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .describe('Starts a Server-Sent Events listener. Its "ready" output runs after the SSE handshake succeeds; its "complete" output runs after the bounded stream ends. Finish rules may close on a matching event. The complete path can feed an assertion node using the collected SSE response.'),
+  baseNode
+    .extend({
+      type: z.literal("websocket"),
+      config: WebsocketNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe('Opens a WebSocket connection, sends its configured messages, and collects the incoming ones. Its "ready" output runs after the handshake succeeds; its "complete" output runs after the bounded stream ends. Finish rules may close on a matching message. The complete path can feed an assertion node using the collected messages.'),
   baseNode
     .extend({
       type: z.literal("assertion"),
