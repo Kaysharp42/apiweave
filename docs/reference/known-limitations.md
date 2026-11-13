@@ -146,6 +146,11 @@ platform can self-install.
 Private certificate authorities, the operating system certificate store and
 client certificates (mTLS) are supported and configured in the same settings
 page or through the CLI flags.
+- **gRPC calls are not proxied.** The gRPC node uses the CA, client certificate
+  and TLS verification settings, but connects directly: the proxy does not apply
+  to it.
+- **gRPC is unary only.** A method that streams is refused. Server streaming is
+  planned; client and bidirectional streaming are not.
 
 ## Execution
 

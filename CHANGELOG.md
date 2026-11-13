@@ -23,6 +23,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
   always-on check, so a hand-built node with `responseSchemas` must set
   `contract` to be checked.
 
+- **gRPC Call node.** A new `grpc` node calls a unary method of a gRPC server.
+  The schema comes from server reflection (`grpc.reflection.v1`, falling back
+  to `v1alpha`) or from `.proto` files stored inside the workflow, so they
+  travel in `.aweproject` exports and git. The editor's **Discover** button
+  lists services and unary methods and fills the message from a skeleton of the
+  request type. The result exposes `response.body`, `status`, `statusCode`,
+  `statusMessage`, `headers` and `trailers`; any status other than the
+  configured `expectedStatus` (default `OK`) fails the node. Bearer and API-key
+  auth become metadata, TLS follows Settings → Network (CAs and client
+  certificates, not the proxy), and the read-only `grpc_discover` MCP tool lets
+  agents list a server's schema. Streaming calls are not supported yet.
+
 - **RFC 9535 JSONPath in the path resolver.** An extractor or assertion path
   beginning with `$` is now evaluated as JSONPath rooted at the node result
   (`$.response.body.items[?@.id==3].name`), alongside the existing dot grammar.

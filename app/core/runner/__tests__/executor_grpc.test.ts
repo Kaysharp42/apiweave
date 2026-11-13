@@ -34,7 +34,13 @@ function workflow(config: Record<string, unknown>, variables: Record<string, unk
   }
 }
 
-const resultOf = (output: ExecutorOutput) => output.results.find((result) => result.nodeId === "rpc")! as Record<string, any>
+interface GrpcResult {
+  readonly error: string
+  readonly secretRefs: readonly string[]
+  readonly response: { readonly body: { readonly order_id: string }; readonly headers: Record<string, string> }
+}
+
+const resultOf = (output: ExecutorOutput): GrpcResult => output.results.find((result) => result.nodeId === "rpc")! as unknown as GrpcResult
 
 describe("WorkflowExecutor — gRPC node", () => {
   it("calls a unary method and exposes body, status, headers and trailers to extractors", async () => {
