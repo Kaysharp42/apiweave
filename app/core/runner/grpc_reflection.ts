@@ -77,7 +77,7 @@ class ReflectionSession {
 
   public constructor(client: grpc.Client, version: (typeof VERSIONS)[number]) {
     const method = reflectionMethod(version)
-    this.stream = client.makeBidiStreamRequest(method.path, method.requestSerialize, method.responseDeserialize, undefined, {
+    this.stream = client.makeBidiStreamRequest(method.path, method.requestSerialize, method.responseDeserialize, new grpc.Metadata(), {
       deadline: Date.now() + REFLECTION_DEADLINE_MS,
     })
     this.stream.on("data", (response: ReflectionResponse) => {

@@ -10,6 +10,7 @@ export const WorkflowNodeTypeSchema = z.enum([
   "http-request",
   "sse",
   "websocket",
+  "grpc",
   "assertion",
   "delay",
   "merge",

@@ -1,5 +1,6 @@
 import * as protoLoader from "@grpc/proto-loader"
 import Protobuf from "protobufjs"
+import "protobufjs/ext/descriptor"
 import type { GrpcDiscoveryResult } from "@shared/types/GrpcDiscoveryResult"
 
 /** A schema that could not be loaded, or a method that cannot be called. The message is shown to the user. */
@@ -64,7 +65,7 @@ function restoreMapFields(root: Protobuf.Root, namespace: Protobuf.NamespaceBase
 /** A schema from a reflection `FileDescriptorSet`. */
 export function schemaFromDescriptorSet(set: Protobuf.Message): GrpcSchema {
   try {
-    const root = Protobuf.Root.fromDescriptor(set as never)
+    const root = (Protobuf.Root as unknown as { fromDescriptor(set: Protobuf.Message): Protobuf.Root }).fromDescriptor(set)
     restoreMapFields(root, root)
     return buildSchema(root)
   } catch (error) {

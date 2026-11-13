@@ -22,6 +22,16 @@ export interface NetworkConfig {
   readonly clientCertificates?: readonly ClientCertificate[]
 }
 
+/** The TLS settings of one outgoing connection: what undici's `connect` and gRPC's secure context both take. */
+export interface TlsClientOptions {
+  readonly rejectUnauthorized: boolean
+  readonly ca?: string[]
+  readonly cert?: Buffer
+  readonly key?: Buffer
+  readonly pfx?: Buffer
+  readonly passphrase?: string
+}
+
 export interface ClientCertificate {
   /** `api.example.com`, `*.example.com`, optionally with a port (`api.example.com:8443`). */
   readonly host: string
@@ -81,12 +91,12 @@ export class NetworkDispatchers {
    * (gRPC): the trusted CAs and the client certificate for its host. The proxy
    * is not part of it — those connections are not proxied.
    */
-  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): tls.ConnectionOptions {
+  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): TlsClientOptions {
     const certificate = (this.config.clientCertificates ?? []).find((candidate) => hostMatches(candidate.host, url))
     return this.tlsOptions(certificate, rejectUnauthorized)
   }
 
-  private tlsOptions(certificate: ClientCertificate | undefined, rejectUnauthorized: boolean): tls.ConnectionOptions {
+  private tlsOptions(certificate: ClientCertificate | undefined, rejectUnauthorized: boolean): TlsClientOptions {
     return {
       rejectUnauthorized,
       ...(this.ca ? { ca: this.ca } : {}),

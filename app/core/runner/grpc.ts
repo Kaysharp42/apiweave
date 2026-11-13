@@ -1,5 +1,6 @@
-import { createSecureContext, type ConnectionOptions } from "node:tls"
+import { createSecureContext } from "node:tls"
 import * as grpc from "@grpc/grpc-js"
+import type { TlsClientOptions } from "./network"
 import { schemaFromReflection } from "./grpc_reflection"
 import { GrpcSchemaError, schemaFromProtoFiles, unaryMethod, type GrpcSchema } from "./grpc_schema"
 
@@ -10,7 +11,7 @@ export interface GrpcConnection {
   readonly tls: boolean
   readonly sslVerify: boolean
   /** The network settings' CAs and client certificate for `https://<target>`; see `SafeHttp.tlsOptionsFor`. */
-  readonly tlsOptionsFor: (url: string, rejectUnauthorized: boolean) => ConnectionOptions
+  readonly tlsOptionsFor: (url: string, rejectUnauthorized: boolean) => TlsClientOptions
 }
 
 /** Where the service definition comes from. */
@@ -103,7 +104,7 @@ export async function callUnary(request: GrpcUnaryRequest): Promise<GrpcUnaryRes
     // A message that does not fit the request type is the author's mistake: report it before connecting.
     definition.requestSerialize(request.message as object)
   } catch (error) {
-    throw new GrpcSchemaError(`The message does not match ${definition.requestType.type.name}: ${error instanceof Error ? error.message : String(error)}`)
+    throw new GrpcSchemaError(`The message does not match ${request.method}: ${error instanceof Error ? error.message : String(error)}`)
   }
   const client = createClient(request.connection)
   try {

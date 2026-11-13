@@ -14,6 +14,8 @@ import { toHeaderRecord } from "./safe_http"
 import { StreamHandshakeError, collectStreamMessages, type StreamAdapter, type StreamMessage } from "./stream_listener"
 import { SseAdapter } from "./streams/sse"
 import { WebsocketAdapter, type WebsocketMessageToSend } from "./streams/websocket"
+import { callUnary, loadGrpcSchema, type GrpcConnection, type GrpcSchemaSource } from "./grpc"
+import { GrpcSchemaError } from "./grpc_schema"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
 import { compileSchema, MAX_SCHEMA_VIOLATIONS, schemaViolations } from "./json_schema"
@@ -62,7 +64,7 @@ import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
 
 export interface WorkflowNode {
   readonly nodeId: string
-  readonly type: "http-request" | "sse" | "websocket" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
+  readonly type: "http-request" | "sse" | "websocket" | "grpc" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
   readonly label?: string | null
   readonly config?: Record<string, unknown>
 }
@@ -253,7 +255,7 @@ function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean 
 const STREAM_NODE_TYPES: ReadonlySet<string> = new Set(["sse", "websocket"])
 
 /** Node types whose result an assertion or merge branch can read as a response. */
-const RESPONSE_NODE_TYPES: ReadonlySet<string> = new Set(["http-request", "sse", "websocket"])
+const RESPONSE_NODE_TYPES: ReadonlySet<string> = new Set(["http-request", "sse", "websocket", "grpc"])
 
 type KeyValueRows = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
 
@@ -360,6 +362,10 @@ export interface NodeResult {
     readonly body: unknown
     readonly headers: Record<string, string>
     readonly statusCode: number
+    /** gRPC only: the status code name (`OK`, `NOT_FOUND`), its message and the trailing metadata. */
+    readonly status?: string
+    readonly statusMessage?: string
+    readonly trailers?: Record<string, string>
     /** The body is the first SIDE_TABLE_THRESHOLD_BYTES bytes only. */
     readonly truncated?: boolean
     /** The body is not UTF-8 text and is stored base64-encoded. */
@@ -971,6 +977,8 @@ export class WorkflowExecutor {
 
       if (nodeType === "http-request") {
         result = await this.executeHttpRequestNode(node, cancelSignal)
+      } else if (nodeType === "grpc") {
+        result = await this.executeGrpc(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -1474,6 +1482,90 @@ export class WorkflowExecutor {
       this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt })).outcome === "pass")
   }
 
+  // -------------------- gRPC --------------------
+
+  /**
+   * A unary gRPC call. Any status but the expected one (OK unless
+   * `expectedStatus` names another) fails the node; the result carries the
+   * decoded message, the status, and the initial and trailing metadata.
+   */
+  // fallow-ignore-next-line complexity -- one call lifecycle: build the request, resolve the schema, call, classify the status; the failure returns share one result shape.
+  private async executeGrpc(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const config = node.config ?? {}
+    const extractors = config["extractors"] as Record<string, string> | undefined
+    const finish = (result: NodeResult): NodeResult =>
+      extractors ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) } : result
+    const service = (config["service"] as string | undefined) ?? ""
+    const method = (config["method"] as string | undefined) ?? ""
+    const expectedStatus = config["expectedStatus"] as string | undefined
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const deadline = (config["deadline"] as number | undefined) ?? 30
+    const target = this.substituteVariables((config["target"] as string | undefined) ?? "", { allowSecrets: false }).trim()
+    const rpc = `${service}/${method}`
+    const failed = (error: string, extra: Partial<NodeResult> = {}): NodeResult => finish({ status: "error", error, target, rpc, duration: 0, ...extra })
+    if (target === "") return failed("Target is required for a gRPC call")
+    if (service === "" || method === "") return failed("Service and method are required for a gRPC call")
+    if (config["callType"] !== undefined && config["callType"] !== "unary") return failed(`Call type "${String(config["callType"])}" is not supported: only unary calls are`)
+
+    let message: unknown
+    try {
+      message = JSON.parse(this.substituteVariables((config["message"] as string | undefined) ?? "{}", { json: true }))
+    } catch {
+      return failed("The message is not valid JSON")
+    }
+    if (typeof message !== "object" || message === null || Array.isArray(message)) return failed("The message must be a JSON object")
+
+    const headers = this.normalizeKeyValueField(config["metadata"] as Array<{ key: string; value: string; active?: boolean }> | undefined)
+    const query: Record<string, string> = {}
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    try {
+      if (auth?.type === "awsSigV4" || auth?.type === "digest") throw new AuthError(`${auth.type === "digest" ? "Digest" : "AWS Signature V4"} auth is not supported on gRPC nodes`)
+      await this.applyAuthConfig(auth, headers, query, { signal: cancelSignal, timeoutMs: deadline * 1000, sslVerify, forceRefresh: false })
+      if (Object.keys(query).length > 0) throw new AuthError("An API key cannot be added to the query of a gRPC call: send it in metadata")
+    } catch (authError) {
+      if (!(authError instanceof AuthError)) throw authError
+      return failed(authError.message)
+    }
+    const metadata = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
+    const unresolvedPlaceholders = collectUnresolvedPlaceholders([target, JSON.stringify(message), ...Object.values(metadata)])
+    const withPlaceholders = (result: NodeResult): NodeResult => (unresolvedPlaceholders.length > 0 ? { ...result, unresolvedPlaceholders } : result)
+
+    const source: GrpcSchemaSource = config["schemaSource"] === "proto"
+      ? { kind: "proto", files: (config["protoFiles"] as Record<string, string> | undefined) ?? {} }
+      : { kind: "reflection" }
+    const connection: GrpcConnection = {
+      target,
+      tls: (config["tls"] as boolean | undefined) ?? false,
+      sslVerify,
+      tlsOptionsFor: (url, verify) => this.deps.http.tlsOptionsFor(url, verify),
+    }
+    const startTime = Date.now()
+    try {
+      this.deps.http.assertHostAllowed(target)
+      const schema = await loadGrpcSchema(connection, source)
+      const response = await callUnary({ connection, schema, service, method, message, metadata, deadlineMs: deadline * 1000, signal: cancelSignal })
+      const duration = Date.now() - startTime
+      const ok = expectedStatus === undefined ? response.code === 0 : response.codeName === expectedStatus
+      const shaped = {
+        body: response.body,
+        status: response.codeName,
+        statusCode: response.code,
+        statusMessage: response.statusMessage,
+        headers: response.headers,
+        trailers: response.trailers,
+      }
+      const base = { target, rpc, duration, statusCode: response.code, headers: response.headers, body: response.body, response: shaped }
+      if (ok) return finish(withPlaceholders({ status: "success", ...base }))
+      const expectation = expectedStatus === undefined ? "" : ` (expected ${expectedStatus})`
+      const reason = response.statusMessage === "" ? "" : `: ${response.statusMessage}`
+      return finish(withPlaceholders({ status: "error", ...base, error: `gRPC ${rpc} returned ${response.codeName}${expectation}${reason}` }))
+    } catch (error) {
+      const text = error instanceof SafeUrlError || error instanceof GrpcSchemaError ? error.message : String(error)
+      return withPlaceholders(failed(cancelSignal?.aborted ? "Call cancelled" : text, { duration: Date.now() - startTime }))
+    }
+  }
+
+  // -------------------- Server-Sent Events --------------------
   // -------------------- Stream listeners (SSE, WebSocket) --------------------
 
   /**

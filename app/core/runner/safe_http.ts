@@ -1,7 +1,6 @@
-import type { ConnectionOptions } from "node:tls"
 import type { CookieJar } from "tough-cookie"
 import { Headers, fetch, type Dispatcher, type Headers as UndiciHeaders, type RequestInit, type Response } from "undici"
-import { NetworkDispatchers, type NetworkConfig } from "./network"
+import { NetworkDispatchers, type NetworkConfig, type TlsClientOptions } from "./network"
 
 /**
  * The outbound HTTP client for the runner (HTTP request nodes) and URL imports.
@@ -80,8 +79,15 @@ export class SafeHttp {
     previous.close().catch(() => undefined)
   }
 
+  /** Throws unless this client may reach `host` (with port): always on an unrestricted client. Also gates gRPC, which does not go through `safeFetch`. */
+  public assertHostAllowed(host: string): void {
+    if (this.allowedHosts && !this.allowedHosts.has(host)) {
+      throw new SafeUrlError(`Refused: ${host} is not among the hosts this run was allowed to reach`)
+    }
+  }
+
   /** TLS settings (CAs, client certificate) for a connection to `url` made outside undici, such as gRPC. */
-  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): ConnectionOptions {
+  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): TlsClientOptions {
     return this.network.tlsOptionsFor(url, rejectUnauthorized)
   }
 
@@ -193,9 +199,7 @@ export class SafeHttp {
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
       const host = new URL(currentUrl).host
-      if (this.allowedHosts && !this.allowedHosts.has(host)) {
-        throw new SafeUrlError(`Refused: ${host} is not among the hosts this run was allowed to reach`)
-      }
+      this.assertHostAllowed(host)
       const jar = opts.cookieJar
       // Per hop: a redirect to another host may need another client certificate, or bypass the proxy.
       const dispatcher = this.network.dispatcherFor(currentUrl, opts.rejectUnauthorized ?? true)

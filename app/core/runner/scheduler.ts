@@ -809,7 +809,8 @@ export function requestDestinations(
   const urls = nodes.flatMap((node) => {
     // An OAuth 2.0 node also sends its client secret or token to the token endpoint.
     const oauth2 = (node.config?.["auth"] as { oauth2?: { tokenUrl?: unknown } } | undefined)?.oauth2
-    return [node.config?.["url"], oauth2?.tokenUrl]
+    // A gRPC node's `target` is a bare host:port: it stands as written, like a URL that does not parse.
+    return [node.config?.["url"], node.config?.["target"], oauth2?.tokenUrl]
   })
   for (const url of urls) {
     if (typeof url !== "string" || url.length === 0) continue

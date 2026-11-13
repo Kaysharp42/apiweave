@@ -121,6 +121,7 @@ rejected config names its node's list index and field in the error path.
 | \`http-request\` | sends one request, optionally extracts variables | 1 in, 1 out |
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`websocket\` | opens a bounded WebSocket, sends its messages, captures what comes back | 1 in, **2 out: \`ready\` and \`complete\`** |
+| \`grpc\` | calls one unary gRPC method | 1 in, 1 out |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
@@ -218,6 +219,18 @@ JSON \`data.*\`, or JSONPath such as \`$.data.status\`), or at \`timeout\`
 (bearer, basic, API key, JWT, OAuth 2.0) and \`subprotocols\` go in the handshake.
 The body has \`messages\`, \`messageCount\`, \`termination\`, \`closeCode\` and
 \`closeReason\`: assert on \`response.body.messages[0].data\`.
+
+### grpc
+
+A unary gRPC call. \`target\` is \`host:port\` (literal when you rely on reflection discovery), \`service\` and
+\`method\` name the RPC, and \`message\` is the request as **JSON text** with field names as written in the
+.proto. The schema comes from \`schemaSource: "reflection"\` (the server must expose it; call
+\`grpc_discover\` to list its services, methods and request skeletons) or \`"proto"\` with the files inline in
+\`protoFiles\` (path to content, imports resolve inside the map). \`metadata\` is \`{key, value}\` pairs; bearer
+and API-key \`auth\` become metadata. The result has \`response.body\` (int64 as strings, enums as names,
+bytes as base64), \`response.status\` (code name), \`response.statusCode\`, \`response.statusMessage\`,
+\`response.headers\` and \`response.trailers\`. Any non-OK status fails the node unless it equals
+\`expectedStatus\` (a code name such as \`"NOT_FOUND"\`): that is how to write a negative test.
 
 ### assertion
 
@@ -572,6 +585,7 @@ Clear every \`error\` before running.
 | code | meaning |
 | --- | --- |
 | \`http_request_failed\` | a request returned >= 400 or failed in transport; \`evidence.blockedNodeIds\` lists what it stopped |
+| \`grpc_call_failed\` | a gRPC call ended with a status other than the expected one; \`evidence.statusCode\` is the gRPC code number |
 | \`assertion_failed\` | a rule compared false |
 | \`assertion_source_mismatch\` | the run resolved a different source node than static analysis expects |
 | \`extractor_path_missing\` / \`extractor_type_mismatch\` | the path did not match the real response shape |

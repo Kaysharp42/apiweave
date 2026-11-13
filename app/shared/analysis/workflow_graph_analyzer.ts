@@ -30,8 +30,13 @@ function isStreamNode(node: WorkflowNode | undefined): node is Extract<WorkflowN
   return node?.type === "sse" || node?.type === "websocket"
 }
 
-function streamLabel(type: string, sse: string, websocket: string, other = sse): string {
-  return type === "sse" ? sse : type === "websocket" ? websocket : other
+/** Whether a node produces the response an assertion, merge or extractor reads. */
+function isResponseNode(node: WorkflowNode | undefined): boolean {
+  return node?.type === "http-request" || node?.type === "sse" || node?.type === "websocket" || node?.type === "grpc"
+}
+
+function streamLabel(type: string, sse: string, websocket: string, other = sse, grpc = other): string {
+  return type === "sse" ? sse : type === "websocket" ? websocket : type === "grpc" ? grpc : other
 }
 
 function nodeLabel(node: VariableProvenanceNode): string {
@@ -220,7 +225,7 @@ function upstreamResponseSources(
     if (visited.has(candidateId)) continue
     visited.add(candidateId)
     const candidate = nodesById.get(candidateId)
-    if (candidate?.type === "http-request" || isStreamNode(candidate)) {
+    if (isResponseNode(candidate)) {
       sources.add(candidateId)
       continue
     }
@@ -312,7 +317,8 @@ export function isValidRuntimePath(path: string, includeDuration: boolean): bool
   if (root === "statusCode" || root === "duration") {
     return parts.length === 1 && !parts[0]!.includes("[") && (root !== "duration" || includeDuration)
   }
-  return root === "body" || root === "headers"
+  if (root === "status" || root === "statusMessage") return parts.length === 1 && !parts[0]!.includes("[")
+  return root === "body" || root === "headers" || root === "trailers"
 }
 
 function diagnostic(
@@ -662,7 +668,7 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   const provenance = analyzeVariableProvenance(workflow.nodes)
   const variables = workflow.variables ?? {}
   for (const node of workflow.nodes) {
-    if (node.type !== "http-request" && !isStreamNode(node)) continue
+    if (!isResponseNode(node)) continue
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
       // Persisted graphs are read without re-validation, so a drifted/imported
       // config can carry a non-string extractor value — treat it as invalid
@@ -773,7 +779,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
       continue
     }
 
-    if (node.type === "http-request" || isStreamNode(node)) {
+    if (isResponseNode(node)) {
       const statusCode = statusCodeOf(result)
       const response = responseMetadata(result)
       if (result.status === "failed") {
@@ -789,14 +795,14 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           return downstreamResult === undefined || downstreamResult.status === "skipped"
         }).sort()
         diagnostics.push(diagnostic(
-          node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : "http_request_failed",
+          node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : node.type === "grpc" ? "grpc_call_failed" : "http_request_failed",
           "error",
           "execution",
           // Only the failed node: the starved branch is named once, in evidence.
           [node.nodeId],
           statusCode === undefined
-            ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection")} failed before a response status was available.`
-            : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "An HTTP request")} returned an error status.`,
+            ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection", "HTTP request", "gRPC call")} failed before a response status was available.`
+            : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "An HTTP request", "A gRPC call")} returned an error status.`,
           {
             ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
             blockedNodeIds,
@@ -917,7 +923,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
   ])
   const blockedByFailure = traverse([...failedNodeIds], successors)
   for (const node of workflow.nodes) {
-    if ((node.type !== "http-request" && !isStreamNode(node)) || Object.keys(node.config?.extractors ?? {}).length === 0) continue
+    if (!isResponseNode(node) || Object.keys(node.config?.extractors ?? {}).length === 0) continue
     if (!resultsByNode.has(node.nodeId) && !blockedByFailure.has(node.nodeId)) {
       diagnostics.push(diagnostic(
         "extractor_producer_not_executed",

@@ -42,6 +42,11 @@ export function nodeEndpoint(node: WorkflowNode): { readonly method?: string; re
     const url = node.config?.url
     return typeof url === "string" ? { method: "GET", urlPath: urlPathTemplate(url) } : undefined
   }
+  if (node.type === "grpc") {
+    const { service, method } = node.config ?? {}
+    // The call's identity is its service and method: they stand where an HTTP node's path does.
+    return typeof service === "string" && typeof method === "string" ? { method: "RPC", urlPath: `/${service}/${method}` } : undefined
+  }
   return undefined
 }
 
