@@ -113,8 +113,11 @@ as `application/problem+json`), the response's schema is stored on the node as
 its [`responseSchemas`](workflows-and-nodes.md#response-schemas), keyed `200`,
 `4XX` or `default` as the spec keys it. When the request runs, the body must
 match the schema for the status it got — exact code, then class, then
-`default` — or the node fails and lists each violation. A status the spec does
-not document is not checked, and a response without a JSON body never is.
+`default` — or the node fails and lists each violation. The imported node's
+`contract` mode defaults to `fail`; set it to `warn` or `off` under **Settings →
+Contract check**. A status the spec does not document is a contract violation
+too. A response whose status has a schema but no JSON body is checked against
+it as well, so declare such responses without a schema if they carry none.
 
 The schemas are copied at import, not linked to the spec: every `$ref` they
 use is resolved and copied into the schema's own `$defs` (a recursive model
