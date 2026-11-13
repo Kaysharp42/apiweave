@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { AuthConfigSchema } from "./AuthConfigSchema"
 import { KeyValuePairSchema } from "./KeyValuePairSchema"
-import { SseFinishConditionSchema } from "./SseFinishConditionSchema"
+import { StreamFinishConditionSchema } from "./StreamFinishConditionSchema"
 
 /**
  * A bounded Server-Sent Events listener. It signals its ready output once the
@@ -18,7 +18,7 @@ export const SseNodeDataSchema = z
     sslVerify: z.boolean().optional(),
     eventType: z.string().min(1).max(256).optional().describe("Only collect events whose SSE event field exactly matches this type."),
     maxEvents: z.number().int().positive().max(100).optional().describe("Maximum matching events retained in the bounded result. Without finish rules, reaching this limit closes the stream. Defaults to 1."),
-    finishConditions: z.array(SseFinishConditionSchema).max(20).optional().describe("All rules must match one received event to close the stream and activate the Complete output."),
+    finishConditions: z.array(StreamFinishConditionSchema).max(20).optional().describe("All rules must match one received event to close the stream and activate the Complete output."),
     continueOnFail: z.boolean().optional(),
     extractors: z.record(z.string(), z.string()).optional().describe('Captures values from the collected stream result, e.g. {"id": "response.body.events[0].id"}.'),
   })

@@ -13,6 +13,7 @@ import {
   BadgeCheck,
   Workflow,
   Radio,
+  Cable,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -20,6 +21,7 @@ export const getNodeIcon = (type: NodeModalNodeType): LucideIcon => {
   const iconMap: Record<NodeModalNodeType, LucideIcon> = {
     "http-request": Globe,
     sse: Radio,
+    websocket: Cable,
     assertion: BadgeCheck,
     delay: Timer,
     merge: GitMerge,

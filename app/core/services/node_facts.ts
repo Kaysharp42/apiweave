@@ -38,7 +38,7 @@ export function nodeEndpoint(node: WorkflowNode): { readonly method?: string; re
     const method = node.config?.method
     return typeof method === "string" ? { method, urlPath: urlPathTemplate(url) } : { urlPath: urlPathTemplate(url) }
   }
-  if (node.type === "sse") {
+  if (node.type === "sse" || node.type === "websocket") {
     const url = node.config?.url
     return typeof url === "string" ? { method: "GET", urlPath: urlPathTemplate(url) } : undefined
   }

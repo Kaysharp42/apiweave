@@ -25,6 +25,15 @@ const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> =
   notice: 2,
 }
 
+/** Node types that open a stream and produce a collected response (`sse`, `websocket`). */
+function isStreamNode(node: WorkflowNode | undefined): node is Extract<WorkflowNode, { type: "sse" | "websocket" }> {
+  return node?.type === "sse" || node?.type === "websocket"
+}
+
+function streamLabel(type: string, sse: string, websocket: string, other = sse): string {
+  return type === "sse" ? sse : type === "websocket" ? websocket : other
+}
+
 function nodeLabel(node: VariableProvenanceNode): string {
   return typeof node.label === "string" && node.label.trim() ? node.label : node.nodeId
 }
@@ -211,7 +220,7 @@ function upstreamResponseSources(
     if (visited.has(candidateId)) continue
     visited.add(candidateId)
     const candidate = nodesById.get(candidateId)
-    if (candidate?.type === "http-request" || candidate?.type === "sse") {
+    if (candidate?.type === "http-request" || isStreamNode(candidate)) {
       sources.add(candidateId)
       continue
     }
@@ -653,7 +662,7 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   const provenance = analyzeVariableProvenance(workflow.nodes)
   const variables = workflow.variables ?? {}
   for (const node of workflow.nodes) {
-    if (node.type !== "http-request" && node.type !== "sse") continue
+    if (node.type !== "http-request" && !isStreamNode(node)) continue
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
       // Persisted graphs are read without re-validation, so a drifted/imported
       // config can carry a non-string extractor value — treat it as invalid
@@ -764,7 +773,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
       continue
     }
 
-    if (node.type === "http-request" || node.type === "sse") {
+    if (node.type === "http-request" || isStreamNode(node)) {
       const statusCode = statusCodeOf(result)
       const response = responseMetadata(result)
       if (result.status === "failed") {
@@ -780,14 +789,14 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           return downstreamResult === undefined || downstreamResult.status === "skipped"
         }).sort()
         diagnostics.push(diagnostic(
-          node.type === "sse" ? "sse_stream_failed" : "http_request_failed",
+          node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : "http_request_failed",
           "error",
           "execution",
           // Only the failed node: the starved branch is named once, in evidence.
           [node.nodeId],
           statusCode === undefined
-            ? `A ${node.type === "sse" ? "Server-Sent Events stream" : "HTTP request"} failed before a response status was available.`
-            : `${node.type === "sse" ? "A Server-Sent Events stream" : "An HTTP request"} returned an error status.`,
+            ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection")} failed before a response status was available.`
+            : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "An HTTP request")} returned an error status.`,
           {
             ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
             blockedNodeIds,
@@ -908,7 +917,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
   ])
   const blockedByFailure = traverse([...failedNodeIds], successors)
   for (const node of workflow.nodes) {
-    if ((node.type !== "http-request" && node.type !== "sse") || Object.keys(node.config?.extractors ?? {}).length === 0) continue
+    if ((node.type !== "http-request" && !isStreamNode(node)) || Object.keys(node.config?.extractors ?? {}).length === 0) continue
     if (!resultsByNode.has(node.nodeId) && !blockedByFailure.has(node.nodeId)) {
       diagnostics.push(diagnostic(
         "extractor_producer_not_executed",

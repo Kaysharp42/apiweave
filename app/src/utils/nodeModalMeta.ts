@@ -1,6 +1,7 @@
 export const NODE_MODAL_TYPE_LABELS: Record<string, string> = {
   "http-request": "HTTP Request",
   sse: "SSE Stream",
+  websocket: "WebSocket",
   assertion: "Assertion",
   delay: "Delay",
   merge: "Merge",
