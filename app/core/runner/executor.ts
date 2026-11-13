@@ -2345,7 +2345,7 @@ export class WorkflowExecutor {
     const allPassed = failedCount === 0 && ranCount === capped.length
 
     const targetLabel = target.name ?? targetWorkflowId
-    const summary = (): NodeResult["subWorkflow"] => ({
+    const summary = (): NonNullable<NodeResult["subWorkflow"]> => ({
       workflowId: targetWorkflowId,
       status: cancelled ? "cancelled" : allPassed ? "passed" : "failed",
       nodeCount: target.nodes.length,
@@ -2394,7 +2394,7 @@ export class WorkflowExecutor {
     const sub = this.deps.subRun?.begin(targetWorkflowId)
     const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
     childExecutor.callDepth = this.callDepth + 1
-    let output: ExecutorOutput
+    let output: ExecutorOutput | undefined
     try {
       output = await childExecutor.executeWorkflow(
         {
@@ -2417,7 +2417,7 @@ export class WorkflowExecutor {
       // leaves its run row stuck in `running` until the next startup reconcile.
       if (sub) this.deps.subRun?.finish(sub.runId, output)
     }
-    return { output, ...(sub ? { runId: sub.runId } : {}) }
+    return { output: output ?? this.syntheticFailureOutput(undefined), ...(sub ? { runId: sub.runId } : {}) }
   }
 
   /** An `ExecutorOutput` standing in for a child that threw before producing one. */
@@ -2456,6 +2456,18 @@ export class WorkflowExecutor {
   private resolveItems(expr: string | undefined): readonly unknown[] | null {
     if (!expr) return null
     const trimmed = expr.trim()
+    if (trimmed.startsWith("$")) {
+      // JSONPath rooted at `{ variables, env, data, <nodeId>: result }`, the
+      // same names the placeholders use: `$.variables.ids`, `$.fetch.response.body.items`.
+      const root: Record<string, unknown> = {
+        ...Object.fromEntries(this.results),
+        variables: this.workflowVariables,
+        env: this.environmentVariables,
+        data: this.deps.data ?? {},
+      }
+      const resolution = resolveExtractorPath(root, trimmed)
+      return resolution.failureReason === null && Array.isArray(resolution.value) ? resolution.value : null
+    }
     const single = /^\{\{([^}]+)\}\}$/.exec(trimmed)
     if (single) {
       const value = this.resolvePlaceholderValue(single[1]!.trim())
@@ -3294,6 +3306,15 @@ type RunResultDiagnostics = Partial<
   Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow" | "scripts">
 >
 
+function copySubWorkflow(sub: NonNullable<NodeResult["subWorkflow"]>): NonNullable<RunResult["subWorkflow"]> {
+  const { forEach, ...rest } = sub
+  return {
+    ...rest,
+    outputVariableNames: [...sub.outputVariableNames],
+    ...(forEach ? { forEach: { ...forEach, iterations: forEach.iterations.map((iteration) => ({ ...iteration })) } } : {}),
+  }
+}
+
 function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
   return {
     ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
@@ -3304,17 +3325,7 @@ function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
     ...(result.scripts
       ? { scripts: result.scripts.map((script) => ({ ...script, logs: [...script.logs], tests: script.tests.map((test) => ({ ...test })) })) }
       : {}),
-    ...(result.subWorkflow
-      ? {
-          subWorkflow: {
-            ...result.subWorkflow,
-            outputVariableNames: [...result.subWorkflow.outputVariableNames],
-            ...(result.subWorkflow.forEach
-              ? { forEach: { ...result.subWorkflow.forEach, iterations: result.subWorkflow.forEach.iterations.map((it) => ({ ...it })) } }
-              : {}),
-          },
-        }
-      : {}),
+    ...(result.subWorkflow ? { subWorkflow: copySubWorkflow(result.subWorkflow) } : {}),
   }
 }
 
