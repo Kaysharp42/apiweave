@@ -145,15 +145,18 @@ response.headers.x-request-id       # custom header
 
 ### JSONPath (`$`-prefixed)
 
-A path beginning with `$` is evaluated as an RFC 9535 JSONPath expression rooted at the same node result, so `$.response.body.items[?@.id==3].name` addresses the same value `response.body.items[0].id` does when the first item has `id == 3`. JSONPath adds the missing expressiveness: recursive descent, wildcards, filters, unions, slices and bracketed keys.
+A path beginning with `$` is evaluated as an RFC 9535 JSONPath expression rooted at the same node result, so `$.response.body.items[0].id` addresses the same value as `response.body.items[0].id`. JSONPath adds what dot notation lacks: recursive descent, wildcards, filters, unions, slices and bracketed keys.
 
 ```text
 $.response.body.items[*].id                    # every item id, as an array
-$.response.body.items[?@.active].name          # names of active items
+$.response.body.items[?@.active].name          # names of active items, as an array
 $.response.body.items[0].id                    # first item id (a scalar)
-$..id                                           # every "id" anywhere in the body
-$.response.body.store.book[-1].title           # last book, via a negative slice
+$.response.body..id                            # every "id" anywhere in the body
+$.response.body.store.book[-1].title           # last book (a negative index)
+$.duration                                     # response time in milliseconds
 ```
+
+The root is the node result. The response lives under `response` (`body`, `headers`, `statusCode`), while the response time is at the top level as `duration`, so write `$.duration`, not `$.response.duration`. Recursive descent from the root (`$..id`) searches the whole node result, not only the body.
 
 A JSONPath query that is singular (only child, name and index selectors) returns the selected value directly; a non-singular query (a wildcard, recursive descent, filter, union or slice anywhere in the path) returns an array of every match, so `count` and `contains` assertions operate on it. A query that matches nothing is reported as `path-missing`, and an expression the parser rejects is a distinct `invalid-path` failure, surfaced in the node's extractor row and in the graph diagnostics.
 
