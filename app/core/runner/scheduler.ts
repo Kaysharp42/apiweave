@@ -167,8 +167,18 @@ export class RunScheduler {
   /** runId → callers of {@link whenFinished} still waiting on it. */
   private readonly finishWaiters = new Map<string, ((status: RunTerminalStatus) => void)[]>()
   private draining = false
+  private cap: number
 
-  public constructor(private readonly deps: SchedulerDeps) {}
+  public constructor(private readonly deps: SchedulerDeps) {
+    this.cap = deps.concurrencyCap ?? DEFAULT_CONCURRENCY_CAP
+  }
+
+  /** Raise the cap so a load run's iterations really run at once. Never lowered. */
+  public ensureConcurrency(count: number): void {
+    if (count <= this.cap) return
+    this.cap = count
+    void this.drain()
+  }
 
   public getActiveCount(): number {
     return this.activeRuns.size
@@ -307,7 +317,7 @@ export class RunScheduler {
     if (this.draining) return
     this.draining = true
     try {
-      const cap = this.deps.concurrencyCap ?? DEFAULT_CONCURRENCY_CAP
+      const cap = this.cap
       while (this.queue.length > 0 && this.activeRuns.size < cap) {
         const runId = this.queue.shift()!
         void this.executeRun(runId)

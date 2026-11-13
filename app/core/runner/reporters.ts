@@ -329,6 +329,8 @@ function consoleLoadTable(loadRun: LoadRun): string[] {
   const widths = header.map((_, column) => Math.max(...rows.map((row) => String(row[column]).length)))
   return rows.map((row) => row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))
 }
+
+function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown): ReportCase {
   const recorded = statusOf(entry) ?? result?.status ?? "idle"
   const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
   return {

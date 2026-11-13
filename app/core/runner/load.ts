@@ -7,7 +7,9 @@ import { generateId } from "../id"
 import { ValidationError } from "../ipc/errors"
 import type { EnqueueRequest } from "./scheduler"
 import { LoadStatsAccumulator } from "./load_stats"
-import { evaluateThresholds, type Threshold, type ThresholdBreach } from "./thresholds"
+import { describeBreach, evaluateThresholds, type Threshold, type ThresholdBreach } from "./thresholds"
+import type { LoadRun } from "@shared/types/LoadRun"
+import type { LoadRunSettings } from "@shared/types/LoadRunSettings"
 
 /**
  * A load run: the same workflow, many iterations at once. Each iteration is an
@@ -29,9 +31,16 @@ export interface LoadScheduler {
   resultsOf(runId: string): readonly RunResult[]
   /** Drop a finished iteration's per-node results and response bodies. */
   clearIterationResults(runId: string): void
+  /** Make room for `count` runs at once: the scheduler's cap would otherwise queue them and inflate latency. */
+  ensureConcurrency(count: number): void
 }
 
+/** Most iterations one load run may launch, whatever the data or duration says. */
+export const MAX_LOAD_ITERATIONS = 100_000
+
 export interface LoadRunOptions {
+  /** Total iterations to launch. Data rows are reused in order when there are fewer rows than iterations. */
+  readonly iterations: number
   readonly concurrency: number
   /** Stop launching new iterations once this long has elapsed; in-flight ones finish. */
   readonly durationMs?: number
@@ -75,6 +84,11 @@ export function startLoadRun(
   if (!Number.isInteger(options.concurrency) || options.concurrency < 1) {
     throw new ValidationError("A load run needs a concurrency of at least 1.")
   }
+  if (!Number.isInteger(options.iterations) || options.iterations < 1 || options.iterations > MAX_LOAD_ITERATIONS) {
+    throw new ValidationError(`A load run needs between 1 and ${MAX_LOAD_ITERATIONS} iterations.`)
+  }
+  scheduler.ensureConcurrency(options.concurrency)
+  const total = options.iterations
   const groupId = generateId()
   const accumulator = new LoadStatsAccumulator(nodeInfo)
   const { concurrency } = options
@@ -130,20 +144,20 @@ export function startLoadRun(
     }
 
     const launch = (): void => {
-      while (!stop && running < allowed() && next < rows.length) {
+      while (!stop && running < allowed() && next < total) {
         const index = next
         next += 1
         const runId = scheduler.enqueue({
           ...request,
-          data: rows[index]!,
-          iteration: { groupId, index: index + 1, count: rows.length },
+          data: rows[index % rows.length]!,
+          iteration: { groupId, index: index + 1, count: total },
         })
         firstRunId ??= runId
         launched += 1
         running += 1
         void settle(runId)
       }
-      if (next >= rows.length) stop = true
+      if (next >= total) stop = true
     }
 
     const rampInterval =
@@ -192,4 +206,25 @@ export function startLoadRun(
   })()
 
   return { groupId, firstRunId: firstRunId!, done }
+}
+
+/** The retained record of a finished load run: settings, aggregates, first failures and breached thresholds. */
+export function buildLoadRun(
+  identity: { readonly workspaceId: string; readonly workflowId: string; readonly loadRunId: string },
+  settings: LoadRunSettings,
+  startedAt: string,
+  result: LoadRunResult,
+): LoadRun {
+  return {
+    ...identity,
+    status: result.status,
+    startedAt,
+    completedAt: new Date(Date.parse(startedAt) + result.elapsedMs).toISOString(),
+    durationMs: result.elapsedMs,
+    iterationCount: result.iterationCount,
+    settings,
+    nodeStats: [...result.nodeStats],
+    firstFailures: Object.fromEntries(result.firstFailures),
+    breachedThresholds: result.breaches.map(describeBreach),
+  }
 }
