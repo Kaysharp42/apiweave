@@ -1,3 +1,4 @@
+import type { ConnectionOptions } from "node:tls"
 import type { CookieJar } from "tough-cookie"
 import { Headers, fetch, type Dispatcher, type Headers as UndiciHeaders, type RequestInit, type Response } from "undici"
 import { NetworkDispatchers, type NetworkConfig } from "./network"
@@ -77,6 +78,11 @@ export class SafeHttp {
     const previous = this.network
     this.network = new NetworkDispatchers(config)
     previous.close().catch(() => undefined)
+  }
+
+  /** TLS settings (CAs, client certificate) for a connection to `url` made outside undici, such as gRPC. */
+  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): ConnectionOptions {
+    return this.network.tlsOptionsFor(url, rejectUnauthorized)
   }
 
   /**
