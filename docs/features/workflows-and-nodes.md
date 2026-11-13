@@ -91,7 +91,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
 | `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
 | `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20), [AWS Signature V4](#aws-signature-v4), [Digest](#digest) or [JWT Bearer](#jwt-bearer). Supports placeholders |
-| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
+| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, GraphQL (see [GraphQL](#graphql)), or JSON-RPC (see [JSON-RPC](#json-rpc)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
@@ -168,6 +168,35 @@ the failures in an `errors` array. To fail on that, add an Assertion node rule
 Postman collections import their GraphQL bodies as GraphQL. To turn a JSON
 body that already holds `{"query": ..., "variables": ...}` into one, copy the
 two values into the GraphQL editors.
+
+#### JSON-RPC
+
+Choose **JSON-RPC** as the body type to call a
+[JSON-RPC 2.0](https://www.jsonrpc.org/specification) endpoint. The request is
+POSTed as `application/json`:
+
+```json
+{"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
+```
+
+- **Method** — the RPC method to invoke, e.g. `subtract` or `eth_blockNumber`.
+  Placeholders are substituted.
+- **Params** — a JSON template, like a JSON body. By-name parameters are an
+  object (`{"minuend": 42, "subtrahend": 23}`); by-position parameters are an
+  array (`[42, 23]`). A placeholder inside a string is escaped, and one standing
+  alone is inserted as a value. Params that are not a JSON object or array once
+  filled fail the node with "JSON-RPC params are not valid JSON" (or "must be a
+  JSON object or array"). Leave empty for a method that takes none.
+- **Notification** — a notification omits the `id` member, and the server sends
+  no response. Turn it on for fire-and-forget calls.
+
+The `id` increases with each request in a run, so a server that correlates
+requests with responses sees unique ids. A server usually answers `200` even
+when the call failed, putting an `error` object with a `code` and `message` in
+the body. That fails the node with "JSON-RPC error -32601: Method not found".
+Turn **Allow error responses** on to let it pass instead, then check the error
+with ordinary rules on `response.body.error.code` and
+`response.body.error.message`. Batch requests are not supported.
 
 ### SSE Stream
 

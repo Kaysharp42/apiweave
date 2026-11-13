@@ -72,6 +72,24 @@ function graphqlFields(
   ];
 }
 
+/**
+ * A JSON-RPC 2.0 body. The params are spliced in as written (they may hold
+ * placeholders); the id is a stand-in for the per-run counter and is dropped
+ * for a notification.
+ */
+function jsonrpcBody(config: NodeModalHTTPRequestConfig): string {
+  const jsonrpc = config.jsonrpc ?? { method: "" };
+  const fields = [
+    `"jsonrpc": "2.0"`,
+    `"method": ${JSON.stringify(jsonrpc.method)}`,
+    ...(jsonrpc.params?.trim()
+      ? [`"params": ${jsonrpc.params.trim()}`]
+      : []),
+    ...(jsonrpc.notification === true ? [] : [`"id": 1`]),
+  ];
+  return `{${fields.join(", ")}}`;
+}
+
 function bodyData(config: NodeModalHTTPRequestConfig): string | undefined {
   if (config.bodyType === "none" || config.bodyType === "binary")
     return undefined;
@@ -84,6 +102,9 @@ function bodyData(config: NodeModalHTTPRequestConfig): string | undefined {
         : `${JSON.stringify(key)}: ${JSON.stringify(value)}`,
     );
     return `{${fields.join(", ")}}`;
+  }
+  if (config.bodyType === "jsonrpc") {
+    return jsonrpcBody(config);
   }
   if (config.bodyType === "x-www-form-urlencoded") {
     const params = (config.urlEncodedEntries || [])
@@ -114,6 +135,7 @@ function requestParts(config: NodeModalHTTPRequestConfig): {
 } {
   const graphql = config.bodyType === "graphql";
   const graphqlGet = graphql && (config.method || "GET") === "GET";
+  const jsonrpc = config.bodyType === "jsonrpc";
   const queryParams = [
     ...activePairs(config.queryParams),
     ...authQueryParams(config),
@@ -126,9 +148,9 @@ function requestParts(config: NodeModalHTTPRequestConfig): {
     queryParams,
   );
   const headers = [...activePairs(config.headers), ...authHeaders(config)];
+  const needsJsonContentType = (graphql && !graphqlGet) || jsonrpc;
   if (
-    graphql &&
-    !graphqlGet &&
+    needsJsonContentType &&
     !headers.some((header) => header.key.toLowerCase() === "content-type")
   )
     headers.push({ key: "Content-Type", value: "application/json" });

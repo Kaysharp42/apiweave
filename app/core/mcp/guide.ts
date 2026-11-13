@@ -146,6 +146,10 @@ rejected config names its node's list index and field in the error path.
 - \`body\` is a **string**, not an object. A JSON body is its serialized text.
 - GraphQL: \`"bodyType": "graphql"\` with \`"graphql": {"query": "...", "variables": "<JSON text>"}\`
   instead of \`body\`. A GraphQL error answers 200: assert \`response.body.errors\` notExists.
+- JSON-RPC 2.0: \`"bodyType": "jsonrpc"\` with \`"jsonrpc": {"method": "...", "params": "<JSON text>", "notification": false}\`
+  instead of \`body\`, POSTed as \`{"jsonrpc":"2.0","method","params","id"}\`. A response carrying an
+  \`error\` member fails the node; set \`"allowRpcError": true\` to opt out and assert
+  \`response.body.error.code\` / \`response.body.error.message\`.
 - \`extractors\` is a map of variable name to response path. After this node runs,
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
   \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.

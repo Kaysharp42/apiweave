@@ -37,6 +37,7 @@ import type { DigestAuthConfig } from "@shared/types/DigestAuthConfig"
 import type { JwtAuthConfig } from "@shared/types/JwtAuthConfig"
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
 import type { GraphqlBody } from "@shared/types/GraphqlBody"
+import type { JsonrpcBody } from "@shared/types/JsonrpcBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
@@ -390,6 +391,25 @@ export function retryDelayMs(retry: HttpRetryConfig, attempt: number): number {
   return Math.min(base, retry.maxIntervalMs ?? Number.POSITIVE_INFINITY)
 }
 
+/**
+ * The failure message for a JSON-RPC response that carries an `error` member,
+ * or `undefined` when it does not. Per JSON-RPC 2.0 the error is an object
+ * with a `code` and a `message`; both are read leniently so a malformed error
+ * still fails the node rather than passing through.
+ */
+function jsonRpcErrorFailure(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (!("error" in record)) return undefined
+  const error = record["error"]
+  if (typeof error !== "object" || error === null || Array.isArray(error)) return "JSON-RPC error"
+  const { code, message } = error as Record<string, unknown>
+  const codeText = code === undefined ? "" : ` ${String(code)}`
+  const messageText =
+    message === undefined || message === "" ? "" : `: ${typeof message === "string" ? message : JSON.stringify(message)}`
+  return `JSON-RPC error${codeText}${messageText}`
+}
+
 // -------------------- Internal sentinel --------------------
 
 class StopBranch extends Error {
@@ -431,6 +451,8 @@ export class WorkflowExecutor {
   // still can't hang or stack-overflow a run.
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
+  /** The next JSON-RPC request id, incremented per request within a run. */
+  private rpcId = 0
   private readonly oauthTokens: OAuthTokenCache
   private readonly cookieJar: CookieJar
   /** Loaded on the first rule that needs it (see `prepareRules`); `matches` and `matchesSchema` are synchronous after that. */
@@ -489,6 +511,7 @@ export class WorkflowExecutor {
     this.nodeRuns.clear()
     this.sseListeners.clear()
     this.sseTasks.clear()
+    this.rpcId = 0
     if (options.resume) this.seedResume(options.resume, nodes, edges)
 
     // Workflows have no loops: a cycle would send its requests until something
@@ -970,12 +993,13 @@ export class WorkflowExecutor {
 
   private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
-    let method = (config["method"] as string | undefined) ?? "GET"
+    const bodyType = config["bodyType"] as string | undefined
+    // JSON-RPC over HTTP is always a POST, whatever method the node was left on.
+    let method = bodyType === "jsonrpc" ? "POST" : ((config["method"] as string | undefined) ?? "GET")
     let url = (config["url"] as string | undefined) ?? ""
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headersField = config["headers"] as KVField
     const body = config["body"] as string | Record<string, unknown> | undefined
-    const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
     const auth = config["auth"] as HttpAuthConfig | undefined
     // A signature covers one URL: a redirect would carry it somewhere it does not fit.
@@ -988,6 +1012,7 @@ export class WorkflowExecutor {
     const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
     const extractors = config["extractors"] as Record<string, string> | undefined
     const expectedStatus = config["expectedStatus"] as number | readonly number[] | undefined
+    const allowRpcError = (config["allowRpcError"] as boolean | undefined) ?? false
     const withExtractorOutcomes = (result: NodeResult): NodeResult => extractors
       ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
       : result
@@ -1039,7 +1064,9 @@ export class WorkflowExecutor {
     try {
       fetchBody = bodyType === "graphql"
         ? this.buildGraphqlRequest(config["graphql"] as GraphqlBody | undefined, method, headers, queryParams)
-        : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+        : bodyType === "jsonrpc"
+          ? this.buildJsonrpcRequest(config["jsonrpc"] as JsonrpcBody | undefined, headers)
+          : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
       return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url: appendQueryParams(url, queryParams), duration: 0 })
     }
@@ -1167,12 +1194,22 @@ export class WorkflowExecutor {
         status = expectedList.includes(statusCode) ? "success" : "error"
       }
 
+      // A JSON-RPC server answers 200 with an `error` member when the call
+      // failed, exactly like a GraphQL `errors` array. Unlike GraphQL, the
+      // node fails on it by default; `allowRpcError` opts out so an assertion
+      // can check `response.body.error`.
+      const rpcErrorFailure = bodyType === "jsonrpc" && !allowRpcError ? jsonRpcErrorFailure(responseBody) : undefined
+      if (rpcErrorFailure !== undefined) {
+        status = "error"
+      }
+
       const responseHeaders = toHeaderRecord(response.headers)
 
       const result: NodeResult = {
         status,
         statusCode,
         ...(expectedStatus !== undefined ? { expectedStatus } : {}),
+        ...(rpcErrorFailure !== undefined ? { error: rpcErrorFailure } : {}),
         headers: responseHeaders,
         body: responseBody,
         duration,
@@ -2721,6 +2758,42 @@ export class WorkflowExecutor {
       headers["Content-Type"] = "application/json"
     }
     return JSON.stringify({ query, ...(variables === undefined ? {} : { variables }), ...(operationName === undefined ? {} : { operationName }) })
+  }
+
+  /**
+   * A JSON-RPC 2.0 request, POSTed as application/json: `{jsonrpc:"2.0",
+   * method, params?, id?}`. The params are a JSON template (object or array)
+   * substituted JSON-aware, the same as a JSON body. A notification omits the
+   * `id`; every other request carries an id that increases per request within
+   * the run.
+   */
+  private buildJsonrpcRequest(jsonrpc: JsonrpcBody | undefined, headers: Record<string, string>): string {
+    const method = this.substituteVariables(jsonrpc?.method ?? "")
+    if (method.trim() === "") {
+      throw new Error("JSON-RPC method is required")
+    }
+    const paramsText = this.substituteVariables(jsonrpc?.params ?? "", { json: true })
+    let params: unknown
+    if (paramsText.trim() !== "") {
+      try {
+        params = JSON.parse(paramsText)
+      } catch {
+        throw new Error("JSON-RPC params are not valid JSON")
+      }
+      if (params === null || typeof params !== "object") {
+        throw new Error("JSON-RPC params must be a JSON object or array")
+      }
+    }
+    const id = jsonrpc?.notification === true ? undefined : ++this.rpcId
+    if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = "application/json"
+    }
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      method,
+      ...(params === undefined ? {} : { params }),
+      ...(id === undefined ? {} : { id }),
+    })
   }
 
   /** Resolve a file upload's bytes per its `type` — base64-decoded, read from disk, or a resolved variable. */

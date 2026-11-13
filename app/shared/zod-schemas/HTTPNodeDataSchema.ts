@@ -3,6 +3,7 @@ import { AuthConfigSchema } from "./AuthConfigSchema"
 import { FileUploadSchema } from "./FileUploadSchema"
 import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { GraphqlBodySchema } from "./GraphqlBodySchema"
+import { JsonrpcBodySchema } from "./JsonrpcBodySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
 import { HttpRetryConfigSchema } from "./HttpRetryConfigSchema"
 import { HttpScriptsConfigSchema } from "./HttpScriptsConfigSchema"
@@ -41,12 +42,20 @@ export const HTTPNodeDataSchema = z
       .optional()
       .describe('Request body as a STRING, not an object — JSON bodies are the serialized text, e.g. "{\\"name\\": \\"Rex\\"}". Placeholders are substituted inside it. Set bodyType to "json" alongside it.'),
     bodyType: z
-      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary", "graphql"])
+      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary", "graphql", "jsonrpc"])
       .optional()
-      .describe('How to encode the body and which Content-Type to send. "graphql" sends `graphql` instead of `body`.'),
+      .describe('How to encode the body and which Content-Type to send. "graphql" sends `graphql` instead of `body`, and "jsonrpc" sends `jsonrpc`.'),
     graphql: GraphqlBodySchema.optional().describe(
       'The GraphQL request when bodyType is "graphql": POSTed as application/json {query, variables, operationName}, or sent as query parameters when the method is GET. A response with an `errors` array still returns 200; assert `response.body.errors` notExists to fail on it.',
     ),
+    jsonrpc: JsonrpcBodySchema.optional().describe(
+      'The JSON-RPC 2.0 request when bodyType is "jsonrpc": POSTed as application/json {"jsonrpc":"2.0","method","params","id"} with an id that increases per request within the run. Notifications omit the id. A response with an `error` member fails the node unless `allowRpcError` is true.',
+    ),
+    allowRpcError: z
+      .boolean()
+      .optional()
+      .describe('When true, a JSON-RPC response whose body carries an `error` member does not fail the node; assert `response.body.error.code` and `response.body.error.message` to check it instead.'),
+
     timeout: z.number().int().positive().optional().describe("Request timeout in seconds."),
     followRedirects: z.boolean().optional(),
     sslVerify: z.boolean().optional(),

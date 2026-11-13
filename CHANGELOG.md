@@ -21,6 +21,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   and an expression the parser rejects reports a new `invalid-path` failure
   reason, surfaced in validation and the extractor preview. The grammar
   dispatch lives in `resolveExtractorPath`.
+- **JSON-RPC 2.0 body type.** The HTTP request node now offers a JSON-RPC body
+  type alongside GraphQL: a method, params (a JSON template, by name or by
+  position) and an optional notification flag. It is POSTed as
+  `application/json` with a per-request `id` that increases through the run, and
+  a response carrying an `error` member fails the node with its code and message
+  unless **Allow error responses** is turned on.
 
 ## [1.0.0] — 2026-11-10
 

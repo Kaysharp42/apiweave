@@ -7,6 +7,7 @@ import {
 import type {
   AssertionItem,
   GraphqlBody,
+  JsonrpcBody,
   AuthConfig,
   FormDataEntry,
   HTTPRequestBodyType,
@@ -385,6 +386,17 @@ export function normalizeGraphql(value: unknown): GraphqlBody | undefined {
   };
 }
 
+/** Empty params and a falsy notification flag are dropped, so the request leaves them out. */
+export function normalizeJsonrpc(value: unknown): JsonrpcBody | undefined {
+  if (!isRecord(value)) return undefined;
+  const params = getString(value.params);
+  return {
+    method: getString(value.method),
+    ...(params ? { params } : {}),
+    ...(value.notification === true ? { notification: true } : {}),
+  };
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -393,7 +405,8 @@ function normalizeBodyType(value: unknown): HTTPRequestBodyType {
     value === "form-data" ||
     value === "x-www-form-urlencoded" ||
     value === "binary" ||
-    value === "graphql"
+    value === "graphql" ||
+    value === "jsonrpc"
   ) {
     return value;
   }
@@ -414,6 +427,8 @@ export function normalizeHttpRequestConfig(
     body: bodyToString(config.body),
     bodyType: normalizeBodyType(config.bodyType),
     graphql: normalizeGraphql(config.graphql),
+    jsonrpc: normalizeJsonrpc(config.jsonrpc),
+    allowRpcError: getBoolean(config.allowRpcError, false),
     timeout: Math.min(Math.max(getNumber(config.timeout, 30), 1), 300),
     fileUploads: config.fileUploads || [],
     auth: normalizeAuthConfig(config.auth),
