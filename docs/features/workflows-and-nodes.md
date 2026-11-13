@@ -126,18 +126,29 @@ without the session, for a negative test.
 
 #### Response schemas
 
-`responseSchemas` maps a status to the JSON Schema its body must match. After
-the response arrives, the node picks the most specific key for the actual
+`responseSchemas` maps a status to the JSON Schema its body must match, and
+the node's `contract` setting (`off`, `warn` or `fail`) decides whether and how
+that is checked. `contract` defaults to `fail` on a node imported from OpenAPI
+(it carries `openapiMeta`) and to `off` on any other node.
+
+With the check on, the node picks the most specific key for the actual
 status — the exact code (`201`), then its class (`2XX`), then `default` — and
-validates the body against it. A status with no key is not checked. A mismatch
-fails the node with "Response does not match the schema for status 200", and
-its result lists each violation with where in the body it is and why, in the
-output panel, in run reports and on the CLI console. The check runs on negative
-tests too: a request expecting `404` is checked against the `404` (or `4XX`)
-schema.
+validates the body against it. A status with no key at all is itself a
+contract violation: "Status 201 is not declared by the contract". Under `fail`
+a violation fails the node ("Response does not match the schema for status
+200"); under `warn` it is recorded and shown but the node passes. Each
+violation says where in the body it is and why, in the output panel, in the
+HTML and JUnit reports (a warning on a passing node appears as a "Contract
+warning" line, in `system-out` for JUnit) and on the CLI console. The check
+runs on negative tests too: a request expecting `404` is checked against the
+`404` (or `4XX`) schema, so a negative test of an undeclared status needs
+`contract: "warn"` or `"off"`.
+
+`apiweave run --contract <off|warn|fail>` overrides every node's setting for
+the run. This is the one validation path: there is no separate check beside it.
 
 [OpenAPI import](swagger-import.md#response-schema-checks) fills this from the
-spec. On the **Settings** tab, **Response schemas** lists the statuses and
+spec. On the **Settings** tab, **Contract check** sets the mode and **Response schemas** lists the statuses and
 removes one; edit a schema itself in the workflow's JSON. To check a schema
 from an Assertion node instead, use the `matchesSchema` operator.
 

@@ -27,6 +27,7 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation"
 import type { AssertionOperator } from "@shared/types/AssertionOperator"
 import type { AssertionSource } from "@shared/types/AssertionSource"
+import type { ContractMode } from "@shared/types/ContractMode"
 import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
 import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import type { HttpAttempt } from "@shared/types/HttpAttempt"
@@ -135,6 +136,12 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
+  /**
+   * Overrides every node's `contract` setting for the run (the CLI's
+   * `--contract` flag). Absent: each node's own setting, defaulting to `fail`
+   * when it has OpenAPI metadata and `off` otherwise.
+   */
+  readonly contract?: ContractMode
   /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
   readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
@@ -1261,19 +1268,61 @@ export class WorkflowExecutor {
    * The node's request (retried per `config.retry`), then its post-response
    * script, once, on the response the node ends with. A request that got no
    * response has nothing for the script to read, so the script does not run.
+   * Finally the contract check: with `contract` on, the response body must
+   * match the `responseSchemas` entry for its status (exact, then class, then
+   * default), and a status the schemas do not declare is itself a violation.
    */
   private async executeHttpRequestNode(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const result = await this.executeHttpRequestWithScript(node, cancelSignal)
+    const contract = effectiveContract(node.config, this.deps.contract)
+    if (contract === "off") return result
     const schemas = node.config?.["responseSchemas"] as Readonly<Record<string, unknown>> | undefined
-    const key = schemas && result.statusCode !== undefined && !cancelSignal?.aborted ? responseSchemaKey(schemas, result.statusCode) : undefined
-    if (schemas === undefined || key === undefined) return result
-    const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
-    await this.prepareRules([rule])
-    const evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }))
+    if (schemas === undefined) return result
+    if (result.statusCode === undefined || cancelSignal?.aborted) return result
+
+    const key = responseSchemaKey(schemas, result.statusCode)
+    let evaluation: AssertionEvaluation
+    if (key === undefined) {
+      evaluation = this.undeclaredStatusEvaluation(node.nodeId, result, schemas)
+    } else {
+      const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
+      await this.prepareRules([rule])
+      evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }))
+    }
+
     const checked: NodeResult = { ...result, assertionEvaluations: [evaluation] }
-    if (evaluation.outcome === "pass") return checked
+    // "warn" records and shows the violation without failing the node.
+    if (evaluation.outcome === "pass" || contract === "warn") return checked
     // A request that already failed keeps its own reason; the violations are in `assertions`.
-    return { ...checked, status: "error", error: result.error ?? `Response does not match the schema for status ${key}` }
+    const error =
+      key === undefined
+        ? `Response status ${result.statusCode} is not declared by the contract (declared: ${Object.keys(schemas).join(", ")})`
+        : `Response does not match the schema for status ${key}`
+    return { ...checked, status: "error", error: result.error ?? error }
+  }
+
+  /** The violation for a status `responseSchemas` never declared: a single SchemaViolation at the root. */
+  private undeclaredStatusEvaluation(
+    nodeId: string,
+    result: NodeResult,
+    schemas: Readonly<Record<string, unknown>>,
+  ): AssertionEvaluation {
+    const declared = Object.keys(schemas).sort().join(", ")
+    return {
+      ruleIndex: 0,
+      source: "prev",
+      path: "",
+      operator: "matchesSchema",
+      sourceNodeId: nodeId,
+      expectedState: "literal",
+      expectedType: null,
+      actualState: "present",
+      actualType: jsonValueType(result.body),
+      outcome: "fail",
+      reasonCode: "comparison-failed",
+      detail: `status ${result.statusCode} is not declared`,
+      schemaErrors: [{ path: "", message: `Status ${result.statusCode} is not declared by the contract (declared: ${declared})` }],
+    }
   }
 
   private async executeHttpRequestWithScript(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
@@ -2998,6 +3047,18 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
 /** The `responseSchemas` key that applies to `status`: exact ("201"), then its class ("2XX"), then "default". */
 export function responseSchemaKey(schemas: Readonly<Record<string, unknown>>, status: number): string | undefined {
   return [String(status), `${Math.floor(status / 100)}XX`, "default"].find((key) => schemas[key] !== undefined)
+}
+
+/**
+ * The contract mode an HTTP node runs under: the run override (`--contract`)
+ * wins, then the node's own `contract`, then `fail` when it carries OpenAPI
+ * metadata and `off` otherwise.
+ */
+export function effectiveContract(config: Readonly<Record<string, unknown>> | undefined, override: ContractMode | undefined): ContractMode {
+  if (override !== undefined) return override
+  const configured = config?.["contract"]
+  if (configured === "off" || configured === "warn" || configured === "fail") return configured
+  return config?.["openapiMeta"] !== undefined ? "fail" : "off"
 }
 
 function toAssertionSource(value: string | undefined): AssertionSource {

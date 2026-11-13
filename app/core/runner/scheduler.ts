@@ -11,6 +11,7 @@ import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
+import type { ContractMode } from "@shared/types/ContractMode"
 import type { AgentRunApprovalCreate, AgentRunApprovalLookup } from "../repositories/AgentRunApprovalRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
 import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
@@ -110,6 +111,8 @@ export interface SchedulerDeps {
   readonly agentRunApprovals?: AgentRunApprovalStore
   /** OAuth 2.0 tokens kept across runs (the app session, a CLI process). Absent: each run fetches its own. */
   readonly oauthTokens?: OAuthTokenCache
+  /** Overrides every node's `contract` setting for the run (the CLI's `--contract` flag). */
+  readonly contract?: ContractMode
   /**
    * Writes a secret back into the scope it resolved from — a refreshed OAuth
    * token set replacing the one it was refreshed from. Absent: never written.
@@ -408,6 +411,7 @@ export class RunScheduler {
         ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         ...(data ? { data } : {}),
+        ...(this.deps.contract !== undefined ? { contract: this.deps.contract } : {}),
         oauthTokens: this.deps.oauthTokens ?? new Map(),
         maskValue,
         ...(saveSecret

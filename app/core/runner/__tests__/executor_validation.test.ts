@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { RunResultSchema } from "@shared/zod-schemas"
 import type { AssertionItem } from "@shared/types/AssertionItem"
-import { WorkflowExecutor, responseSchemaKey, type WorkflowGraph } from "../executor"
+import { WorkflowExecutor, effectiveContract, responseSchemaKey, type WorkflowGraph } from "../executor"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
@@ -19,14 +19,14 @@ const BODY = {
   greeting: "Hello World",
 }
 
-function executorReturning(body: unknown, status = 200): WorkflowExecutor {
+function executorReturning(body: unknown, status = 200, contract?: "off" | "warn" | "fail"): WorkflowExecutor {
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xDEADBEEF")
   const http = new SafeHttp({
     fetchImpl: (async () =>
       new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })) as never,
   })
-  return new WorkflowExecutor({ clock, rng, http, functions: new DynamicFunctions(clock, rng) })
+  return new WorkflowExecutor({ clock, rng, http, functions: new DynamicFunctions(clock, rng), ...(contract ? { contract } : {}) })
 }
 
 function assertionWorkflow(rules: readonly AssertionItem[], httpConfig: Record<string, unknown> = {}): WorkflowGraph {
@@ -230,10 +230,18 @@ describe("assertion operator: matchesSchema", () => {
   })
 })
 
-describe("http-request responseSchemas", () => {
+describe("http-request contract check (responseSchemas)", () => {
   const schemas = {
     "200": { type: "object", required: ["id"], properties: { id: { type: "string" } } },
     "4XX": { type: "object", required: ["error"] },
+  }
+
+  const openapiMeta = {
+    source: "openapi",
+    method: "GET",
+    path: "/orders/{id}",
+    operationId: null,
+    fingerprint: "get|/orders/{id}|",
   }
 
   function requestWorkflow(config: Record<string, unknown>): WorkflowGraph {
@@ -251,7 +259,7 @@ describe("http-request responseSchemas", () => {
   }
 
   it("passes a response that matches the schema for its status", async () => {
-    const output = await executorReturning({ id: "ord_1" }).executeWorkflow(requestWorkflow({ responseSchemas: schemas }))
+    const output = await executorReturning({ id: "ord_1" }).executeWorkflow(requestWorkflow({ responseSchemas: schemas, contract: "fail" }))
     expect(output.status).toBe("passed")
     const result = output.results.find((r) => r.nodeId === "req")!
     expect(result.assertions).toMatchObject([{ operator: "matchesSchema", path: "response.body", outcome: "pass" }])
@@ -259,7 +267,7 @@ describe("http-request responseSchemas", () => {
   })
 
   it("fails the node when the body does not match, with the violations on its result", async () => {
-    const output = await executorReturning({ id: 7 }).executeWorkflow(requestWorkflow({ responseSchemas: schemas }))
+    const output = await executorReturning({ id: 7 }).executeWorkflow(requestWorkflow({ responseSchemas: schemas, contract: "fail" }))
     expect(output.status).toBe("failed")
     const result = output.results.find((r) => r.nodeId === "req")!
     expect(result.error).toBe("Response does not match the schema for status 200")
@@ -267,15 +275,49 @@ describe("http-request responseSchemas", () => {
     expect(output.nodeStatuses["end"]).toBeUndefined()
   })
 
-  it("checks a negative test's body against its status class, and leaves undocumented statuses alone", async () => {
+  it("checks a negative test's body against its status class", async () => {
     const rejected = await executorReturning({ message: "nope" }, 404).executeWorkflow(
-      requestWorkflow({ responseSchemas: schemas, expectedStatus: 404 }),
+      requestWorkflow({ responseSchemas: schemas, expectedStatus: 404, contract: "fail" }),
     )
     expect(rejected.results.find((r) => r.nodeId === "req")?.error).toBe("Response does not match the schema for status 4XX")
+  })
 
-    const undocumented = await executorReturning({ id: 7 }, 201).executeWorkflow(requestWorkflow({ responseSchemas: schemas }))
-    expect(undocumented.status).toBe("passed")
-    expect(undocumented.results.find((r) => r.nodeId === "req")?.assertions).toBeNull()
+  it("is off by default without OpenAPI metadata", async () => {
+    const output = await executorReturning({ id: 7 }).executeWorkflow(requestWorkflow({ responseSchemas: schemas }))
+    expect(output.status).toBe("passed")
+    expect(output.results.find((r) => r.nodeId === "req")?.assertions).toBeNull()
+  })
+
+  it("defaults to fail with OpenAPI metadata", async () => {
+    const output = await executorReturning({ id: 7 }).executeWorkflow(requestWorkflow({ responseSchemas: schemas, openapiMeta }))
+    expect(output.status).toBe("failed")
+    expect(output.results.find((r) => r.nodeId === "req")?.error).toBe("Response does not match the schema for status 200")
+  })
+
+  it("treats a status the schemas do not declare as a violation", async () => {
+    const output = await executorReturning({ id: 7 }, 201).executeWorkflow(requestWorkflow({ responseSchemas: schemas, contract: "fail" }))
+    expect(output.status).toBe("failed")
+    const result = output.results.find((r) => r.nodeId === "req")!
+    expect(result.error).toBe("Response status 201 is not declared by the contract (declared: 200, 4XX)")
+    expect(result.assertions?.[0]?.schemaErrors).toEqual([
+      { path: "", message: "Status 201 is not declared by the contract (declared: 200, 4XX)" },
+    ])
+  })
+
+  it("records but does not fail under warn", async () => {
+    const output = await executorReturning({ id: 7 }).executeWorkflow(requestWorkflow({ responseSchemas: schemas, contract: "warn" }))
+    expect(output.status).toBe("passed")
+    const result = output.results.find((r) => r.nodeId === "req")!
+    expect(result.assertions?.[0]).toMatchObject({ outcome: "fail", reasonCode: "comparison-failed" })
+    expect(result.assertions?.[0]?.schemaErrors).toEqual([{ path: "/id", message: 'Instance type "number" is invalid. Expected "string".' }])
+    expect(result.error).toBeNull()
+  })
+
+  it("applies a run-level override over the node's own setting", async () => {
+    // The node opts into fail; a run-level --contract off turns the check off.
+    const output = await executorReturning({ id: 7 }, 200, "off").executeWorkflow(requestWorkflow({ responseSchemas: schemas, contract: "fail" }))
+    expect(output.status).toBe("passed")
+    expect(output.results.find((r) => r.nodeId === "req")?.assertions).toBeNull()
   })
 
   it("picks the exact status, then its class, then default", () => {
@@ -283,5 +325,15 @@ describe("http-request responseSchemas", () => {
     expect(responseSchemaKey({ "200": {}, "2XX": {}, default: {} }, 204)).toBe("2XX")
     expect(responseSchemaKey({ "200": {}, default: {} }, 500)).toBe("default")
     expect(responseSchemaKey({ "200": {} }, 500)).toBeUndefined()
+  })
+
+  it("resolves the effective contract mode", () => {
+    expect(effectiveContract(undefined, undefined)).toBe("off")
+    expect(effectiveContract({}, undefined)).toBe("off")
+    expect(effectiveContract({ openapiMeta }, undefined)).toBe("fail")
+    expect(effectiveContract({ contract: "warn" }, undefined)).toBe("warn")
+    expect(effectiveContract({ contract: "off", openapiMeta }, undefined)).toBe("off")
+    expect(effectiveContract({ contract: "fail" }, "warn")).toBe("warn")
+    expect(effectiveContract({ openapiMeta }, "off")).toBe("off")
   })
 })

@@ -16,6 +16,7 @@ export type {
   AgentRosterEntry,
 } from "./AgentsBridge"
 export type { AssertionEvaluation } from "./AssertionEvaluation"
+export type { ContractMode } from "./ContractMode"
 export type { SchemaViolation } from "./SchemaViolation"
 export type { OpenApiNodeMeta } from "./OpenApiNodeMeta"
 export type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"

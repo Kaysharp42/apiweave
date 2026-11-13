@@ -2,6 +2,7 @@ export { AgentAvailabilitySchema, AgentAvailabilityStateSchema } from "./AgentAv
 export { AgentDefinitionSchema, AgentPromptModeSchema, StoredAgentDefinitionSchema } from "./AgentDefinitionSchema"
 export { AgentLaunchModeSchema, AgentSessionSchema, AgentSessionStatusSchema } from "./AgentSessionSchema"
 export { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
+export { ContractModeSchema } from "./ContractModeSchema"
 export { SchemaViolationSchema } from "./SchemaViolationSchema"
 export { OpenApiNodeMetaSchema } from "./OpenApiNodeMetaSchema"
 export { AssertionApplyResultSchema } from "./AssertionApplyResultSchema"

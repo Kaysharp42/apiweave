@@ -13,6 +13,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Contract checks against imported OpenAPI schemas.** An HTTP node has a
+  `contract` setting (`off`, `warn` or `fail`) governing its `responseSchemas`
+  check: `fail` for nodes imported from OpenAPI, `off` otherwise. A response
+  status the spec does not declare is now a violation. `warn` records and shows
+  violations without failing the node; the HTML and JUnit reports list them.
+  `apiweave run --contract <off|warn|fail>` overrides the setting for a run,
+  and **Settings → Contract check** sets it per node. This replaces the old
+  always-on check, so a hand-built node with `responseSchemas` must set
+  `contract` to be checked.
+
 - **RFC 9535 JSONPath in the path resolver.** An extractor or assertion path
   beginning with `$` is now evaluated as JSONPath rooted at the node result
   (`$.response.body.items[?@.id==3].name`), alongside the existing dot grammar.
