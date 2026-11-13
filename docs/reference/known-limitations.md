@@ -155,6 +155,11 @@ page or through the CLI flags.
   a loop.
 - **A Delay runs once.** It pauses the run for a fixed time and continues; a
   workflow cannot loop back through it.
+- **WebSocket and SSE nodes are bounded probes.** They collect up to 100
+  messages (1 MiB) and close; there is no long-lived or interactive session. A
+  WebSocket node sends no cookies from the run's cookie jar, does not read the
+  upgrade response's headers, and does not support Digest or AWS Signature V4
+  auth.
 - **There is no local scheduling.** Runs start from the app, from a local MCP
   client, or from `apiweave run` in your own CI. APIWeave does not run a
   workflow on a timer on your machine in 1.0.

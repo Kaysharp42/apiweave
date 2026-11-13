@@ -120,6 +120,7 @@ rejected config names its node's list index and field in the error path.
 | \`end\` | terminal point | input only, one or more per workflow |
 | \`http-request\` | sends one request, optionally extracts variables | 1 in, 1 out |
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
+| \`websocket\` | opens a bounded WebSocket, sends its messages, captures what comes back | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
@@ -204,6 +205,19 @@ raw capture cap.
 The captured result body has \`events\`, \`eventCount\`, and \`termination\`.
 Each event has \`event\`, optional \`id\`, and its exact string \`data\`, so an
 assertion or extractor can target \`response.body.events[0].data\`.
+
+### websocket
+
+A WebSocket node is a **bounded test probe** with the same lifecycle as \`sse\`:
+\`ready\` runs once the handshake succeeded and its \`messages\` (\`{data, type:
+"text"|"binary" (base64), delayMs}\`) were sent; \`complete\` runs when it closes
+at \`maxMessages\` (default 1), on a matching \`finishConditions\` rule
+(all rules must match one message; paths address \`type\`, raw \`data\` or parsed
+JSON \`data.*\`, or JSONPath such as \`$.data.status\`), or at \`timeout\`
+(\`0\` only with finish rules). \`url\` is \`ws://\` or \`wss://\`; \`headers\`, \`auth\`
+(bearer, basic, API key, JWT, OAuth 2.0) and \`subprotocols\` go in the handshake.
+The body has \`messages\`, \`messageCount\`, \`termination\`, \`closeCode\` and
+\`closeReason\`: assert on \`response.body.messages[0].data\`.
 
 ### assertion
 

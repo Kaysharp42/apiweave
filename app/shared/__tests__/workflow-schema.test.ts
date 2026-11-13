@@ -174,4 +174,22 @@ describe("WorkflowSchema", () => {
     expect(WorkflowNodeSchema.safeParse({ ...base, config: { timeout: 0 } }).success).toBe(false)
     expect(WorkflowNodeSchema.safeParse({ ...base, config: { maxEvents: 0 } }).success).toBe(false)
   })
+
+  it("accepts a bounded websocket node and rejects unbounded or unknown fields", () => {
+    const base = { nodeId: "ws-1", type: "websocket", position: { x: 0, y: 0 } }
+    expect(WorkflowNodeSchema.safeParse({
+      ...base,
+      config: {
+        url: "wss://example.test/socket",
+        subprotocols: ["chat.v1"],
+        messages: [{ data: "{\"action\":\"subscribe\"}", type: "text" }, { data: "AQID", type: "binary", delayMs: 50 }],
+        maxMessages: 5,
+        finishConditions: [{ path: "$.data.status", operator: "equals", expectedValue: "done" }],
+      },
+    }).success).toBe(true)
+    expect(WorkflowNodeSchema.safeParse({ ...base, config: { timeout: 0 } }).success).toBe(false)
+    expect(WorkflowNodeSchema.safeParse({ ...base, config: { maxMessages: 0 } }).success).toBe(false)
+    expect(WorkflowNodeSchema.safeParse({ ...base, config: { maxEvents: 1 } }).success).toBe(false)
+    expect(WorkflowNodeSchema.safeParse({ ...base, config: { messages: [{ data: "x", type: "json" }] } }).success).toBe(false)
+  })
 })

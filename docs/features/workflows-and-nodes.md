@@ -17,6 +17,7 @@
   - [End](#end)
   - [HTTP Request](#http-request)
   - [SSE Stream](#sse-stream)
+  - [WebSocket](#websocket)
   - [Assertion](#assertion)
   - [Delay](#delay)
   - [Merge](#merge)
@@ -312,6 +313,26 @@ A polling request for `{"status": "pending"}` → `{"status": "done"}`:
 ```
 
 **Expected status (negative tests).** By default a node passes on any 2xx status and fails on everything else. Set **Expected status** — for example `409` or `409, 422` — and that rule is fully replaced: the node passes only when the actual status matches one of the expected values, and fails otherwise, *even for a 2xx response*. This is how you assert a negative test ("the API must reject this with 409") on the request itself. A matched status renders as a green node showing the status text (for example `409 Conflict`). Use it instead of a `continueOnFail` flag plus a downstream assertion that pins a non-2xx status; `workflow_diagnose` suggests exactly that migration when it sees that pattern.
+
+### WebSocket
+
+**Purpose:** Opens a bounded WebSocket connection for contract testing, sends the messages you configure, and collects what comes back. It has the same two-phase lifecycle as the SSE Stream: **Ready** fires once the handshake succeeded and the outbound messages were sent, and the connection then closes on a message cap, a matching finish rule, a timeout, cancellation or workflow failure. It is a test probe, not a long-lived session.
+
+| Field | What it does |
+| --- | --- |
+| `url` | `ws://` or `wss://` endpoint. Supports environment and variable placeholders; `{{secrets.*}}` is refused in the URL. |
+| `query params` / `headers` | Optional structured values sent in the handshake request. |
+| `auth` | Applied to the handshake: bearer, basic, API key (header or query), JWT or OAuth 2.0. Digest and AWS Signature V4 are not available. |
+| `subprotocols` | Requested in `Sec-WebSocket-Protocol`. |
+| `messages` | Ordered `{data, type, delayMs}` list sent after the handshake. `type` is `text` or `binary` (`data` is base64). Placeholders, secrets included, are substituted. |
+| `messages to collect` | Maximum incoming messages retained (default 1; maximum 100). With no finish rule, reaching it closes the connection. |
+| `finish trigger` | Rules evaluated against each incoming message; all must match one message. Paths address `type`, raw `data` and JSON `data.*`; a `$` path is [JSONPath](variables-and-extractors.md). |
+| `timeout` | Maximum time for the whole connection, in seconds. `0` only with a finish rule. |
+| `verify TLS` / `continue on fail` | As on every network node. The proxy, CA and client-certificate settings of [Network](network.md) apply. |
+
+The output body has `messages` (each `{type, data}`; binary `data` is base64), `messageCount`, `termination`, `closeCode` and `closeReason`; `response.duration` is the connection's lifetime in milliseconds. Captured frames are bounded to 1 MiB in total.
+
+**Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final result exists. Use the Complete path for a regular Assertion node that checks `response.body.messages`.
 
 ### Assertion
 

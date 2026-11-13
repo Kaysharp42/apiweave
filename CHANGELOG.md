@@ -37,6 +37,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `application/json` with a per-request `id` that increases through the run, and
   a response carrying an `error` member fails the node with its code and message
   unless **Allow error responses** is turned on.
+- **WebSocket node.** A new node opens a `ws://` or `wss://` connection, sends
+  an ordered list of text or binary (base64) messages once the handshake
+  completes, collects the incoming frames and closes on a finish rule, a
+  message limit or a timeout. Like SSE it has **Ready** and **Complete**
+  outputs, and its result exposes `response.body.messages`, `messageCount`,
+  `termination`, `closeCode` and `closeReason`. Headers, auth (bearer, basic,
+  API key, JWT, OAuth 2.0) and subprotocols go in the handshake, and the
+  proxy, trusted CA, client certificate and TLS-verification settings apply.
+  Finish rules accept dot paths and JSONPath.
+
+### Changed
+
+- **SSE and WebSocket share one stream-listener lifecycle.** The executor's
+  SSE-only handshake, consumer and completion code is now a protocol-neutral
+  seam (`core/runner/stream_listener.ts`) driven by an adapter per protocol,
+  and finish rules are one `StreamFinishCondition` evaluated by one function.
+  SSE behaves as before. The `SseFinishCondition` type is renamed
+  `StreamFinishCondition`.
 
 ## [1.0.0] — 2026-11-10
 
