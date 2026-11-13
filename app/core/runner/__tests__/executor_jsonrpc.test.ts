@@ -92,6 +92,17 @@ describe("WorkflowExecutor — JSON-RPC bodies", () => {
     expect(output.results[0]!.response?.body).toEqual({ jsonrpc: "2.0", result: 19, id: 1 })
   })
 
+  it("POSTs a JSON-RPC request even when the node's method is GET", async () => {
+    const api = await startServer(SUBTRACT)
+    server = api.server
+    const config = { method: "GET", url: `${api.base}/rpc`, bodyType: "jsonrpc", jsonrpc: { method: "subtract", params: "[5, 2]" } }
+    const output = await makeExecutor().executeWorkflow(chain({ nodeId: "rpc", type: "http-request", config }))
+
+    expect(output.nodeStatuses["rpc"]).toBe("passed")
+    expect(api.received[0]!.method).toBe("POST")
+    expect(JSON.parse(api.received[0]!.body)).toEqual({ jsonrpc: "2.0", method: "subtract", params: [5, 2], id: 1 })
+  })
+
   it("sends params by name as an object and increments the id per request within the run", async () => {
     const api = await startServer((request) => {
       const params = request["params"] as { readonly minuend: number; readonly subtrahend: number }

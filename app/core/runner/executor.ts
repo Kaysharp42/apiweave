@@ -993,12 +993,13 @@ export class WorkflowExecutor {
 
   private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
-    let method = (config["method"] as string | undefined) ?? "GET"
+    const bodyType = config["bodyType"] as string | undefined
+    // JSON-RPC over HTTP is always a POST, whatever method the node was left on.
+    let method = bodyType === "jsonrpc" ? "POST" : ((config["method"] as string | undefined) ?? "GET")
     let url = (config["url"] as string | undefined) ?? ""
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headersField = config["headers"] as KVField
     const body = config["body"] as string | Record<string, unknown> | undefined
-    const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
     const auth = config["auth"] as HttpAuthConfig | undefined
     // A signature covers one URL: a redirect would carry it somewhere it does not fit.
