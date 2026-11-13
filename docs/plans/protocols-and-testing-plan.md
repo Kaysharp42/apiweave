@@ -14,7 +14,7 @@
 | I: For-each | `feat/for-each` | **Done**, merged `6a204832` |
 | J: Load runs | `feat/load-runs` | **Done**, merged `b5945ab3` |
 | E: Message queues | `feat/message-queues` | **Not started**; only the schema scaffolding exists (`wip(proto-mq)`), no runner, nodes or tests |
-| G: Snapshot testing | — | **Not started** |
+| G: Snapshot testing | direct on `main` | **Done** |
 
 `main` after the nine merges: typecheck, lint, `build:app` and `build:cli` pass, and the full suite is 4458 passed, 3 skipped.
 
