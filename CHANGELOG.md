@@ -37,6 +37,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `application/json` with a per-request `id` that increases through the run, and
   a response carrying an `error` member fails the node with its code and message
   unless **Allow error responses** is turned on.
+- **For-each on Call Workflow.** A Call Workflow node can run its target once
+  per item of a list: `forEach` takes `items` (a `{{...}}` placeholder, a JSON
+  array literal, or a `$` JSONPath over `variables`, `env`, `data` and node
+  results), an `itemVariable`, an optional `indexVariable`, `concurrency` from
+  1 to 16 and `stopOnFailure`. Each iteration is its own run of the target,
+  every output-mapping variable becomes an array in item order, the count is
+  capped at 1000, and the node shows each iteration with a link to its run.
 
 ## [1.0.0] — 2026-11-10
 
