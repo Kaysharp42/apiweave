@@ -541,7 +541,7 @@ Clear every \`error\` before running.
 
 | code | meaning |
 | --- | --- |
-| \`extractor_path_invalid\` | an extractor path is not rooted at the response object (`response.…`) or is an invalid `$` JSONPath expression |
+| \`extractor_path_invalid\` | an extractor path is not rooted at the response object (response.…) or is an invalid \`$\` JSONPath expression |
 | \`variable_source_missing\` | \`{{variables.x}}\` is read but nothing produces it |
 | \`variable_producer_duplicate\` | two nodes write the same variable |
 | \`variable_producer_not_upstream\` | the producer is not upstream of the consumer, so the value is not set yet |
