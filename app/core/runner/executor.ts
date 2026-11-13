@@ -41,6 +41,7 @@ import type { GraphqlBody } from "@shared/types/GraphqlBody"
 import type { JsonrpcBody } from "@shared/types/JsonrpcBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
+import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS } from "@shared/zod-schemas/WorkflowCallForEachSchema"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
@@ -126,6 +127,31 @@ export interface ResolvedSubWorkflow {
   readonly nodes: readonly WorkflowNode[]
   readonly edges: readonly WorkflowEdge[]
   readonly variables?: Readonly<Record<string, unknown>>
+}
+
+/** The Call Workflow node's config, as the executor reads it. */
+interface WorkflowCallConfig {
+  readonly targetWorkflowId?: string | null
+  readonly inputMapping?: Record<string, string>
+  readonly outputMapping?: Record<string, string>
+  readonly forEach?: WorkflowCallForEachConfig
+}
+
+/** The `forEach` slice of a Call Workflow node's config (see `WorkflowCallForEachSchema`). */
+interface WorkflowCallForEachConfig {
+  readonly items?: string
+  readonly itemVariable?: string
+  readonly indexVariable?: string
+  readonly concurrency?: number
+  readonly stopOnFailure?: boolean
+}
+
+/** One iteration's result, indexed by item position so concurrent runs stay ordered. */
+interface ForEachIterationOutcome {
+  readonly index: number
+  readonly status: ExecutorOutput["status"]
+  readonly output: ExecutorOutput
+  readonly runId?: string
 }
 
 export interface ExecutorDeps {
@@ -338,6 +364,20 @@ export interface NodeResult {
     readonly nodeCount: number
     readonly failedNodeCount: number
     readonly outputVariableNames: readonly string[]
+    /** Present only when the node ran with `forEach`: one entry per iteration, in item order. */
+    readonly forEach?: {
+      /** The number of items resolved (after the iteration cap). */
+      readonly itemCount: number
+      /** The number of iterations actually started — fewer than `itemCount` when the node stopped early or was cancelled. */
+      readonly ranCount: number
+      /** The number of iterations that failed. */
+      readonly failedCount: number
+      readonly iterations: readonly {
+        readonly index: number
+        readonly runId?: string
+        readonly status: ExecutorOutput["status"]
+      }[]
+    }
   }
   readonly [key: string]: unknown
 }
@@ -2149,11 +2189,7 @@ export class WorkflowExecutor {
    * walks its own top-level results array.
    */
   private async executeCallWorkflow(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
-    const config = (node.config ?? {}) as {
-      readonly targetWorkflowId?: string | null
-      readonly inputMapping?: Record<string, string>
-      readonly outputMapping?: Record<string, string>
-    }
+    const config = (node.config ?? {}) as WorkflowCallConfig
     const targetWorkflowId = config.targetWorkflowId
     if (!targetWorkflowId) {
       return { status: "error", error: "Call Workflow node has no target workflow configured" }
@@ -2169,43 +2205,30 @@ export class WorkflowExecutor {
       return { status: "error", error: `Called workflow ${targetWorkflowId} not found` }
     }
 
-    // The child executor shares `this.deps` (same run, same environment/secrets
-    // scope) — it can already resolve {{env.*}} and {{secrets.*}} on its own.
-    // inputMapping only needs to carry the caller's *workflow* variables
-    // ({{variables.*}}) across, since each executor instance has its own
-    // isolated `workflowVariables` map. Secrets are disallowed here so a
-    // secret value is never downgraded into a plain child variable when the
-    // child can already reach it directly and more safely via {{secrets.*}}.
     const inputMapping = config.inputMapping ?? {}
-    const inputVariables: Record<string, unknown> = {}
-    for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
-      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
-    }
+    const outputMapping = config.outputMapping ?? {}
 
-    const sub = this.deps.subRun?.begin(targetWorkflowId)
-    const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
-    childExecutor.callDepth = this.callDepth + 1
-    let output: ExecutorOutput | undefined
-    try {
-      output = await childExecutor.executeWorkflow(
-        {
-          nodes: target.nodes,
-          edges: target.edges,
-          variables: { ...(target.variables ?? {}), ...inputVariables },
-        },
-        {
-          ...(sub ? { runId: sub.runId } : {}),
-          ...(cancelSignal ? { cancelSignal } : {}),
-        },
-      )
-    } finally {
-      // Runs on the throw path too, or a cancelled/erroring sub-execution
-      // leaves its run row stuck in `running` until the next startup reconcile.
-      if (sub) this.deps.subRun?.finish(sub.runId, output)
-    }
+    return config.forEach
+      ? this.executeForEach(targetWorkflowId, target, inputMapping, outputMapping, config.forEach, cancelSignal)
+      : this.executeSingleCall(targetWorkflowId, target, inputMapping, outputMapping, cancelSignal)
+  }
+
+  /**
+   * Run the target once, mapping inputs in and outputs back out. This is the
+   * pre-for-each path: one child run, one summary. `forEach` calls reuse the
+   * same per-iteration mechanics via `runChildIteration`.
+   */
+  private async executeSingleCall(
+    targetWorkflowId: string,
+    target: ResolvedSubWorkflow,
+    inputMapping: Record<string, string>,
+    outputMapping: Record<string, string>,
+    cancelSignal?: AbortSignal,
+  ): Promise<NodeResult> {
+    const inputVariables = this.resolveInputVariables(inputMapping)
+    const { output, runId } = await this.runChildIteration(targetWorkflowId, target, inputVariables, cancelSignal)
     const childOutput = output
 
-    const outputMapping = config.outputMapping ?? {}
     for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
       if (subVarName in childOutput.extractedVariables) {
         this.workflowVariables[callerVarName] = childOutput.extractedVariables[subVarName]
@@ -2221,13 +2244,277 @@ export class WorkflowExecutor {
           : `Sub-workflow ${targetLabel} failed in ${childOutput.failedNodes.length} node(s)`,
       subWorkflow: {
         workflowId: targetWorkflowId,
-        ...(sub ? { runId: sub.runId } : {}),
+        ...(runId ? { runId } : {}),
         status: childOutput.status,
         nodeCount: target.nodes.length,
         failedNodeCount: childOutput.failedNodes.length,
         outputVariableNames: Object.keys(outputMapping),
       },
     }
+  }
+
+  /**
+   * Run the target once per item in `forEach.items`, bounded by the iteration
+   * cap and `concurrency`, and collect each output variable into an array in
+   * item order.
+   *
+   * The node passes only when every iteration passes. With `stopOnFailure`
+   * (the default) it stops starting new iterations at the first failure;
+   * otherwise it runs every item and the summary reports how many failed. Each
+   * iteration is its own sub-run of the target, recorded via `deps.subRun`, so
+   * the callee's History holds one entry per item.
+   */
+  private async executeForEach(
+    targetWorkflowId: string,
+    target: ResolvedSubWorkflow,
+    inputMapping: Record<string, string>,
+    outputMapping: Record<string, string>,
+    forEach: WorkflowCallForEachConfig,
+    cancelSignal?: AbortSignal,
+  ): Promise<NodeResult> {
+    const items = this.resolveItems(forEach.items)
+    if (items === null) {
+      return { status: "error", error: "For-each items did not resolve to an array" }
+    }
+    if (!forEach.itemVariable?.trim()) {
+      return { status: "error", error: "For-each item variable is required" }
+    }
+    const capped = items.slice(0, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS)
+    const concurrency = Math.min(
+      Math.max(Math.trunc(forEach.concurrency ?? 1), 1),
+      WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY,
+    )
+    const stopOnFailure = forEach.stopOnFailure ?? true
+
+    // The input mapping is resolved once in the caller's context: it does not
+    // depend on the item, which arrives through the item/index variables.
+    const baseInput = this.resolveInputVariables(inputMapping)
+
+    const outcomes: ForEachIterationOutcome[] = []
+    let cancelled = false
+    let stopRequested = false
+    let nextIndex = 0
+
+    const worker = async (): Promise<void> => {
+      while (!stopRequested && !cancelled && !cancelSignal?.aborted) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= capped.length) return
+
+        const inputVariables = { ...baseInput }
+        if (forEach.itemVariable) inputVariables[forEach.itemVariable] = capped[index]
+        if (forEach.indexVariable) inputVariables[forEach.indexVariable] = index
+
+        const { output, runId } = await this.runChildIteration(targetWorkflowId, target, inputVariables, cancelSignal)
+        const outcome: ForEachIterationOutcome = {
+          index,
+          status: output.status,
+          output,
+          ...(runId ? { runId } : {}),
+        }
+        outcomes[index] = outcome
+        if (outcome.status === "cancelled") {
+          cancelled = true
+          stopRequested = true
+        } else if (outcome.status === "failed" && stopOnFailure) {
+          stopRequested = true
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, capped.length) }, () => worker()),
+    )
+
+    // Collect output variables into arrays in item order; a slot is `null`
+    // where an iteration did not run (early stop/cancel) or did not produce
+    // the variable.
+    for (const callerVarName of Object.keys(outputMapping)) {
+      const collected: unknown[] = []
+      for (let i = 0; i < capped.length; i++) {
+        const outcome = outcomes[i]
+        const value = outcome?.output?.extractedVariables[outputMapping[callerVarName]!]
+        collected.push(value === undefined ? null : value)
+      }
+      this.workflowVariables[callerVarName] = collected
+    }
+
+    const iterations = outcomes.filter((o): o is ForEachIterationOutcome => o !== undefined)
+    const failedCount = iterations.filter((o) => o.status === "failed").length
+    const ranCount = iterations.length
+    const allPassed = failedCount === 0 && ranCount === capped.length
+
+    const targetLabel = target.name ?? targetWorkflowId
+    const summary = (): NodeResult["subWorkflow"] => ({
+      workflowId: targetWorkflowId,
+      status: cancelled ? "cancelled" : allPassed ? "passed" : "failed",
+      nodeCount: target.nodes.length,
+      failedNodeCount: 0,
+      outputVariableNames: Object.keys(outputMapping),
+      forEach: {
+        itemCount: capped.length,
+        ranCount,
+        failedCount,
+        iterations: iterations.map((o) => ({
+          index: o.index,
+          ...(o.runId ? { runId: o.runId } : {}),
+          status: o.status,
+        })),
+      },
+    })
+
+    if (cancelled) {
+      return { status: "cancelled", message: `Sub-workflow ${targetLabel} cancelled`, subWorkflow: summary() }
+    }
+    if (allPassed) {
+      return {
+        status: "success",
+        message: `Sub-workflow ${targetLabel} completed ${ranCount} iteration(s)`,
+        subWorkflow: summary(),
+      }
+    }
+    const firstFailed = iterations.find((o) => o.status === "failed")
+    const message = stopOnFailure
+      ? `Sub-workflow ${targetLabel} failed in iteration ${(firstFailed?.index ?? 0) + 1}`
+      : `Sub-workflow ${targetLabel}: ${failedCount} of ${ranCount} iteration(s) failed`
+    return { status: "error", message, subWorkflow: summary() }
+  }
+
+  /**
+   * Run the target once as a child, returning its output and the child run id.
+   * Never rejects: an unexpected throw is folded into a `failed` outcome, and
+   * the child run row is always finished.
+   */
+  private async runChildIteration(
+    targetWorkflowId: string,
+    target: ResolvedSubWorkflow,
+    inputVariables: Record<string, unknown>,
+    cancelSignal?: AbortSignal,
+  ): Promise<{ output: ExecutorOutput; runId?: string }> {
+    const sub = this.deps.subRun?.begin(targetWorkflowId)
+    const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
+    childExecutor.callDepth = this.callDepth + 1
+    let output: ExecutorOutput
+    try {
+      output = await childExecutor.executeWorkflow(
+        {
+          nodes: target.nodes,
+          edges: target.edges,
+          variables: { ...(target.variables ?? {}), ...inputVariables },
+        },
+        {
+          ...(sub ? { runId: sub.runId } : {}),
+          ...(cancelSignal ? { cancelSignal } : {}),
+        },
+      )
+    } catch (error) {
+      // `executeWorkflow` only rethrows non-StopBranch errors; treat them as a
+      // failed child so the node's summary counts them rather than bubbling a
+      // half-finished run to the caller.
+      output = this.syntheticFailureOutput(error)
+    } finally {
+      // Runs on the throw path too, or a cancelled/erroring sub-execution
+      // leaves its run row stuck in `running` until the next startup reconcile.
+      if (sub) this.deps.subRun?.finish(sub.runId, output)
+    }
+    return { output, ...(sub ? { runId: sub.runId } : {}) }
+  }
+
+  /** An `ExecutorOutput` standing in for a child that threw before producing one. */
+  private syntheticFailureOutput(error: unknown): ExecutorOutput {
+    return {
+      status: "failed",
+      startedAt: this.deps.clock.isoNow(),
+      nodeStatuses: {},
+      extractedVariables: {},
+      outputs: {},
+      results: [],
+      failedNodes: [],
+      failureMessage: error instanceof Error ? error.message : String(error),
+    }
+  }
+
+  /**
+   * Resolve an input mapping in the caller's context. Secrets are disallowed
+   * here so a secret value is never downgraded into a plain child variable
+   * when the child can already reach it directly and more safely via
+   * {{secrets.*}}.
+   */
+  private resolveInputVariables(inputMapping: Record<string, string>): Record<string, unknown> {
+    const inputVariables: Record<string, unknown> = {}
+    for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
+      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
+    }
+    return inputVariables
+  }
+
+  /**
+   * Resolve `forEach.items`: a single `{{...}}` placeholder whose value is an
+   * array, or a JSON array literal. Returns `null` when neither yields an
+   * array.
+   */
+  private resolveItems(expr: string | undefined): readonly unknown[] | null {
+    if (!expr) return null
+    const trimmed = expr.trim()
+    const single = /^\{\{([^}]+)\}\}$/.exec(trimmed)
+    if (single) {
+      const value = this.resolvePlaceholderValue(single[1]!.trim())
+      return Array.isArray(value) ? value : null
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  /** The raw (un-stringified) value a `{{...}}` path resolves to, or undefined. */
+  private resolvePlaceholderValue(varPath: string): unknown {
+    const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
+    if (scope) return this.readScopedValue(scope[1]!, scope[2]!)
+    const firstPart = varPath.split(".")[0]!
+    const nodeResult = this.results.get(firstPart)
+    return nodeResult ? this.readRawPath(nodeResult, varPath.split(".").slice(1)) : undefined
+  }
+
+  /** Walk a scope map (`env`, `variables`, `data`) by dotted path, returning the raw value. */
+  private readScopedValue(scopeName: string, path: string): unknown {
+    const name = path.split(".")[0]!
+    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
+      throw new Error(`${RERUN_REFUSED} {{variables.${name}}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
+    }
+    let value: unknown =
+      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
+    for (const part of path.split(".")) {
+      if (typeof value !== "object" || value === null) return undefined
+      value = (value as Record<string, unknown>)[part]
+    }
+    return value
+  }
+
+  /** Walk an object/array by dotted path, returning the raw value (not stringified). */
+  private readRawPath(value: unknown, pathParts: readonly string[]): unknown {
+    let current: unknown = value
+    for (const part of pathParts) {
+      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
+      if (arrayMatch) {
+        const key = arrayMatch[1]!
+        const index = Number.parseInt(arrayMatch[2]!, 10)
+        if (typeof current === "object" && current !== null && key in current) {
+          current = (current as Record<string, unknown>)[key]
+          if (Array.isArray(current) && index >= 0 && index < current.length) current = current[index]
+          else return undefined
+        } else {
+          return undefined
+        }
+      } else if (typeof current === "object" && current !== null) {
+        current = (current as Record<string, unknown>)[part]
+      } else {
+        return undefined
+      }
+    }
+    return current
   }
 
   /**
@@ -3018,7 +3305,15 @@ function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
       ? { scripts: result.scripts.map((script) => ({ ...script, logs: [...script.logs], tests: script.tests.map((test) => ({ ...test })) })) }
       : {}),
     ...(result.subWorkflow
-      ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
+      ? {
+          subWorkflow: {
+            ...result.subWorkflow,
+            outputVariableNames: [...result.subWorkflow.outputVariableNames],
+            ...(result.subWorkflow.forEach
+              ? { forEach: { ...result.subWorkflow.forEach, iterations: result.subWorkflow.forEach.iterations.map((it) => ({ ...it })) } }
+              : {}),
+          },
+        }
       : {}),
   }
 }
