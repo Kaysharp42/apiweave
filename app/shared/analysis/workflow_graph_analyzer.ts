@@ -25,13 +25,10 @@ const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> =
   notice: 2,
 }
 
-/** Node types that open a stream and produce a collected response (`sse`, `websocket`). */
-function isStreamNode(node: WorkflowNode | undefined): node is Extract<WorkflowNode, { type: "sse" | "websocket" }> {
-  return node?.type === "sse" || node?.type === "websocket"
-}
-
 /** Whether a node produces the response an assertion, merge or extractor reads. */
-function isResponseNode(node: WorkflowNode | undefined): boolean {
+function isResponseNode(
+  node: WorkflowNode | undefined,
+): node is Extract<WorkflowNode, { type: "http-request" | "sse" | "websocket" | "grpc" }> {
   return node?.type === "http-request" || node?.type === "sse" || node?.type === "websocket" || node?.type === "grpc"
 }
 
