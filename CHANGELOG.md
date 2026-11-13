@@ -53,6 +53,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   1 to 16 and `stopOnFailure`. Each iteration is its own run of the target,
   every output-mapping variable becomes an array in item order, the count is
   capped at 1000, and the node shows each iteration with a link to its run.
+- **Load runs.** Run a workflow many times at once and measure it. In the
+  desktop app, **Run options → Load run…** takes iterations or a data file,
+  concurrency, an optional duration and ramp-up, and thresholds. In CI,
+  `apiweave run --workflow <name> --concurrency 20 --iteration-count 500`
+  adds `--duration`, `--ramp-up` and `--threshold "p95<500"` /
+  `--threshold "errors<1%"`; a breached threshold exits `1`. A load run keeps
+  per node the count, error rate, latency min/mean/p50/p90/p95/p99/max and
+  throughput, plus the first failure of each node, and drops every other
+  iteration's results. The console and HTML reports carry a latency table.
+  See [Load Runs](docs/features/load-runs.md).
 
 ### Changed
 
