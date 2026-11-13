@@ -198,7 +198,9 @@ describe("apiweave run", () => {
       ["run", "contract.json", "--contract", "warn", "--reporter-junit-export", junitPath, "--reporter-html-export", htmlPath],
     )
     expect(warned.code).toBe(EXIT_PASSED)
-    expect(fs.readFileSync(htmlPath, "utf8")).toContain('Expected "integer"')
+    expect(fs.readFileSync(htmlPath, "utf8")).toContain("Expected &quot;integer&quot;")
+    expect(fs.readFileSync(junitPath, "utf8")).toContain("Contract warning")
+    expect(warned.stdout).toContain("Contract warning")
 
     // An unknown mode is a usage error.
     const bad = await run(["run", "contract.json", "--contract", "bogus"])
@@ -446,6 +448,7 @@ describe("apiweave run", () => {
               ...node,
               config: {
                 url: `${baseUrl}/health.json`,
+                openapiMeta: { source: "openapi", method: "GET", path: "/health.json", operationId: null, fingerprint: "|GET|/health.json|" },
                 responseSchemas: {
                   "200": { type: "object", required: ["status", "version"], properties: { status: { enum: ["up"] } } },
                 },

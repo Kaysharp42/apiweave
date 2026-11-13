@@ -83,6 +83,8 @@ interface ReportCase {
   readonly attempts: number | null
   /** What the node's scripts printed with console.log, in order. */
   readonly logs: readonly string[]
+  /** Contract violations recorded on a node that still passed (contract mode `warn`). */
+  readonly warnings: readonly string[]
 }
 
 interface ReportSuite {
@@ -149,7 +151,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [], warnings: [] }],
       }
     }),
   }
@@ -211,6 +213,7 @@ function nodeCase(name: string, type: string, result: RunResult | undefined, ent
     details: details(result, outcome),
     attempts: result?.attempts?.length ?? null,
     logs: (result?.scripts ?? []).flatMap((script) => script.logs),
+    warnings: outcome === "passed" ? (result?.assertions ?? []).filter((rule) => rule.outcome === "fail").flatMap(describeRule).map((line) => `Contract warning: ${line}`) : [],
   }
 }
 
@@ -226,6 +229,7 @@ function runCase(run: Run): ReportCase {
     details: [],
     attempts: null,
     logs: [],
+    warnings: [],
   }
 }
 
@@ -370,7 +374,8 @@ function junitCase(suite: ReportSuite, testCase: ReportCase): string {
   } else if (testCase.outcome === "skipped") {
     children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
-  if (testCase.logs.length > 0) children.push(`      <system-out>${escapeXmlText(testCase.logs.join("\n"))}</system-out>`)
+  const out = [...testCase.warnings, ...testCase.logs]
+  if (out.length > 0) children.push(`      <system-out>${escapeXmlText(out.join("\n"))}</system-out>`)
   return children.length === 0 ? `${head}/>` : `${head}>\n${children.join("\n")}\n    </testcase>`
 }
 
@@ -520,7 +525,10 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
       const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
       const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
       lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`)
-      if (testCase.outcome === "passed") continue
+      if (testCase.outcome === "passed") {
+        for (const line of testCase.warnings) lines.push(`      ${paint(ANSI.yellow, line)}`)
+        continue
+      }
       if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
       if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
       if (testCase.outcome === "failed") for (const line of testCase.logs) lines.push(`      ${paint(ANSI.dim, `> ${line}`)}`)
