@@ -31,6 +31,8 @@ import useRunStatusStore from "../stores/RunStatusStore";
 import type { PacedEvent } from "../utils/runChoreography";
 import type { RunCameraHandle } from "../types/RunCameraHandle";
 import type { RunResult } from "../types/RunResult";
+import type { LoadRunRequest } from "../types/LoadRunRequest";
+import { downloadReport } from "../utils/downloadFile";
 
 /** The canvas renders nodes by `executionStatus` in {running, success, error,
  * warning, skipped} (see `BaseNode`'s statusConfig). Normalise both vocabularies
@@ -241,6 +243,8 @@ interface FailedNodeOption {
 }
 
 interface RunOptions {
+  /** Run many iterations in parallel: a load run. */
+  load?: LoadRunRequest;
   /** Run once per row: a data-driven run. */
   rows?: readonly IterationRow[];
   /** Rerun part of the workflow — see core/runner/resume.ts. */
@@ -290,6 +294,8 @@ interface UseWorkflowPollingResult {
   runWorkflow: () => Promise<void>;
   /** Parse a CSV or JSON data file and run the workflow once per row. */
   runWorkflowWithData: (file: File) => Promise<void>;
+  /** Run the workflow in parallel and report latency percentiles when it ends. */
+  runWorkflowLoad: (request: LoadRunRequest) => Promise<void>;
   cancelRun: () => Promise<void>;
   /** Run from `nodeId` on, reusing `fromRunId`'s results upstream (default: the latest run). */
   runFromNode: (nodeId: string, fromRunId?: string) => void;
@@ -612,6 +618,47 @@ export default function useWorkflowPolling({
     [handleEvent, choreography, workflowId],
   );
 
+  /** Wait for a load run's aggregate, then say how it went and offer the report. */
+  const announceLoadResult = useCallback(
+    (loadWorkspaceId: string, groupId: string) => {
+      void (async () => {
+        for (let attempt = 0; attempt < 7200; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const loadRun = await apiweave.runs.loadResult(loadWorkspaceId, groupId);
+            if (loadRun === null) continue;
+            const failed = loadRun.nodeStats.reduce(
+              (sum, stats) => sum + stats.errorCount,
+              0,
+            );
+            const summary = `Load run ${loadRun.status}: ${loadRun.iterationCount} iterations, ${failed} failed steps${
+              loadRun.breachedThresholds.length > 0
+                ? `, ${loadRun.breachedThresholds.length} thresholds breached`
+                : ""
+            }`;
+            const action = {
+              label: "Save report",
+              onClick: () => {
+                void apiweave.runs
+                  .loadReport(loadWorkspaceId, groupId, "html")
+                  .then((html) =>
+                    downloadReport(`apiweave-load-${groupId}`, "html", html),
+                  )
+                  .catch(() => toast.error("Could not export the load report."));
+              },
+            };
+            if (loadRun.status === "completed") toast.success(summary, { action });
+            else toast.error(summary, { action });
+            return;
+          } catch {
+            return;
+          }
+        }
+      })();
+    },
+    [],
+  );
+
   const executeWorkflow = useCallback(
     async (runOptions: RunOptions = {}) => {
       if (!workspaceId || !workflowId) return;
@@ -735,13 +782,18 @@ export default function useWorkflowPolling({
         // A data-driven run returns iteration 1; the main process starts each
         // next iteration when the previous one ends, and this canvas adopts it
         // from the run-started broadcast like any run it did not start.
-        const run = runOptions.rows
+        const run = runOptions.load
+          ? await apiweave.runs.createLoad({ ...request, ...runOptions.load })
+          : runOptions.rows
           ? await apiweave.runs.createIterations({ ...request, rows: runOptions.rows })
           : await apiweave.runs.create(
               runOptions.resume ? { ...request, resume: runOptions.resume } : request,
             );
 
         attachToRun(run.runId, run.iteration ?? null);
+        if (runOptions.load && run.iteration) {
+          announceLoadResult(workspaceId, run.iteration.groupId);
+        }
       } catch (error) {
         const detail =
           error instanceof IpcError
@@ -762,6 +814,7 @@ export default function useWorkflowPolling({
       reactFlowInstanceRef,
       clearCanvasForRun,
       attachToRun,
+      announceLoadResult,
     ],
   );
 
@@ -852,6 +905,13 @@ export default function useWorkflowPolling({
       cancelled = true;
     };
   }, [workspaceId, workflowId, canAdoptRun]);
+
+  const runWorkflowLoad = useCallback(
+    async (request: LoadRunRequest) => {
+      await executeWorkflow({ load: request });
+    },
+    [executeWorkflow],
+  );
 
   const runWorkflow = useCallback(async () => {
     if (!workspaceId || !workflowId) return;
@@ -974,6 +1034,7 @@ export default function useWorkflowPolling({
     currentIteration,
     runWorkflow,
     runWorkflowWithData,
+    runWorkflowLoad,
     cancelRun,
     runFromNode,
     rerunFailed,

@@ -35,6 +35,7 @@ export function CanvasToolbar({
   onCommandPalette,
   onRun,
   onRunWithData,
+  onLoad,
   onCancel,
   onRerunFailed,
   onRunFromFailedNode,
@@ -212,6 +213,7 @@ export function CanvasToolbar({
         <CanvasToolbarRunControls
           onRun={onRun}
           onRunWithData={onRunWithData}
+          onLoad={onLoad}
           onCancel={onCancel}
           onRerunFailed={onRerunFailed}
           onRunFromFailedNode={onRunFromFailedNode}

@@ -14,6 +14,7 @@ import type { WorkflowRevision } from "@shared/types/WorkflowRevision";
 import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSummary";
 import type { WorkflowSearchPage } from "@shared/types/WorkflowSearchPage";
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage";
+import type { LoadRun } from "@shared/types/LoadRun";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
@@ -614,6 +615,23 @@ export const apiweave = {
       readonly selectedEnvironmentId?: string | null;
       readonly rows: readonly IterationRow[];
     }) => invoke<IpcRun>("runs", "createIterations", input),
+    /** A load run: the workflow in parallel. Returns iteration 1's run; its `iteration.groupId` names the load run. */
+    createLoad: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly selectedEnvironmentId?: string | null;
+      readonly rows?: readonly IterationRow[];
+      readonly iterations: number;
+      readonly concurrency: number;
+      readonly durationMs?: number;
+      readonly rampUpMs?: number;
+      readonly thresholds?: readonly string[];
+    }) => invoke<IpcRun>("runs", "createLoad", input),
+    /** The finished load run of a group; null while it still runs. */
+    loadResult: (workspaceId: string, groupId: string) =>
+      invoke<LoadRun | null>("runs", "loadResult", { workspaceId, groupId }),
+    loadReport: (workspaceId: string, groupId: string, format: ReportFormat) =>
+      invoke<string>("runs", "loadReport", { workspaceId, groupId, format }),
     wait: (workspaceId: string, runId: string, waitMs?: number) =>
       invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>

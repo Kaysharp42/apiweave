@@ -9,6 +9,10 @@ import { ConflictError, NotFoundError } from "../ipc/errors"
 import { abortError } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import { startIterations, type IterationScheduler } from "../runner/iterations"
+import { buildLoadRun, startLoadRun, type LoadNodeInfo, type LoadScheduler } from "../runner/load"
+import type { Threshold } from "../runner/thresholds"
+import { formatThreshold } from "../runner/thresholds"
+import type { LoadRun } from "@shared/types/LoadRun"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -18,7 +22,7 @@ import type { ScopeResolver } from "./scope_resolver"
  * `createRun` just persists a pending row and `cancel` marks it cancelled — the
  * behaviour the field-level-write tests rely on.
  */
-export interface RunTrigger extends IterationScheduler {
+export interface RunTrigger extends IterationScheduler, LoadScheduler {
   cancel(runId: string): boolean
 }
 
@@ -65,6 +69,8 @@ export interface RunWaitOptions {
 export class RunService {
   private readonly createDedup = new Map<string, { canonical: string; runId: string }>()
   private readonly createInflight = new Map<string, Promise<Run>>()
+  /** Finished load runs by group id, newest last. In memory: the aggregates are the report, and a restart ends the session. */
+  private readonly loadRuns = new Map<string, LoadRun>()
 
   constructor(
     private readonly runs: RunRepository,
@@ -121,6 +127,67 @@ export class RunService {
       input.rows,
     )
     return this.mustGet(workspaceId, firstRunId)
+  }
+
+  /**
+   * Start a load run: iterations of the workflow in parallel, each an
+   * ordinary run whose results are folded into aggregates and then dropped.
+   * Returns iteration 1's run; the finished {@link LoadRun} is read with
+   * {@link getLoadRun} by the group id on that run's `iteration`.
+   */
+  async createLoad(
+    workspaceId: string,
+    input: {
+      readonly workflowId: string
+      readonly selectedEnvironmentId?: string | null
+      readonly rows: readonly Readonly<Record<string, JsonValue>>[]
+      readonly iterations: number
+      readonly concurrency: number
+      readonly durationMs?: number
+      readonly rampUpMs?: number
+      readonly thresholds: readonly Threshold[]
+      readonly nodeInfo: ReadonlyMap<string, LoadNodeInfo>
+    },
+  ): Promise<Run> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    if (this.trigger === undefined) throw new Error("No run scheduler is available")
+    const startedAt = new Date().toISOString()
+    const handle = startLoadRun(
+      this.trigger,
+      {
+        workspaceId,
+        workflowId: input.workflowId,
+        ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+      },
+      input.rows,
+      {
+        iterations: input.iterations,
+        concurrency: input.concurrency,
+        ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+        ...(input.rampUpMs !== undefined ? { rampUpMs: input.rampUpMs } : {}),
+      },
+      input.thresholds,
+      input.nodeInfo,
+    )
+    const settings = {
+      concurrency: input.concurrency,
+      durationMs: input.durationMs ?? null,
+      rampUpMs: input.rampUpMs ?? null,
+      thresholds: input.thresholds.map((threshold) => formatThreshold(threshold)),
+    }
+    void handle.done.then((result) => {
+      this.loadRuns.set(handle.groupId, buildLoadRun({ workspaceId, workflowId: input.workflowId, loadRunId: handle.groupId }, settings, startedAt, result))
+      // Bounded: a restart drops them anyway, and the newest few are all anyone opens.
+      if (this.loadRuns.size > MAX_LOAD_RUNS_KEPT) this.loadRuns.delete(this.loadRuns.keys().next().value!)
+    })
+    return this.mustGet(workspaceId, handle.firstRunId)
+  }
+
+  /** The finished load run of a group, or null while it still runs (or after a restart). */
+  async getLoadRun(workspaceId: string, groupId: string): Promise<LoadRun | null> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    const loadRun = this.loadRuns.get(groupId)
+    return loadRun !== undefined && loadRun.workspaceId === workspaceId ? loadRun : null
   }
 
   /**
@@ -436,6 +503,7 @@ export class RunService {
 }
 
 const MAX_DEDUP_ENTRIES = 500
+const MAX_LOAD_RUNS_KEPT = 20
 const POLL_INTERVAL_MS = 20
 
 const TERMINAL_RUN_STATUSES: ReadonlySet<Run["status"]> = new Set([

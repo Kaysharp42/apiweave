@@ -58,6 +58,7 @@ import { AppContext } from "../contexts/AppContext";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
+import { LoadRunDialog } from "./organisms/LoadRunDialog";
 import { CanvasNodeContextMenu } from "./organisms/CanvasNodeContextMenu";
 import useTabStore from "../stores/TabStore";
 import useSidebarStore from "../stores/SidebarStore";
@@ -441,6 +442,7 @@ function WorkflowCanvas({
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const pendingHistory = useCanvasStore((state) => state.pendingHistory);
@@ -536,6 +538,7 @@ function WorkflowCanvas({
     currentIteration,
     runWorkflow,
     runWorkflowWithData,
+    runWorkflowLoad,
     cancelRun,
     runFromNode,
     rerunFailed,
@@ -2122,6 +2125,7 @@ function WorkflowCanvas({
         onCommandPalette={() => setIsCommandPaletteOpen(true)}
         onRun={runWorkflow}
         onRunWithData={(file) => void runWorkflowWithData(file)}
+        onLoad={() => setShowLoadDialog(true)}
         onCancel={cancelRun}
         onRerunFailed={() => rerunFailed()}
         onRunFromFailedNode={(nodeId) =>
@@ -2277,6 +2281,11 @@ function WorkflowCanvas({
         </Suspense>
       )}
 
+      <LoadRunDialog
+        isOpen={showLoadDialog}
+        onClose={() => setShowLoadDialog(false)}
+        onStart={(request) => void runWorkflowLoad(request)}
+      />
       {showHistory && (
         <Suspense fallback={null}>
           <HistoryModal

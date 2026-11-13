@@ -15,6 +15,9 @@ import {
 import type { EvidenceSection } from "../../services/run_evidence"
 import { buildReport } from "../../runner/reporters"
 import { MAX_ITERATION_ROWS } from "@shared/iteration-data/iterationData"
+import { LoadRunSchema } from "@shared/zod-schemas"
+import { MAX_LOAD_ITERATIONS } from "../../runner/load"
+import { parseThreshold } from "../../runner/thresholds"
 
 const ws = z.string().min(1)
 
@@ -42,6 +45,23 @@ const createIterationsInput = z
     rows: z.array(z.record(z.string(), JsonValueSchema)).min(1).max(MAX_ITERATION_ROWS),
   })
   .strict()
+
+const createLoadInput = z
+  .object({
+    workspaceId: ws,
+    workflowId: z.string().min(1),
+    selectedEnvironmentId: z.string().nullable().optional(),
+    /** Data rows, reused in order when there are fewer than `iterations`; omitted is one empty row. */
+    rows: z.array(z.record(z.string(), JsonValueSchema)).min(1).max(MAX_ITERATION_ROWS).optional(),
+    iterations: z.number().int().min(1).max(MAX_LOAD_ITERATIONS),
+    concurrency: z.number().int().min(1).max(1000),
+    durationMs: z.number().int().min(1).optional(),
+    rampUpMs: z.number().int().min(1).optional(),
+    thresholds: z.array(z.string().min(1)).max(20).optional(),
+  })
+  .strict()
+
+const loadGroupInput = z.object({ workspaceId: ws, groupId: z.string().min(1) }).strict()
 
 const runIdInput = z.object({ workspaceId: ws, runId: z.string().min(1) }).strict()
 
@@ -115,6 +135,42 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     input: createIterationsInput,
     output: RunSchema,
     handle: ({ workspaceId, ...input }) => runs.createIterations(workspaceId, input),
+  })
+
+  // Renderer only (not on the MCP whitelist): a load run, the workflow in
+  // parallel. Returns iteration 1's run; its `iteration.groupId` reads the
+  // finished aggregate through `loadResult` and `loadReport`.
+  router.register("runs", "createLoad", {
+    input: createLoadInput,
+    output: RunSchema,
+    handle: async ({ workspaceId, workflowId, rows, thresholds, ...input }) => {
+      let parsed: ReturnType<typeof parseThreshold>[]
+      try {
+        parsed = (thresholds ?? []).map(parseThreshold)
+      } catch (error) {
+        throw new ValidationError(error instanceof Error ? error.message : String(error))
+      }
+      const workflow = await deps.workflows.get(workspaceId, workflowId)
+      const nodeInfo = new Map(workflow.nodes.map((node) => [node.nodeId, { label: node.label || node.nodeId, type: node.type }]))
+      return runs.createLoad(workspaceId, { ...input, workflowId, rows: rows ?? [{}], thresholds: parsed, nodeInfo })
+    },
+  })
+
+  router.register("runs", "loadResult", {
+    input: loadGroupInput,
+    output: LoadRunSchema.nullable(),
+    handle: (i) => runs.getLoadRun(i.workspaceId, i.groupId),
+  })
+
+  router.register("runs", "loadReport", {
+    input: loadGroupInput.extend({ format: z.enum(["junit", "html"]) }).strict(),
+    output: z.string(),
+    handle: async ({ workspaceId, groupId, format }) => {
+      const loadRun = await runs.getLoadRun(workspaceId, groupId)
+      if (loadRun === null) throw new ValidationError("This load run has not finished, or is no longer kept.")
+      const workflow = await ifFound(deps.workflows.get(workspaceId, loadRun.workflowId))
+      return buildReport(format, { kind: "load", title: workflow?.name ?? loadRun.workflowId, loadRun })
+    },
   })
 
   router.register("runs", "wait", {
