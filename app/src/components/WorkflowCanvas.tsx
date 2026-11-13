@@ -36,6 +36,7 @@ import "@xyflow/react/dist/style.css";
 
 import HTTPRequestNode from "./nodes/HTTPRequestNode";
 import SseNode from "./nodes/SseNode";
+import WebsocketNode from "./nodes/WebsocketNode";
 import AssertionNode from "./nodes/AssertionNode";
 import DelayNode from "./nodes/DelayNode";
 import StartNode from "./nodes/StartNode";
@@ -180,6 +181,7 @@ const nodeTypes: NodeTypes = {
     "http-request",
   ) as NodeTypes[string],
   sse: withNodeBoundary(SseNode, "sse") as NodeTypes[string],
+  websocket: withNodeBoundary(WebsocketNode, "websocket") as NodeTypes[string],
   assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
   delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
   start: withNodeBoundary(StartNode, "start") as NodeTypes[string],

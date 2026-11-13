@@ -133,7 +133,7 @@ Every node has:
 | Field      | Type   | Required | Description |
 |-----------|--------|----------|-------------|
 | nodeId    | string | yes | Unique ID. Convention: \`{type}_{unix_timestamp_ms}\` e.g. \`httpRequest_1738900000000\` |
-| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`sse\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
+| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`sse\`, \`websocket\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
 | label     | string | no  | Display name shown on the canvas |
 | position  | object | yes | \`{ "x": number, "y": number }\` — canvas coordinates |
 | config    | object | yes | Node-type-specific configuration (see below) |
@@ -250,6 +250,31 @@ with finish rules it closes when one event matches every rule.
 The result body has \`events\`, \`eventCount\`, and \`termination\`. Each event
 has \`event\`, optional \`id\`, and string \`data\` fields. Assertions and
 extractors can target paths such as \`response.body.events[0].data\`.
+
+### WebSocket Node (\`type: "websocket"\`)
+Opens a bounded WebSocket connection like the SSE node: \`ready\` runs once the
+handshake succeeded and the configured \`messages\` were sent, \`complete\` runs
+when it closes. \`url\` must be \`ws://\` or \`wss://\`. Each message is
+\`{ "data", "type": "text" | "binary" (base64), "delayMs" }\`.
+
+\`\`\`json
+{
+  "nodeId": "websocket_1738900000004",
+  "type": "websocket",
+  "label": "Subscribe to orders",
+  "position": { "x": 700, "y": 400 },
+  "config": {
+    "url": "{{env.WS_URL}}/orders",
+    "messages": [{ "data": "{\\"action\\":\\"subscribe\\"}", "type": "text" }],
+    "maxMessages": 5,
+    "timeout": 30,
+    "finishConditions": [{ "path": "data.status", "operator": "equals", "expectedValue": "complete" }]
+  }
+}
+\`\`\`
+
+The result body has \`messages\`, \`messageCount\`, \`termination\`, \`closeCode\`
+and \`closeReason\`. Each message is \`{ "type": "text" | "binary", "data" }\`.
 
 ### 5. Assertion Node (\`type: "assertion"\`)
 Validates API responses. Has **two output handles**: Pass (✓) and Fail (✗) for branching.
@@ -394,7 +419,7 @@ Every edge connects two nodes:
 | edgeId | string | Unique edge ID |
 | source | string | Source nodeId |
 | target | string | Target nodeId |
-| sourceHandle | string or null | \`"pass"\` or \`"fail"\` for assertion nodes; \`"ready"\` or \`"complete"\` for SSE nodes; \`null\` for other nodes |
+| sourceHandle | string or null | \`"pass"\` or \`"fail"\` for assertion nodes; \`"ready"\` or \`"complete"\` for SSE and WebSocket nodes; \`null\` for other nodes |
 | targetHandle | string or null | Usually \`null\` |
 | label | string or null | Optional label: \`"Pass"\`, \`"Fail"\`, etc. |
 

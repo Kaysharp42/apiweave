@@ -354,7 +354,7 @@ function matchNodeFields(node: WorkflowNode, query: string): string[] {
   const endpoint = nodeEndpoint(node)
   if (node.type === "http-request" && endpoint?.method?.toLowerCase() === query) matchedOn.push("method")
   if (endpoint?.urlPath.toLowerCase().includes(query) === true) matchedOn.push("urlPath")
-  if ((node.type === "http-request" || node.type === "sse") && node.config?.extractors !== undefined) {
+  if ((node.type === "http-request" || node.type === "sse" || node.type === "websocket") && node.config?.extractors !== undefined) {
     const names = Object.keys(node.config.extractors)
     if (names.some((name) => name.toLowerCase().includes(query))) matchedOn.push("extractor")
   }

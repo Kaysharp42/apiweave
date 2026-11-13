@@ -23,6 +23,8 @@ export function NodeModalHeader({
       ? "HTTP Request"
       : nodeType === "sse"
         ? "SSE Stream"
+      : nodeType === "websocket"
+        ? "WebSocket"
       : nodeType === "assertion"
         ? "Assertion"
         : nodeType === "delay"

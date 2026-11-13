@@ -49,6 +49,19 @@ function getDefaultConfig(type: string): NodeConfig {
         finishConditions: [],
         extractors: {},
       };
+    case "websocket":
+      return {
+        url: "",
+        queryParams: [],
+        headers: [],
+        subprotocols: [],
+        messages: [],
+        timeout: 30,
+        maxMessages: 1,
+        finishConditions: [],
+        sslVerify: true,
+        extractors: {},
+      };
     case "assertion":
       return { assertions: [] };
     case "delay":

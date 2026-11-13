@@ -68,6 +68,11 @@ export const builtInNodePaletteSections: readonly NodePaletteSectionType[] = [
         label: "SSE Stream",
         description: "Listen for events, then trigger and assert",
       },
+      {
+        type: "websocket",
+        label: "WebSocket",
+        description: "Send messages and collect replies, then assert",
+      },
     ],
   },
   {

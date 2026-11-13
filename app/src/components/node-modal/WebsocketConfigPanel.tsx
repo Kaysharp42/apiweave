@@ -168,8 +168,11 @@ export function WebsocketConfigPanel({ initialConfig, workingDataRef, activeTab 
                     value={message.delayMs ?? ""}
                     onChange={(event) => {
                       const parsed = Number.parseInt(event.target.value, 10);
-                      if (Number.isInteger(parsed) && parsed >= 0) updateMessage(index, { delayMs: parsed });
-                      else updateMessage(index, { delayMs: undefined });
+                      const { delayMs: _previous, ...rest } = message;
+                      updateConfig({
+                        messages: config.messages.map((current, currentIndex) =>
+                          currentIndex !== index ? current : Number.isInteger(parsed) && parsed >= 0 ? { ...rest, delayMs: parsed } : rest),
+                      });
                     }}
                     placeholder="0"
                     className="max-w-40 font-mono"

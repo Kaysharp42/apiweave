@@ -2,6 +2,7 @@ export { NodeModalHeader } from "./NodeModalHeader";
 export { NodeModalFooter } from "./NodeModalFooter";
 export { HTTPRequestConfigPanel } from "./HTTPRequestConfigPanel";
 export { SseConfigPanel } from "./SseConfigPanel";
+export { WebsocketConfigPanel } from "./WebsocketConfigPanel";
 export { HttpRequestOutputPanel } from "./HttpRequestOutputPanel";
 export { NodeOutputPanel } from "./NodeOutputPanel";
 export { AssertionConfigPanel } from "./AssertionConfigPanel";

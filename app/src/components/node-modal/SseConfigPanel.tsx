@@ -10,7 +10,7 @@ import { KeyValueEditor } from "../molecules/KeyValueEditor";
 import ButtonSelect from "../ButtonSelect";
 import { AssertionOperatorSchema } from "@shared/zod-schemas/AssertionOperatorSchema";
 import type { KeyValuePair, NodeModalSseConfig, SseConfigPanelProps, SelectOption } from "../../types";
-import type { SseFinishCondition } from "@shared/types/SseFinishCondition";
+import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition";
 
 function createCardIcon(Icon: typeof Cable) {
   return function CardIcon({ className }: { className?: string | undefined }) {
@@ -58,7 +58,7 @@ const FINISH_OPERATOR_OPTIONS: SelectOption[] = AssertionOperatorSchema.options.
   (operator) => ({ label: operator, value: operator }),
 );
 
-function emptyFinishCondition(): SseFinishCondition {
+function emptyFinishCondition(): StreamFinishCondition {
   return { path: "data.status", operator: "equals", expectedValue: "" };
 }
 
@@ -133,7 +133,7 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
   }
 
   if (activeTab === "finish") {
-    const updateCondition = (index: number, patch: Partial<SseFinishCondition>) => {
+    const updateCondition = (index: number, patch: Partial<StreamFinishCondition>) => {
       updateConfig({ finishConditions: config.finishConditions.map((condition, currentIndex) => currentIndex === index ? { ...condition, ...patch } : condition) });
     };
     const removeCondition = (index: number) => {
@@ -152,7 +152,7 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
                   <Input value={condition.path} onChange={(event) => updateCondition(index, { path: event.target.value })} placeholder="data.status" className="font-mono" />
                 </FormField>
                 <FormField label="Operator">
-                  <ButtonSelect options={FINISH_OPERATOR_OPTIONS} value={condition.operator} onChange={(operator) => updateCondition(index, { operator: operator as SseFinishCondition["operator"] })} buttonClass="flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 font-mono text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark" />
+                  <ButtonSelect options={FINISH_OPERATOR_OPTIONS} value={condition.operator} onChange={(operator) => updateCondition(index, { operator: operator as StreamFinishCondition["operator"] })} buttonClass="flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 font-mono text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark" />
                 </FormField>
               </div>
               {condition.operator !== "exists" && condition.operator !== "notExists" && (

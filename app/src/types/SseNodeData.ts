@@ -1,6 +1,6 @@
 import type { NodeStatus } from "./NodeStatus";
 import type { KeyValuePair } from "@shared/types/KeyValuePair";
-import type { SseFinishCondition } from "@shared/types/SseFinishCondition";
+import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition";
 
 export interface SseNodeData {
   label?: string;
@@ -16,7 +16,7 @@ export interface SseNodeData {
     maxEvents?: number;
     timeout?: number;
     headers?: KeyValuePair[];
-    finishConditions?: SseFinishCondition[];
+    finishConditions?: StreamFinishCondition[];
   };
   branchCount?: number;
 }
