@@ -19,6 +19,8 @@ export interface CanvasToolbarProps {
   onRun: () => void;
   /** Run once per row of a picked CSV or JSON data file. */
   onRunWithData?: (file: File) => void;
+  /** Open the Load run dialog. */
+  onLoad?: () => void;
   onCancel?: () => void;
   /** Rerun the latest failed run's failed steps and what follows them. */
   onRerunFailed?: () => void;

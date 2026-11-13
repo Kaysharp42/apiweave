@@ -4,6 +4,7 @@ import type { RunIteration } from "@shared/types/RunIteration";
 export interface CanvasToolbarRunControlsProps {
   readonly onRun: () => void;
   readonly onRunWithData?: ((file: File) => void) | undefined;
+  readonly onLoad?: (() => void) | undefined;
   readonly onCancel?: (() => void) | undefined;
   readonly onRerunFailed?: (() => void) | undefined;
   readonly onRunFromFailedNode?: ((nodeId: string) => void) | undefined;

@@ -1,4 +1,4 @@
-import { Play, RefreshCw } from "lucide-react";
+import { Gauge, Play, RefreshCw } from "lucide-react";
 import { MenuSeparator } from "@headlessui/react";
 import { CanvasToolbarMenuItem } from "./CanvasToolbarMenuItem";
 import type { CanvasToolbarRunMenuItemsProps } from "../../types";
@@ -9,12 +9,25 @@ export function CanvasToolbarRunMenuItems({
   resumeOptions,
   isResumeLoading,
   onRerunFailed,
+  onLoad,
   onRunFromFailedNode,
 }: CanvasToolbarRunMenuItemsProps) {
   const hasResumeOptions = resumeOptions.length > 0;
 
   return (
     <>
+      {onLoad !== undefined && (
+        <>
+          <CanvasToolbarMenuItem
+            icon={Gauge}
+            label="Load run…"
+            title="Many runs in parallel: latency percentiles and throughput"
+            disabled={isRunning}
+            onSelect={onLoad}
+          />
+          <MenuSeparator className="h-px bg-border dark:bg-border-dark" />
+        </>
+      )}
       <CanvasToolbarMenuItem
         icon={RefreshCw}
         label="Rerun failed branches"

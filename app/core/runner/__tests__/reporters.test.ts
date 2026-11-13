@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import type { ProjectRun } from "@shared/types/ProjectRun"
+import type { LoadRun } from "@shared/types/LoadRun"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import { buildConsoleReport, buildHtmlReport, buildJUnitReport, writeReport, type ReportInput, type ReportWorkflow, type SingleReportInput } from "../reporters"
@@ -541,5 +542,52 @@ describe("writeReport", () => {
     } finally {
       await fs.promises.rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// -------------------- Load run --------------------
+
+describe("load run reports", () => {
+  const latency = { minMs: 5, meanMs: 40, p50Ms: 30, p90Ms: 80, p95Ms: 120, p99Ms: 300, maxMs: 450 }
+  const loadRun: LoadRun = {
+    loadRunId: "load_1",
+    workspaceId: "ws_1",
+    workflowId: "wf_1",
+    status: "failed",
+    startedAt: "2026-07-06T10:00:00.000Z",
+    completedAt: "2026-07-06T10:00:10.000Z",
+    durationMs: 10_000,
+    iterationCount: 200,
+    settings: { concurrency: 8, durationMs: null, rampUpMs: 2000, thresholds: ["p95<100", "errors<1%"] },
+    nodeStats: [
+      { nodeId: "a", label: "GET <users>", type: "http-request", count: 200, errorCount: 4, errorRate: 0.02, latency, throughput: 20 },
+    ],
+    firstFailures: {},
+    breachedThresholds: ["GET <users>: p95<100 (got 120ms)"],
+  }
+  const input: ReportInput = { kind: "load", title: "Users API", loadRun }
+
+  it("adds a latency table to the HTML report, escaped", () => {
+    const html = buildHtmlReport(input)
+    expect(html).toContain("<h2>Latency")
+    expect(html).toContain("200 iterations · concurrency 8 · ramp-up 2.000s")
+    for (const column of ["p50", "p90", "p95", "p99", "Throughput"]) expect(html).toContain(`<th class="num">${column}</th>`)
+    expect(html).toContain("<td class=\"num\">120</td>")
+    expect(html).toContain("20.00/s")
+    expect(html).toContain("2%")
+    expect(html).toContain("GET &lt;users&gt;")
+    expect(html).toContain("1 breached")
+  })
+
+  it("lists the node and a failing Thresholds case in JUnit, and the table on the console", () => {
+    const xml = parseXml(buildJUnitReport(input))
+    const cases = all(all(xml, "testsuite")[0]!, "testcase")
+    expect(cases.map((c) => c.attrs["name"])).toEqual(["GET <users>", "Thresholds"])
+    expect(all(cases[0]!, "failure")).toHaveLength(1)
+    expect(all(cases[1]!, "failure")[0]!.text).toContain("p95<100")
+    const text = buildConsoleReport(input, false)
+    expect(text).toMatch(/Latency/)
+    expect(text).toMatch(/GET <users>\s+200\s+4\s+2%\s+5\s+40\s+30\s+80\s+120\s+300\s+450\s+20.00\/s/)
+    expect(text).toContain("Thresholds breached: 1")
   })
 })

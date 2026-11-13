@@ -1005,3 +1005,64 @@ describe("apiweave run — network flags", () => {
     expect(proxy.tunnels).toHaveLength(2)
   })
 })
+
+describe("apiweave run — load mode", () => {
+  const base = (): string[] => ["run", FIXTURE, "--workflow", "Health check", "--var", `baseUrl=${baseUrl}`]
+  const secretEnv = { APIWEAVE_SECRET_API_TOKEN: TOKEN }
+
+  it("runs n iterations at the given concurrency and reports per-node latency", async () => {
+    const result = await run([...base(), "-c", "3", "-n", "9"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(requests).toHaveLength(9)
+    expect(result.stdout).toMatch(/Latency/)
+    expect(result.stdout).toMatch(/p95/)
+    expect(result.stdout).toMatch(/Throughput/)
+  })
+
+  it("exits 1 when a threshold is breached and 0 when it holds", async () => {
+    const breached = await run([...base(), "-c", "2", "-n", "4", "--threshold", "p95<0"], secretEnv)
+    expect(breached.code).toBe(EXIT_FAILED)
+    expect(breached.stdout).toContain("Thresholds breached")
+
+    const held = await run([...base(), "-c", "2", "-n", "4", "--threshold", "p95<60000", "--threshold", "errors<1%"], secretEnv)
+    expect(held.code).toBe(EXIT_PASSED)
+  })
+
+  it("stops starting iterations after --duration", async () => {
+    const result = await run([...base(), "-c", "1", "--duration", "300ms"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(requests.length).toBeGreaterThan(0)
+    expect(requests.length).toBeLessThan(100_000)
+  })
+
+  it("writes an HTML report with a latency table", async () => {
+    const result = await run([...base(), "-c", "2", "-n", "4", "-r", "html", "--reporter-html-export", "load.html"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    const html = fs.readFileSync(path.join(dir, "load.html"), "utf8")
+    expect(html).toContain("<h2>Latency")
+    expect(html).toContain("<th class=\"num\">p99</th>")
+  })
+
+  it.each([
+    [["--duration", "5s"], "belong to load mode"],
+    [["-c", "2", "--threshold", "bogus"], "--threshold: invalid threshold"],
+    [["-c", "2", "--duration", "soon"], "--duration must be a positive time"],
+    [["-c", "2"], "needs --iteration-count, --iteration-data or --duration"],
+  ])("exits 2 on bad load options: %j", async (extra, message) => {
+    const result = await run([...base(), ...extra], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain(message)
+    expect(requests).toEqual([])
+  })
+
+  it("refuses a project run", async () => {
+    const result = await run(["run", FIXTURE, "-c", "2", "-n", "2", "--var", `baseUrl=${baseUrl}`], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("load mode runs one workflow")
+  })
+})

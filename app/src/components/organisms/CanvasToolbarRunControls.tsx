@@ -8,6 +8,7 @@ import type { CanvasToolbarRunControlsProps } from "../../types";
 export function CanvasToolbarRunControls({
   onRun,
   onRunWithData,
+  onLoad,
   onCancel,
   onRerunFailed,
   onRunFromFailedNode,
@@ -48,6 +49,7 @@ export function CanvasToolbarRunControls({
           resumeOptions={resumeOptions}
           isResumeLoading={isResumeLoading}
           onRerunFailed={onRerunFailed}
+          onLoad={onLoad}
           onRunFromFailedNode={onRunFromFailedNode}
         />
       </div>

@@ -37,6 +37,7 @@ Jump straight to the feature guide. Each one is self-contained: concepts, prereq
 - [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the eight executable node types plus note and group annotations, toolbar actions, keyboard shortcuts.
 - [Variables and Extractors](features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
 - [Scripting](features/scripting.md): sandboxed pre-request and post-response JavaScript for signing, transforming values and custom checks.
+- [Load Runs](features/load-runs.md): many parallel iterations with latency percentiles and CI thresholds.
 - [Data-Driven Runs](features/data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or in CI.
 - [Node Presets](features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](features/visualization-and-debugging.md): the run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.

@@ -122,6 +122,8 @@ export type { CanvasToolbarOverflowMenuProps } from "./CanvasToolbarOverflowMenu
 export type { CanvasToolbarRunControlsProps } from "./CanvasToolbarRunControlsProps";
 export type { CanvasToolbarRunButtonProps } from "./CanvasToolbarRunButtonProps";
 export type { CanvasToolbarRunWithDataProps } from "./CanvasToolbarRunWithDataProps";
+export type { LoadRunRequest } from "./LoadRunRequest";
+export type { LoadRunDialogProps } from "./LoadRunDialogProps";
 export type { CanvasToolbarRunMenuProps } from "./CanvasToolbarRunMenuProps";
 export type { CanvasToolbarRunMenuItemsProps } from "./CanvasToolbarRunMenuItemsProps";
 export type { CanvasToolbarEnvironmentPickerProps } from "./CanvasToolbarEnvironmentPickerProps";

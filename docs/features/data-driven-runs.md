@@ -93,6 +93,8 @@ Masking applies only to declared secrets. Data values are sent as they are and c
 
 ## Related
 
+- [Load Runs](load-runs.md): the same iterations run in parallel, with latency percentiles.
+
 - [Placeholders](../reference/placeholders.md): every namespace and the substitution order.
 - [Run APIWeave Tests in CI](../guides/ci.md): `apiweave run` and its reports.
 - [Visualization and Debugging](visualization-and-debugging.md#5-run-reports-junit-and-html): what the reports contain.
