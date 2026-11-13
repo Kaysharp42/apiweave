@@ -4,11 +4,14 @@ import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
 import { Select } from "../atoms/Select";
+import { Toggle } from "../atoms/Toggle";
 import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { apiweave } from "../../utils/apiweaveClient";
+import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY } from "@shared/zod-schemas/WorkflowCallForEachSchema";
 import type { Workflow } from "../../types/Workflow";
+import type { WorkflowCallForEach } from "../../types";
 import type {
   NodeModalWorkflowCallConfig,
   WorkflowCallConfigPanelProps,
@@ -127,6 +130,9 @@ export function WorkflowCallConfigPanel({
   const [outputMapping, setOutputMapping] = useState<Record<string, string>>(
     initialConfig.outputMapping ?? {},
   );
+  const [forEach, setForEach] = useState<WorkflowCallForEach | undefined>(
+    initialConfig.forEach,
+  );
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -171,12 +177,14 @@ export function WorkflowCallConfigPanel({
     nextTargetName: string | null = targetWorkflowName,
     nextInputMapping: Record<string, string> = inputMapping,
     nextOutputMapping: Record<string, string> = outputMapping,
+    nextForEach: WorkflowCallForEach | undefined = forEach,
   ) {
     const nextConfig: NodeModalWorkflowCallConfig = {
       targetWorkflowId: nextTargetId,
       targetWorkflowName: nextTargetName,
       inputMapping: nextInputMapping,
       outputMapping: nextOutputMapping,
+      ...(nextForEach ? { forEach: nextForEach } : {}),
     };
     workingDataRef.current = {
       ...workingDataRef.current,
@@ -227,6 +235,18 @@ export function WorkflowCallConfigPanel({
     writeConfig(undefined, undefined, undefined, next);
   }
 
+  function setForEachEnabled(enabled: boolean) {
+    const next = enabled ? { items: "", itemVariable: "" } : undefined;
+    setForEach(next);
+    writeConfig(undefined, undefined, undefined, undefined, next);
+  }
+
+  function patchForEach(patch: Partial<WorkflowCallForEach>) {
+    const next = { ...(forEach ?? { items: "", itemVariable: "" }), ...patch };
+    setForEach(next);
+    writeConfig(undefined, undefined, undefined, undefined, next);
+  }
+
   return (
     <div className="space-y-4">
       <Card title="Target workflow" icon={InfoCardIcon}>
@@ -255,6 +275,92 @@ export function WorkflowCallConfigPanel({
             ))}
           </Select>
         </FormField>
+      </Card>
+
+      <Card title="For each" icon={InfoCardIcon}>
+        <Toggle
+          label="Run once per item"
+          checked={forEach !== undefined}
+          onChange={(event) => setForEachEnabled(event.target.checked)}
+        />
+        {forEach && (
+          <div className="mt-3 space-y-3">
+            <FormField
+              label="Items"
+              hint="A placeholder or JSON array literal that resolves to the items to iterate."
+            >
+              <TemplateInput
+                value={forEach.items}
+                onValueChange={(value) => patchForEach({ items: value })}
+                size="sm"
+                className="font-mono"
+                placeholder="{{variables.userIds}}"
+              />
+            </FormField>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField
+                label="Item variable"
+                hint="The child variable receiving the current item."
+              >
+                <Input
+                  value={forEach.itemVariable}
+                  onChange={(event) =>
+                    patchForEach({ itemVariable: event.target.value })
+                  }
+                  size="sm"
+                  className="font-mono"
+                  placeholder="userId"
+                />
+              </FormField>
+              <FormField
+                label="Index variable"
+                hint="Optional; the item's zero-based index."
+              >
+                <Input
+                  value={forEach.indexVariable ?? ""}
+                  onChange={(event) => {
+                    const { indexVariable: _drop, ...rest } = forEach;
+                    void _drop;
+                    const next: WorkflowCallForEach = event.target.value
+                      ? { ...rest, indexVariable: event.target.value }
+                      : rest;
+                    setForEach(next);
+                    writeConfig(undefined, undefined, undefined, undefined, next);
+                  }}
+                  size="sm"
+                  className="font-mono"
+                  placeholder="index"
+                />
+              </FormField>
+            </div>
+            <FormField
+              label="Concurrency"
+              hint="How many iterations run at once, from 1 to 16."
+            >
+              <Input
+                type="number"
+                min={1}
+                max={WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY}
+                value={forEach.concurrency ?? 1}
+                onChange={(event) =>
+                  patchForEach({
+                    concurrency: Math.min(
+                      Math.max(Number(event.target.value) || 1, 1),
+                      WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY,
+                    ),
+                  })
+                }
+              />
+            </FormField>
+            <Toggle
+              label="Stop on failure"
+              checked={forEach.stopOnFailure ?? true}
+              onChange={(event) =>
+                patchForEach({ stopOnFailure: event.target.checked })
+              }
+            />
+          </div>
+        )}
       </Card>
 
       <MappingCard

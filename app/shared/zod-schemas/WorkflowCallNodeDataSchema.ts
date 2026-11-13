@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { WorkflowCallForEachSchema } from "./WorkflowCallForEachSchema"
 
 /**
  * Per-node CONFIG schema for `type: "workflow"` (Call Workflow) nodes.
@@ -11,7 +12,8 @@ import { z } from "zod"
  *
  * `outputMapping` keys are variable names written into the CALLER's scope;
  * values are variable names read from the target workflow's final
- * `extractedVariables` snapshot after it completes.
+ * `extractedVariables` snapshot after it completes. Under `forEach`, each
+ * mapped variable becomes an array, one entry per item in item order.
  */
 export const WorkflowCallNodeDataSchema = z
   .object({
@@ -20,5 +22,6 @@ export const WorkflowCallNodeDataSchema = z
     targetWorkflowName: z.string().nullable().optional(),
     inputMapping: z.record(z.string(), z.string()).optional(),
     outputMapping: z.record(z.string(), z.string()).optional(),
+    forEach: WorkflowCallForEachSchema.optional(),
   })
   .strict()

@@ -204,6 +204,7 @@ export type { BranchInfo } from "./BranchInfo";
 export type { WorkflowCallNodeProps } from "./WorkflowCallNodeProps";
 export type { WorkflowCallNodeData } from "./WorkflowCallNodeData";
 export type { WorkflowCallNodeConfig } from "./WorkflowCallNodeConfig";
+export type { WorkflowCallForEach } from "./WorkflowCallForEach";
 export type { CallWorkflowResult } from "./CallWorkflowResult";
 export type { NodeModalWorkflowCallConfig } from "./NodeModalWorkflowCallConfig";
 export type { WorkflowCallConfigPanelProps } from "./WorkflowCallConfigPanelProps";

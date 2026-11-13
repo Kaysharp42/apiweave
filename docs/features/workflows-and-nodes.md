@@ -442,6 +442,8 @@ operators.
 | `input mapping` | `target variable = caller expression`. Each entry names a variable the sub-workflow will read as `{{variables.NAME}}`, set from an expression resolved in the *caller's* context |
 | `output mapping` | `caller variable = sub-workflow variable`. Each entry copies one of the sub-workflow's final variables back into the caller's scope |
 
+| `for each` | Optional. Runs the target once per item: `items`, `item variable`, `index variable`, `concurrency` (1 to 16, default 1) and `stop on failure` (default on) |
+
 **Handles:** one input, one output.
 
 How the call behaves:
@@ -451,6 +453,14 @@ How the call behaves:
 - **Secrets cannot be passed through an input mapping.** A `{{secrets.NAME}}` on the right-hand side fails the node rather than copying a secret value into a plain child variable. Let the sub-workflow read the secret directly.
 - **The caller's variables only change where you asked.** An output mapping entry is applied when the sub-workflow actually produced that variable; anything you did not map stays inside the sub-workflow.
 - **A failed sub-workflow fails the calling node**, which then follows its own **Continue on failure** setting like any other failure.
+
+**For each.** With **For each** on, the target runs once per item. `items` is a single placeholder that holds an array (`{{variables.userIds}}`, `{{list.response.body.items}}`), a JSON array literal, or a `$` JSONPath that selects an array, rooted at `{ variables, env, data, <nodeId>: result }` (`$.variables.users[?@.active==true].id`). Each iteration gets the current item as `item variable` and, if set, its zero-based position as `index variable`, on top of the input mapping.
+
+- **Output mapping becomes arrays.** Each mapped caller variable holds one entry per item, in item order whatever the concurrency; an iteration that did not run or did not produce the variable leaves `null`.
+- **Pass and fail.** The node passes only if every iteration passes. With **stop on failure** on, no new iteration starts after the first failure; with it off every item runs and the node fails reporting how many iterations failed (use **Continue on failure** to carry on past it).
+- **At most 1000 items run**; further items are ignored. Nesting still stops at 8 levels.
+- **Each iteration is its own run** of the target, so its History has one entry per item. The node lists the iterations, each with a link to its run.
+- **Cancel.** Cancelling stops starting iterations, cancels the ones in flight, and shows the node as skipped.
 
 A login flow reused by a checkout flow:
 

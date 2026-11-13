@@ -152,7 +152,9 @@ page or through the CLI flags.
 - **Workflows have no loops.** A connection that leads back to an earlier node
   is refused on the canvas, and a graph that contains a cycle fails before any
   request. To poll an async API, use the HTTP node's **Retry** rules instead of
-  a loop.
+  a loop. To repeat a step over a list, use **For each** on a Call Workflow
+  node; it runs the target once per item, at most 1000 items (further items are
+  not run) and at most 16 at once, and the nesting limit of 8 still applies.
 - **A Delay runs once.** It pauses the run for a fixed time and continues; a
   workflow cannot loop back through it.
 - **WebSocket and SSE nodes are bounded probes.** They collect up to 100

@@ -46,6 +46,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   API key, JWT, OAuth 2.0) and subprotocols go in the handshake, and the
   proxy, trusted CA, client certificate and TLS-verification settings apply.
   Finish rules accept dot paths and JSONPath.
+- **For-each on Call Workflow.** A Call Workflow node can run its target once
+  per item of a list: `forEach` takes `items` (a `{{...}}` placeholder, a JSON
+  array literal, or a `$` JSONPath over `variables`, `env`, `data` and node
+  results), an `itemVariable`, an optional `indexVariable`, `concurrency` from
+  1 to 16 and `stopOnFailure`. Each iteration is its own run of the target,
+  every output-mapping variable becomes an array in item order, the count is
+  capped at 1000, and the node shows each iteration with a link to its run.
 
 ### Changed
 
