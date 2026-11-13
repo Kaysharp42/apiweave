@@ -8,6 +8,7 @@ import {
   Package,
   Radio,
   StickyNote,
+  Waypoints,
 } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import useNodePresetStore from "../stores/NodePresetStore";
@@ -72,6 +73,18 @@ export const builtInNodePaletteSections: readonly NodePaletteSectionType[] = [
         type: "websocket",
         label: "WebSocket",
         description: "Send messages and collect replies, then assert",
+      },
+    ],
+  },
+  {
+    key: "grpc",
+    title: "gRPC",
+    icon: Waypoints,
+    nodes: [
+      {
+        type: "grpc",
+        label: "gRPC Call",
+        description: "Call a unary gRPC method",
       },
     ],
   },

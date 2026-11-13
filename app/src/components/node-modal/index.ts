@@ -3,6 +3,7 @@ export { NodeModalFooter } from "./NodeModalFooter";
 export { HTTPRequestConfigPanel } from "./HTTPRequestConfigPanel";
 export { SseConfigPanel } from "./SseConfigPanel";
 export { WebsocketConfigPanel } from "./WebsocketConfigPanel";
+export { GrpcConfigPanel } from "./GrpcConfigPanel";
 export { HttpRequestOutputPanel } from "./HttpRequestOutputPanel";
 export { NodeOutputPanel } from "./NodeOutputPanel";
 export { AssertionConfigPanel } from "./AssertionConfigPanel";

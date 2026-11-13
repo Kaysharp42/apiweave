@@ -10,6 +10,7 @@ import {
   ListChecks,
   Radio,
   Settings,
+  Waypoints,
   SlidersHorizontal,
   SquareCode,
   Timer,
@@ -22,6 +23,7 @@ import {
   HTTPRequestConfigPanel,
   SseConfigPanel,
   WebsocketConfigPanel,
+  GrpcConfigPanel,
   HttpRequestOutputPanel,
   NodeOutputPanel,
   AssertionConfigPanel,
@@ -50,6 +52,8 @@ import type {
   NodeModalSseTabKey,
   NodeModalWebsocketConfig,
   NodeModalWebsocketTabKey,
+  NodeModalGrpcConfig,
+  NodeModalGrpcTabKey,
   NodeModalMergeTabKey,
   NodeModalShellTab,
   SelectOption,
@@ -100,6 +104,13 @@ const WEBSOCKET_TABS: NodeModalShellTab[] = [
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
+const GRPC_TABS: NodeModalShellTab[] = [
+  { key: "endpoint", label: "Endpoint", icon: Waypoints },
+  { key: "message", label: "Message", icon: FileText },
+  { key: "metadata", label: "Metadata", icon: KeyRound },
+  { key: "settings", label: "Settings", icon: Settings },
+];
+
 const ASSERTION_TABS: NodeModalShellTab[] = [
   { key: "rules", label: "Rules", icon: ListChecks },
   { key: "settings", label: "Settings", icon: Settings },
@@ -124,6 +135,7 @@ function getTypeLabel(nodeType: NodeModalNodeType): string {
   if (nodeType === "http-request") return "HTTP Request";
   if (nodeType === "sse") return "SSE Stream";
   if (nodeType === "websocket") return "WebSocket";
+  if (nodeType === "grpc") return "gRPC Call";
   return nodeType.charAt(0).toUpperCase() + nodeType.slice(1);
 }
 
@@ -154,6 +166,7 @@ export function NodeModal({
   const [sseActiveTab, setSseActiveTab] = useState<NodeModalSseTabKey>("endpoint");
   const [websocketActiveTab, setWebsocketActiveTab] =
     useState<NodeModalWebsocketTabKey>("endpoint");
+  const [grpcActiveTab, setGrpcActiveTab] = useState<NodeModalGrpcTabKey>("endpoint");
   const [assertionActiveTab, setAssertionActiveTab] =
     useState<NodeModalAssertionTabKey>("rules");
   const [delayActiveTab, setDelayActiveTab] =
@@ -173,6 +186,7 @@ export function NodeModal({
     setActiveTab("params");
     setSseActiveTab("endpoint");
     setWebsocketActiveTab("endpoint");
+    setGrpcActiveTab("endpoint");
     setAssertionActiveTab("rules");
     setDelayActiveTab("duration");
     setMergeActiveTab("strategy");
@@ -388,6 +402,16 @@ export function NodeModal({
       );
     }
 
+    if (node.type === "grpc") {
+      return (
+        <GrpcConfigPanel
+          initialConfig={(node.data.config || EMPTY_CONFIG) as Partial<NodeModalGrpcConfig>}
+          workingDataRef={workingDataRef}
+          activeTab={grpcActiveTab}
+        />
+      );
+    }
+
     if (node.type === "assertion") {
       return (
         <AssertionConfigPanel
@@ -482,6 +506,8 @@ export function NodeModal({
         ? SSE_TABS
       : node.type === "websocket"
         ? WEBSOCKET_TABS
+      : node.type === "grpc"
+        ? GRPC_TABS
       : node.type === "assertion"
         ? ASSERTION_TABS
         : node.type === "delay"
@@ -496,6 +522,8 @@ export function NodeModal({
         ? sseActiveTab
       : node.type === "websocket"
         ? websocketActiveTab
+      : node.type === "grpc"
+        ? grpcActiveTab
       : node.type === "assertion"
         ? assertionActiveTab
         : node.type === "delay"
@@ -518,6 +546,7 @@ export function NodeModal({
         if (node.type === "sse") setSseActiveTab(tabKey as NodeModalSseTabKey);
         if (node.type === "websocket")
           setWebsocketActiveTab(tabKey as NodeModalWebsocketTabKey);
+        if (node.type === "grpc") setGrpcActiveTab(tabKey as NodeModalGrpcTabKey);
         if (node.type === "assertion")
           setAssertionActiveTab(tabKey as NodeModalAssertionTabKey);
         if (node.type === "delay")
