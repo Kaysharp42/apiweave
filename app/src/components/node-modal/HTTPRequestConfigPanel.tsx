@@ -60,6 +60,7 @@ import { DigestAuthFields } from "./DigestAuthFields";
 import { JwtAuthFields } from "./JwtAuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
 import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
+import { JsonrpcBodyEditor } from "./JsonrpcBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
 import type {
   AuthConfig,
@@ -255,6 +256,7 @@ const BODY_TYPES: SelectOption[] = [
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" },
   { label: "Binary", value: "binary" },
   { label: "GraphQL", value: "graphql" },
+  { label: "JSON-RPC", value: "jsonrpc" },
 ];
 
 function JsonBodyEditor({
@@ -898,6 +900,16 @@ export function HTTPRequestConfigPanel({
             graphql={draftConfig.graphql}
             isDarkMode={isDarkMode}
             onChange={(graphql) => updateConfig({ graphql })}
+          />
+        )}
+
+        {draftConfig.bodyType === "jsonrpc" && (
+          <JsonrpcBodyEditor
+            jsonrpc={draftConfig.jsonrpc}
+            isDarkMode={isDarkMode}
+            allowRpcError={draftConfig.allowRpcError ?? false}
+            onChange={(jsonrpc) => updateConfig({ jsonrpc })}
+            onAllowRpcErrorChange={(allowRpcError) => updateConfig({ allowRpcError })}
           />
         )}
 

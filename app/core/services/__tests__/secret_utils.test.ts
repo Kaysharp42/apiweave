@@ -57,6 +57,17 @@ describe("sanitizeExportValue", () => {
     expect(sanitized.graphql.variables).toContain("{{variables.otp}}")
   })
 
+  it("redacts a credential leaf in JSON-RPC params the way it does in a body", () => {
+    const sanitized = sanitizeExportValue({
+      bodyType: "jsonrpc",
+      jsonrpc: { method: "login", params: '{"user": "alice", "password": "hunter2", "otp": "{{variables.otp}}"}' },
+    }) as { jsonrpc: { method: string; params: string } }
+    expect(sanitized.jsonrpc.method).toBe("login")
+    expect(sanitized.jsonrpc.params).not.toContain("hunter2")
+    expect(sanitized.jsonrpc.params).toContain("alice")
+    expect(sanitized.jsonrpc.params).toContain("{{variables.otp}}")
+  })
+
   it("keeps an AWS Signature V4 config's secret references and blanks a literal in their place", () => {
     const sanitized = sanitizeExportValue({
       auth: {

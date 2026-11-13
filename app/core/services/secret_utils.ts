@@ -800,6 +800,13 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
     const variables = FIELD_SANITIZERS["body"]!(value["variables"] ?? "", mode)
     return variables === undefined ? sanitized : { ...sanitized, variables }
   },
+  // A JSON-RPC request's params are JSON text (object or array), redacted the way a body is.
+  jsonrpc: (value, mode) => {
+    if (!isRecord(value)) return undefined
+    const sanitized = sanitizeValue(value, mode) as Record<string, JsonValue>
+    const params = FIELD_SANITIZERS["body"]!(value["params"] ?? "", mode)
+    return params === undefined ? sanitized : { ...sanitized, params }
+  },
 }
 
 /** The redacted form of one field, or `undefined` when no structural rule applies. */

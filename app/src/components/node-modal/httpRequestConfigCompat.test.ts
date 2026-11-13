@@ -172,6 +172,28 @@ describe("GraphQL body", () => {
   });
 });
 
+describe("JSON-RPC body", () => {
+  it("keeps the jsonrpc body type, drops empty params, and keeps a notification flag", () => {
+    const config = normalizeHttpRequestConfig({
+      bodyType: "jsonrpc",
+      jsonrpc: { method: "log", params: "", notification: true },
+      allowRpcError: true,
+    });
+    expect(config.bodyType).toBe("jsonrpc");
+    expect(config.jsonrpc).toEqual({ method: "log", notification: true });
+    expect(config.allowRpcError).toBe(true);
+  });
+
+  it("drops a falsy notification flag and defaults allowRpcError to false", () => {
+    const config = normalizeHttpRequestConfig({
+      bodyType: "jsonrpc",
+      jsonrpc: { method: "subtract", params: "[1, 2]", notification: false },
+    });
+    expect(config.jsonrpc).toEqual({ method: "subtract", params: "[1, 2]" });
+    expect(config.allowRpcError).toBe(false);
+  });
+});
+
 describe("AWS Signature V4 auth", () => {
   it("normalizes to a schema-valid config, dropping an empty session token", () => {
     const auth = normalizeAuthConfig({ type: "awsSigV4", awsSigV4: { region: "us-east-1", sessionToken: "" }, bearer: { token: "stale" } });
