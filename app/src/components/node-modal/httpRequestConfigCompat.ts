@@ -1,4 +1,5 @@
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
+import type { ContractMode } from "@shared/types/ContractMode";
 import { MAX_JWT_LIFETIME_SECONDS } from "@shared/zod-schemas/AuthConfigSchema";
 import {
   DEFAULT_SCRIPT_TIMEOUT_MS,
@@ -397,6 +398,11 @@ export function normalizeJsonrpc(value: unknown): JsonrpcBody | undefined {
   };
 }
 
+function normalizeContract(value: unknown): ContractMode | undefined {
+  if (value === "off" || value === "warn" || value === "fail") return value;
+  return undefined;
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -437,6 +443,7 @@ export function normalizeHttpRequestConfig(
     useCookieJar: getBoolean(config.useCookieJar, true),
     continueOnFail: getBoolean(config.continueOnFail, false),
     expectedStatus: normalizeExpectedStatus(config.expectedStatus),
+    contract: normalizeContract(config.contract),
     retry: normalizeRetry(config.retry),
     scripts: normalizeScripts(config.scripts),
     formDataEntries: normalizeFormDataEntries(config.formDataEntries),

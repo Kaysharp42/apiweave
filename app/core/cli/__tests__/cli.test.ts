@@ -153,6 +153,59 @@ describe("apiweave run", () => {
     expect(result.stderr).toContain("is not an APIWeave workspace repository, workflow export, .aweproject project bundle or Postman collection")
   })
 
+  it("honours --contract against a node's responseSchemas", async () => {
+    const workflow = {
+      workflowId: "wf_contract",
+      name: "Contract",
+      description: "",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "req", type: "http-request", label: "GET /other.json", position: { x: 240, y: 0 },
+          config: {
+            method: "GET",
+            url: `${baseUrl}/other.json`,
+            responseSchemas: { "200": { type: "object", required: ["status"], properties: { status: { type: "integer" } } } },
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 480, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "req" },
+        { edgeId: "e2", source: "req", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      selectedEnvironmentId: null,
+    }
+    fs.writeFileSync(path.join(dir, "contract.json"), JSON.stringify({ workflow }))
+
+    // No OpenAPI metadata: the contract check is off by default.
+    expect((await run(["run", "contract.json"])).code).toBe(EXIT_PASSED)
+
+    // --contract fail forces the check, and the body does not match.
+    const junitPath = path.join(dir, "contract-junit.xml")
+    const htmlPath = path.join(dir, "contract-report.html")
+    const failed = await run(
+      ["run", "contract.json", "--contract", "fail", "--reporter-junit-export", junitPath, "--reporter-html-export", htmlPath],
+    )
+    expect(failed.code).toBe(EXIT_FAILED)
+    expect(failed.stdout).toContain("Response does not match the schema for status 200")
+    expect(fs.readFileSync(junitPath, "utf8")).toContain('Expected "integer"')
+
+    // --contract warn records it without failing the run.
+    const warned = await run(
+      ["run", "contract.json", "--contract", "warn", "--reporter-junit-export", junitPath, "--reporter-html-export", htmlPath],
+    )
+    expect(warned.code).toBe(EXIT_PASSED)
+    expect(fs.readFileSync(htmlPath, "utf8")).toContain('Expected "integer"')
+
+    // An unknown mode is a usage error.
+    const bad = await run(["run", "contract.json", "--contract", "bogus"])
+    expect(bad.code).toBe(EXIT_USAGE)
+    expect(bad.stderr).toContain("--contract must be one of off, warn or fail")
+  })
+
   it("masks a secret in a node label before escaping, so the JUnit and HTML stay well-formed", async () => {
     const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; label?: string }[] }[]; environments: unknown[] }
     const workflow = project.workflows[0]!

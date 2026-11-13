@@ -182,9 +182,12 @@ rejected config names its node's list index and field in the error path.
   Secrets only as \`aw.secrets.get("NAME")\` with a literal name. Prefer
   extractors and assertion nodes when they can express it.
 - \`responseSchemas\` — JSON Schemas keyed by status (\`"200"\`, \`"2XX"\`,
-  \`"default"\`); the body must match the most specific one for the actual
-  status or the node fails, with the violations in its result's \`assertions\`.
-  OpenAPI import fills it from the spec.
+  \`"default"\`); OpenAPI import fills it from the spec. Whether a mismatch
+  fails the node is set by \`contract\` (\`"off"\`, \`"warn"\`, \`"fail"\`),
+  which defaults to \`"fail"\` for an imported endpoint and \`"off"\`
+  otherwise. With the check on, the body must match the most specific schema
+  for the actual status, and a status the schemas do not declare is itself a
+  violation; violations land in the node result's \`assertions\`.
 
 ### sse
 

@@ -3,6 +3,7 @@ import path from "node:path"
 import { parseArgs } from "node:util"
 import type { RequestInit, Response } from "undici"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { ContractMode } from "@shared/types/ContractMode"
 import type { Environment } from "@shared/types/Environment"
 import type { Workflow } from "@shared/types/Workflow"
 import { nameSlug } from "@shared/workspace-repo/format"
@@ -98,6 +99,8 @@ Options:
   -n, --iteration-count <n>       Run n times (with --iteration-data: its first n rows)
       --bail                      Stop at the first failed workflow, iteration or project
       --timeout-request <ms>      Timeout for every request, overriding each node's
+      --contract <off|warn|fail>  Override every node's contract check (default: each node's
+                                  own setting, fail for OpenAPI-imported nodes)
   -k, --insecure                  Do not verify TLS certificates
       --proxy <url>               Send requests through this proxy (default: the
                                   HTTPS_PROXY or HTTP_PROXY variable; NO_PROXY applies)
@@ -155,6 +158,7 @@ interface CliOptions {
   readonly iterationCount: number | undefined
   readonly bail: boolean
   readonly timeoutMs: number | undefined
+  readonly contract: ContractMode | undefined
   readonly insecure: boolean
   readonly proxy: string | undefined
   readonly caCerts: readonly string[]
@@ -182,6 +186,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       "iteration-count": { type: "string", short: "n" },
       bail: { type: "boolean" },
       "timeout-request": { type: "string" },
+      contract: { type: "string" },
       insecure: { type: "boolean", short: "k" },
       proxy: { type: "string" },
       "ca-cert": { type: "string", multiple: true },
@@ -195,6 +200,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
   const reporters = parseReporters(values.reporter, values["reporter-junit-export"], values["reporter-html-export"])
   const timeoutMs = positiveInteger(values["timeout-request"], "--timeout-request must be a positive whole number of milliseconds")
   const iterationCount = positiveInteger(values["iteration-count"], "--iteration-count must be a positive whole number")
+  const contract = parseContract(values.contract)
   const resolve = (target: string | undefined): string | undefined => (target === undefined ? undefined : path.resolve(cwd, target))
   return {
     file: path.resolve(cwd, file),
@@ -212,6 +218,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     iterationCount,
     bail: values.bail === true,
     timeoutMs,
+    contract,
     insecure: values.insecure === true,
     proxy: values.proxy,
     caCerts: (values["ca-cert"] ?? []).map((file) => path.resolve(cwd, file)),
@@ -245,6 +252,12 @@ function positiveInteger(raw: string | undefined, message: string): number | und
   const value = Number(raw)
   if (!Number.isInteger(value) || value <= 0) throw new UsageError(message)
   return value
+}
+
+function parseContract(raw: string | undefined): ContractMode | undefined {
+  if (raw === undefined) return undefined
+  if (raw === "off" || raw === "warn" || raw === "fail") return raw
+  throw new UsageError(`--contract must be one of off, warn or fail, got '${raw}'`)
 }
 
 /**
@@ -402,6 +415,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       rng,
       // One OAuth 2.0 token cache per invocation: iterations reuse a client-credentials token.
       oauthTokens: new Map(),
+      ...(options.contract !== undefined ? { contract: options.contract } : {}),
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }

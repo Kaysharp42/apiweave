@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AuthConfigSchema } from "./AuthConfigSchema"
+import { ContractModeSchema } from "./ContractModeSchema"
 import { FileUploadSchema } from "./FileUploadSchema"
 import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { GraphqlBodySchema } from "./GraphqlBodySchema"
@@ -84,7 +85,10 @@ export const HTTPNodeDataSchema = z
       .record(z.string().regex(RESPONSE_SCHEMA_KEY), JsonValueSchema)
       .optional()
       .describe(
-        'JSON Schemas the response body must match, keyed by status code: "200", a range like "2XX", or "default". The most specific key for the actual status applies; a status with no key is not checked. A mismatch fails the node and lists where the body differs. Filled from the spec on OpenAPI import.',
+        'JSON Schemas the response body must match, keyed by status code: "200", a range like "2XX", or "default". The most specific key for the actual status applies. Filled from the spec on OpenAPI import; whether a mismatch fails the node is set by `contract`.',
+      ),
+    contract: ContractModeSchema.optional().describe(
+      'How strictly the response must match `responseSchemas`: "off" skips the check, "warn" records violations without failing the node, "fail" records them and fails it. A status `responseSchemas` does not declare is itself a violation. Defaults to "fail" when the node has `openapiMeta`, "off" otherwise.',
       ),
     openapiMeta: OpenApiNodeMetaSchema.optional().describe("Set by OpenAPI import: which operation this request came from, used to flag drift when the spec is refreshed."),
     fileUploads: z.array(FileUploadSchema).optional(),
