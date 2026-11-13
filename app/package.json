@@ -47,6 +47,8 @@
     "mcp:baseline": "tsx --tsconfig tsconfig.desktop.json core/mcp/harness/run-baseline.cts"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1",
     "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.8.11",
     "jsonpathly": "^4.0.0",
