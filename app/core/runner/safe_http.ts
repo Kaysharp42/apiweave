@@ -1,5 +1,5 @@
 import type { CookieJar } from "tough-cookie"
-import { Headers, fetch, type RequestInit, type Response } from "undici"
+import { Headers, fetch, type Dispatcher, type Headers as UndiciHeaders, type RequestInit, type Response } from "undici"
 import { NetworkDispatchers, type NetworkConfig } from "./network"
 
 /**
@@ -93,6 +93,15 @@ export class SafeHttp {
   /** Close the connection pools a network config opened (the global agent is not ours). */
   public close(): Promise<void> {
     return this.network.close()
+  }
+
+  /**
+   * The dispatcher (proxy, trusted CAs, client certificate) for a request to
+   * `url`, or undefined for undici's global agent. Exposed so a non-fetch
+   * protocol (WebSocket) can reuse the same network settings.
+   */
+  public dispatcherFor(url: string, rejectUnauthorized: boolean): Dispatcher | undefined {
+    return this.network.dispatcherFor(url, rejectUnauthorized)
   }
 
   // -------------------- Pure validation (no I/O) --------------------
@@ -245,6 +254,22 @@ export const HTTPS_DOWNGRADE_MESSAGE = "Refused redirect from HTTPS to HTTP"
 
 /** Every message `describeNetworkError` returns starts with this. */
 export const NETWORK_ERROR_PREFIX = "Network error: "
+
+/**
+ * Response headers as a name → value record. Set-Cookie is the one header that
+ * cannot be comma-joined (an Expires date contains a comma), and `forEach`
+ * would keep only the last one, so every Set-Cookie is kept, one per line —
+ * a header value can never contain a newline itself.
+ */
+export function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
+  const record: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    record[key] = value
+  })
+  const setCookies = headers.getSetCookie()
+  if (setCookies.length > 0) record["set-cookie"] = setCookies.join("\n")
+  return record
+}
 
 const TLS_ERROR_CODE = /CERT|SELF_SIGNED|ERR_TLS|ERR_SSL|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER/
 

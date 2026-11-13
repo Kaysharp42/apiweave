@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { FormData as UndiciFormData, Response as UndiciResponse, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, Response as UndiciResponse, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { CookieJar } from "tough-cookie"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
@@ -10,7 +10,10 @@ import { AuthError } from "./auth_error"
 import { signAwsSigV4 } from "./aws_sigv4"
 import { digestAuthorization, parseDigestChallenge } from "./digest_auth"
 import { signJwt } from "./jwt"
-import { collectSseEvents, type SseEvent } from "./sse"
+import { toHeaderRecord } from "./safe_http"
+import { StreamHandshakeError, collectStreamMessages, type StreamAdapter, type StreamMessage } from "./stream_listener"
+import { SseAdapter } from "./streams/sse"
+import { WebsocketAdapter, type WebsocketMessageToSend } from "./streams/websocket"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
 import { compileSchema, MAX_SCHEMA_VIOLATIONS, schemaViolations } from "./json_schema"
@@ -44,6 +47,7 @@ import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfig
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
+import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
 
 /**
  * Workflow executor.
@@ -57,7 +61,7 @@ import type { JsonValueType } from "@shared/types/JsonValueType"
 
 export interface WorkflowNode {
   readonly nodeId: string
-  readonly type: "http-request" | "sse" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
+  readonly type: "http-request" | "sse" | "websocket" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
   readonly label?: string | null
   readonly config?: Record<string, unknown>
 }
@@ -219,26 +223,18 @@ function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean 
   return Object.entries(headers).some(([name, value]) => name.toLowerCase() === "content-type" && /\bjson\b/i.test(value))
 }
 
-interface SseFinishCondition {
-  readonly path: string
-  readonly operator: string
-  readonly expectedValue?: unknown
+/** Node types that ride the two-phase (Ready / Complete) stream-listener lifecycle. */
+const STREAM_NODE_TYPES: ReadonlySet<string> = new Set(["sse", "websocket"])
+
+/** Node types whose result an assertion or merge branch can read as a response. */
+const RESPONSE_NODE_TYPES: ReadonlySet<string> = new Set(["http-request", "sse", "websocket"])
+
+function isStreamNodeType(type: string): boolean {
+  return STREAM_NODE_TYPES.has(type)
 }
 
-/**
- * Response headers as a name → value record. Set-Cookie is the one header that
- * cannot be comma-joined (an Expires date contains a comma), and `forEach`
- * would keep only the last one, so every Set-Cookie is kept, one per line —
- * a header value can never contain a newline itself.
- */
-function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
-  const record: Record<string, string> = {}
-  headers.forEach((value, key) => {
-    record[key] = value
-  })
-  const setCookies = headers.getSetCookie()
-  if (setCookies.length > 0) record["set-cookie"] = setCookies.join("\n")
-  return record
+function isResponseNodeType(type: string | undefined): boolean {
+  return type !== undefined && RESPONSE_NODE_TYPES.has(type)
 }
 
 /**
@@ -446,9 +442,9 @@ export class WorkflowExecutor {
    * join it. See `executeFromNode`.
    */
   private readonly nodeRuns = new Map<string, Promise<unknown>>()
-  /** Background SSE consumers which own connections after the Ready path has started. */
-  private readonly sseListeners = new Map<string, AbortController>()
-  private readonly sseTasks = new Set<Promise<void>>()
+  /** Background stream consumers which own connections after the Ready path has started. */
+  private readonly streamListeners = new Map<string, AbortController>()
+  private readonly streamTasks = new Set<Promise<void>>()
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
   private cancelSignal: AbortSignal | undefined
@@ -573,16 +569,16 @@ export class WorkflowExecutor {
         }
       }
 
-      await this.waitForSseTasks()
+      await this.waitForStreamTasks()
       const finalStatus: "passed" | "failed" = this.hasFailures ? "failed" : "passed"
       return this.buildOutput(caseName, startedAt, seed, finalStatus)
     } catch (error) {
       if (error instanceof StopBranch) {
-        // The Ready branch can fail while an SSE consumer is still running.
+        // The Ready branch can fail while a stream consumer is still running.
         // Settle those consumers before snapshotting the run so no completed
-        // run can retain a running SSE node or omit its terminal result.
-        this.abortSseListeners()
-        await this.waitForSseTasks()
+        // run can retain a running stream node or omit its terminal result.
+        this.abortStreamListeners()
+        await this.waitForStreamTasks()
         return this.buildOutput(caseName, startedAt, seed, "failed")
       }
       throw error
@@ -590,8 +586,8 @@ export class WorkflowExecutor {
       // A trigger-path failure, cancellation, or executor exception must not
       // leave a stream alive. Successful runs have already waited above, so
       // this is a no-op in the normal case.
-      this.abortSseListeners()
-      await this.waitForSseTasks()
+      this.abortStreamListeners()
+      await this.waitForStreamTasks()
     }
   }
 
