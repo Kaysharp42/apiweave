@@ -108,6 +108,7 @@ const GRPC_TABS: NodeModalShellTab[] = [
   { key: "endpoint", label: "Endpoint", icon: Waypoints },
   { key: "message", label: "Message", icon: FileText },
   { key: "metadata", label: "Metadata", icon: KeyRound },
+  { key: "finish", label: "Finish", icon: SlidersHorizontal },
   { key: "settings", label: "Settings", icon: Settings },
 ];
 

@@ -186,16 +186,30 @@ export function describeSchema(schema: GrpcSchema): GrpcDiscoveryResult {
   }
 }
 
+/** The call definition of a server-streaming method; a missing service or method, or a non-streaming one, is a {@link GrpcSchemaError}. */
+export function serverStreamingMethod(schema: GrpcSchema, service: string, method: string): protoLoader.MethodDefinition<object, object> {
+  const definition = methodDefinition(schema, service, method)
+  if (definition.requestStream) throw new GrpcSchemaError(`${service}/${method} is a client-streaming method; only unary and server-streaming calls are supported`)
+  if (!definition.responseStream) throw new GrpcSchemaError(`${service}/${method} is a unary method; use callType "unary"`)
+  return definition
+}
+
 /** The call definition of a unary method; a missing service or method, or a streaming one, is a {@link GrpcSchemaError}. */
 export function unaryMethod(schema: GrpcSchema, service: string, method: string): protoLoader.MethodDefinition<object, object> {
+  const definition = methodDefinition(schema, service, method)
+  if (definition.requestStream || definition.responseStream) {
+    throw new GrpcSchemaError(`${service}/${method} is a streaming method; only unary calls are supported`)
+  }
+  return definition
+}
+
+/** The call definition a service and method name name, whatever its streaming shape. */
+function methodDefinition(schema: GrpcSchema, service: string, method: string): protoLoader.MethodDefinition<object, object> {
   const serviceDefinition = schema.definition[service]
   if (serviceDefinition === undefined || "format" in serviceDefinition) {
     throw new GrpcSchemaError(`Service "${service}" is not in the schema`)
   }
   const definition = (serviceDefinition as protoLoader.ServiceDefinition)[method]
   if (definition === undefined) throw new GrpcSchemaError(`Method "${method}" is not in service "${service}"`)
-  if (definition.requestStream || definition.responseStream) {
-    throw new GrpcSchemaError(`${service}/${method} is a streaming method; only unary calls are supported`)
-  }
   return definition
 }

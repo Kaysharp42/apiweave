@@ -15,6 +15,7 @@ import { StreamHandshakeError, collectStreamMessages, type StreamAdapter, type S
 import { SseAdapter } from "./streams/sse"
 import { WebsocketAdapter, type WebsocketMessageToSend } from "./streams/websocket"
 import { callUnary, loadGrpcSchema, type GrpcConnection, type GrpcSchemaSource } from "./grpc"
+import { GrpcStreamAdapter } from "./streams/grpc"
 import { GrpcSchemaError } from "./grpc_schema"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
@@ -252,7 +253,7 @@ function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean 
 }
 
 /** Node types that ride the two-phase (Ready / Complete) stream-listener lifecycle. */
-const STREAM_NODE_TYPES: ReadonlySet<string> = new Set(["sse", "websocket"])
+const STREAM_NODE_TYPES: ReadonlySet<string> = new Set(["sse", "websocket", "grpc"])
 
 /** Node types whose result an assertion or merge branch can read as a response. */
 const RESPONSE_NODE_TYPES: ReadonlySet<string> = new Set(["http-request", "sse", "websocket", "grpc"])
@@ -266,11 +267,25 @@ interface WebsocketOutboundConfig {
   readonly delayMs?: number
 }
 
+/** A gRPC call's fully resolved request, shared by the unary call and the server-streaming adapter. */
+interface GrpcCall {
+  readonly connection: GrpcConnection
+  readonly source: GrpcSchemaSource
+  readonly service: string
+  readonly method: string
+  readonly message: unknown
+  readonly metadata: Readonly<Record<string, string>>
+  readonly deadlineMs: number
+  readonly target: string
+  readonly rpc: string
+  readonly unresolvedPlaceholders: readonly string[]
+}
+
 /** A stream node's request, ready to open: the adapter plus what the shared lifecycle needs around it. */
 interface PreparedStream {
   readonly adapter: StreamAdapter
-  /** Request facts echoed on the node result. */
-  readonly request: { readonly method: string; readonly url: string }
+  /** Request facts echoed on the node result (gRPC adds `target` and `rpc`). */
+  readonly request: { readonly method: string; readonly url: string; readonly [key: string]: unknown }
   readonly maxMessages: number
   readonly finishConditions: readonly StreamFinishCondition[]
   readonly extractors: Record<string, string> | undefined
@@ -284,8 +299,14 @@ function streamErrorText(error: unknown, url: string): string {
     : (describeNetworkError(error, url) ?? String(error))
 }
 
-function isStreamNodeType(type: string): boolean {
-  return STREAM_NODE_TYPES.has(type)
+/**
+ * Whether a node is driven by the two-phase stream lifecycle rather than a
+ * single call. gRPC is both: a unary call is one result, a server-streaming
+ * call is a stream, chosen by the node's `callType`.
+ */
+function isStreamNode(node: WorkflowNode): boolean {
+  if (!STREAM_NODE_TYPES.has(node.type)) return false
+  return node.type !== "grpc" || node.config?.["callType"] === "server-streaming"
 }
 
 function isResponseNodeType(type: string | undefined): boolean {
@@ -822,7 +843,7 @@ export class WorkflowExecutor {
     // A stream node has two phases. The Ready path continues after its
     // handshake; its Complete path is scheduled by the background consumer when
     // it closes.
-    if (isStreamNodeType(node.type)) {
+    if (isStreamNode(node)) {
       const ready = await this.entryPrev.run(prev, () => this.startStreamListener(node, nodes, edges, cancelSignal))
       if (!ready) return
     // Execute node (skip start)
@@ -842,7 +863,7 @@ export class WorkflowExecutor {
 
     // Find next nodes
     let nextEdges = edges.filter((e) => e.source === nodeId)
-    if (isStreamNodeType(node.type)) {
+    if (isStreamNode(node)) {
       nextEdges = nextEdges.filter((edge) => edge.sourceHandle === "ready")
     }
     if (nextEdges.length === 0) return
@@ -1491,10 +1512,70 @@ export class WorkflowExecutor {
    */
   // fallow-ignore-next-line complexity -- one call lifecycle: build the request, resolve the schema, call, classify the status; the failure returns share one result shape.
   private async executeGrpc(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const prepared = await this.prepareGrpcCall(node, cancelSignal)
+    if ("failure" in prepared) return prepared.failure
+    const { call, extractors, expectedStatus } = prepared
+    const failed = (error: string, extra: Partial<NodeResult> = {}): NodeResult =>
+      this.grpcResult(node.nodeId, extractors, { status: "error", error, target: call.target, rpc: call.rpc, duration: 0, ...extra })
+    if (node.config?.["callType"] === "server-streaming") {
+      return failed("A server-streaming call runs through the stream lifecycle, not this path")
+    }
+    const startTime = Date.now()
+    try {
+      this.deps.http.assertHostAllowed(call.target)
+      const schema = await loadGrpcSchema(call.connection, call.source)
+      const response = await callUnary({
+        connection: call.connection,
+        schema,
+        service: call.service,
+        method: call.method,
+        message: call.message,
+        metadata: call.metadata,
+        deadlineMs: call.deadlineMs,
+        signal: cancelSignal,
+      })
+      const duration = Date.now() - startTime
+      const ok = expectedStatus === undefined ? response.code === 0 : response.codeName === expectedStatus
+      const shaped = {
+        body: response.body,
+        status: response.codeName,
+        statusCode: response.code,
+        statusMessage: response.statusMessage,
+        headers: response.headers,
+        trailers: response.trailers,
+      }
+      const base = { target: call.target, rpc: call.rpc, duration, statusCode: response.code, headers: response.headers, body: response.body, response: shaped }
+      if (ok) return this.grpcResult(node.nodeId, extractors, this.grpcUnresolved(call, { status: "success", ...base }))
+      const expectation = expectedStatus === undefined ? "" : ` (expected ${expectedStatus})`
+      const reason = response.statusMessage === "" ? "" : `: ${response.statusMessage}`
+      return this.grpcResult(node.nodeId, extractors, this.grpcUnresolved(call, { status: "error", ...base, error: `gRPC ${call.rpc} returned ${response.codeName}${expectation}${reason}` }))
+    } catch (error) {
+      const text = error instanceof SafeUrlError || error instanceof GrpcSchemaError ? error.message : String(error)
+      return failed(cancelSignal?.aborted ? "Call cancelled" : text, { duration: Date.now() - startTime })
+    }
+  }
+
+  /** A node result with the node's extractors applied, so a gRPC node captures variables like an HTTP one. */
+  private grpcResult(nodeId: string, extractors: Record<string, string> | undefined, result: NodeResult): NodeResult {
+    return extractors ? { ...result, extractorOutcomes: this.extractVariables(nodeId, extractors, result) } : result
+  }
+
+  private grpcUnresolved(call: GrpcCall, result: NodeResult): NodeResult {
+    return call.unresolvedPlaceholders.length > 0 ? { ...result, unresolvedPlaceholders: call.unresolvedPlaceholders } : result
+  }
+
+  /**
+   * Everything a gRPC node needs before it connects: the substituted target and
+   * message, metadata with auth applied, the schema source and the TLS
+   * connection. Shared by the unary call and the server-streaming adapter, so
+   * both read the node's config the same way.
+   */
+  private async prepareGrpcCall(
+    node: WorkflowNode,
+    cancelSignal: AbortSignal | undefined,
+  ): Promise<{ readonly call: GrpcCall; readonly extractors: Record<string, string> | undefined; readonly expectedStatus: string | undefined } | { readonly failure: NodeResult }> {
     const config = node.config ?? {}
     const extractors = config["extractors"] as Record<string, string> | undefined
-    const finish = (result: NodeResult): NodeResult =>
-      extractors ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) } : result
     const service = (config["service"] as string | undefined) ?? ""
     const method = (config["method"] as string | undefined) ?? ""
     const expectedStatus = config["expectedStatus"] as string | undefined
@@ -1502,10 +1583,11 @@ export class WorkflowExecutor {
     const deadline = (config["deadline"] as number | undefined) ?? 30
     const target = this.substituteVariables((config["target"] as string | undefined) ?? "", { allowSecrets: false }).trim()
     const rpc = `${service}/${method}`
-    const failed = (error: string, extra: Partial<NodeResult> = {}): NodeResult => finish({ status: "error", error, target, rpc, duration: 0, ...extra })
+    const failed = (error: string, extra: Partial<NodeResult> = {}): { failure: NodeResult } => ({
+      failure: this.grpcResult(node.nodeId, extractors, { status: "error", error, target, rpc, duration: 0, ...extra }),
+    })
     if (target === "") return failed("Target is required for a gRPC call")
     if (service === "" || method === "") return failed("Service and method are required for a gRPC call")
-    if (config["callType"] !== undefined && config["callType"] !== "unary") return failed(`Call type "${String(config["callType"])}" is not supported: only unary calls are`)
 
     let message: unknown
     try {
@@ -1528,8 +1610,6 @@ export class WorkflowExecutor {
     }
     const metadata = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
     const unresolvedPlaceholders = collectUnresolvedPlaceholders([target, JSON.stringify(message), ...Object.values(metadata)])
-    const withPlaceholders = (result: NodeResult): NodeResult => (unresolvedPlaceholders.length > 0 ? { ...result, unresolvedPlaceholders } : result)
-
     const source: GrpcSchemaSource = config["schemaSource"] === "proto"
       ? { kind: "proto", files: (config["protoFiles"] as Record<string, string> | undefined) ?? {} }
       : { kind: "reflection" }
@@ -1539,29 +1619,10 @@ export class WorkflowExecutor {
       sslVerify,
       tlsOptionsFor: (url, verify) => this.deps.http.tlsOptionsFor(url, verify),
     }
-    const startTime = Date.now()
-    try {
-      this.deps.http.assertHostAllowed(target)
-      const schema = await loadGrpcSchema(connection, source)
-      const response = await callUnary({ connection, schema, service, method, message, metadata, deadlineMs: deadline * 1000, signal: cancelSignal })
-      const duration = Date.now() - startTime
-      const ok = expectedStatus === undefined ? response.code === 0 : response.codeName === expectedStatus
-      const shaped = {
-        body: response.body,
-        status: response.codeName,
-        statusCode: response.code,
-        statusMessage: response.statusMessage,
-        headers: response.headers,
-        trailers: response.trailers,
-      }
-      const base = { target, rpc, duration, statusCode: response.code, headers: response.headers, body: response.body, response: shaped }
-      if (ok) return finish(withPlaceholders({ status: "success", ...base }))
-      const expectation = expectedStatus === undefined ? "" : ` (expected ${expectedStatus})`
-      const reason = response.statusMessage === "" ? "" : `: ${response.statusMessage}`
-      return finish(withPlaceholders({ status: "error", ...base, error: `gRPC ${rpc} returned ${response.codeName}${expectation}${reason}` }))
-    } catch (error) {
-      const text = error instanceof SafeUrlError || error instanceof GrpcSchemaError ? error.message : String(error)
-      return withPlaceholders(failed(cancelSignal?.aborted ? "Call cancelled" : text, { duration: Date.now() - startTime }))
+    return {
+      call: { connection, source, service, method, message, metadata, deadlineMs: deadline * 1000, target, rpc, unresolvedPlaceholders },
+      extractors,
+      expectedStatus,
     }
   }
 
@@ -1594,7 +1655,9 @@ export class WorkflowExecutor {
     try {
       prepared = node.type === "websocket"
         ? await this.prepareWebsocketStream(node, signal)
-        : await this.prepareSseStream(node, signal)
+        : node.type === "grpc"
+          ? await this.prepareGrpcStream(node, signal)
+          : await this.prepareSseStream(node, signal)
     } catch (error) {
       if (error instanceof StreamHandshakeError) {
         this.completeStreamNode(node, { status: "error", error: error.message, ...error.details, duration: 0 }, startedAt, secretRefs)
@@ -1654,12 +1717,15 @@ export class WorkflowExecutor {
       const body = adapter.resultBody(collected)
       const handshake = adapter.handshake
       const base = { ...handshake, body, duration, ...request, response: { ...handshake, body, duration }, ...unresolved }
-      const result: NodeResult = collected.termination === "stream-ended"
+      const incomplete = collected.termination === "stream-ended" && adapter.endsCleanly !== true
+      // The node's own status goes last: a protocol status name in the
+      // handshake (gRPC's "OK") is result detail, not the node's outcome.
+      const result: NodeResult = incomplete
         ? {
-            status: "error", ...base,
+            ...base, status: "error",
             error: `${adapter.label} stream ended after ${collected.messageCount}/${maxMessages} captured matching ${adapter.unit}(s)`,
           }
-        : { status: "success", ...base }
+        : { ...base, status: "success" }
       const completed = this.completeStreamNode(node, result, startedAt, secretRefs, extractors)
       if (completed.status === "success") {
         await this.traverseStreamCompleteEdges(node, input.nodes, input.edges, input.cancelSignal)
@@ -1770,6 +1836,47 @@ export class WorkflowExecutor {
       finishConditions: (config["finishConditions"] as readonly StreamFinishCondition[] | undefined) ?? [],
       extractors: config["extractors"] as Record<string, string> | undefined,
       unresolvedPlaceholders: collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams), ...outbound.map((message) => message.data)]),
+    }
+  }
+
+  /**
+   * A gRPC server-streaming node. The request is resolved exactly as a unary
+   * call's is; the adapter then opens the call and yields its decoded
+   * responses, and the final status and trailers land on the result.
+   */
+  private async prepareGrpcStream(node: WorkflowNode, signal: AbortSignal): Promise<PreparedStream> {
+    const prepared = await this.prepareGrpcCall(node, signal)
+    if ("failure" in prepared) {
+      const failure = prepared.failure
+      throw new StreamHandshakeError(failure.error ?? "gRPC call could not be prepared", {
+        method: "GRPC",
+        url: String(failure["target"] ?? ""),
+        ...(failure.statusCode === undefined ? {} : { statusCode: failure.statusCode }),
+        ...(failure.headers === undefined ? {} : { headers: failure.headers }),
+        ...(failure.body === undefined ? {} : { body: failure.body }),
+      })
+    }
+    const { call, extractors, expectedStatus } = prepared
+    const config = node.config ?? {}
+    return {
+      adapter: new GrpcStreamAdapter({
+        connection: call.connection,
+        source: call.source,
+        service: call.service,
+        method: call.method,
+        message: call.message,
+        metadata: call.metadata,
+        deadlineMs: call.deadlineMs,
+        signal,
+        ...(expectedStatus === undefined ? {} : { expectedStatus }),
+      }),
+      request: { method: "GRPC", url: call.target, target: call.target, rpc: call.rpc },
+      // A server stream naturally ends, so its default capture is the whole
+      // call (bounded by the 1 MiB capture limit), not SSE's one-event probe.
+      maxMessages: (config["maxMessages"] as number | undefined) ?? 1000,
+      finishConditions: (config["finishConditions"] as readonly StreamFinishCondition[] | undefined) ?? [],
+      extractors,
+      unresolvedPlaceholders: call.unresolvedPlaceholders,
     }
   }
 

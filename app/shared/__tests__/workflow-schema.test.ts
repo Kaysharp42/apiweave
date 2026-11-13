@@ -202,9 +202,10 @@ describe("WorkflowNodeSchema — grpc node", () => {
     expect(grpc({ schemaSource: "proto", protoFiles: { "a.proto": "syntax = \"proto3\";" } }).success).toBe(true)
   })
 
-  it("accepts only unary for callType, and rejects unknown fields", () => {
-    expect(grpc({ callType: "server-streaming" }).success).toBe(false)
+  it("accepts unary and server-streaming, and rejects unknown fields", () => {
+    expect(grpc({ callType: "server-streaming" }).success).toBe(true)
     expect(grpc({ callType: "unary", surprise: 1 }).success).toBe(false)
+    expect(grpc({ callType: "bidirectional" }).success).toBe(false)
     expect(grpc({ deadline: 0 }).success).toBe(false)
   })
 })

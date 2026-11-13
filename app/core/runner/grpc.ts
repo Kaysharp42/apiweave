@@ -43,7 +43,7 @@ export interface GrpcUnaryResponse {
 
 const MAX_METADATA_ENTRIES = 100
 
-function createClient(connection: GrpcConnection): grpc.Client {
+export function createClient(connection: GrpcConnection): grpc.Client {
   return new grpc.Client(connection.target, channelCredentials(connection), {
     // Retries would send a non-idempotent call twice behind the test's back.
     "grpc.enable_retries": 0,
@@ -74,7 +74,7 @@ export async function loadGrpcSchema(connection: GrpcConnection, source: GrpcSch
   }
 }
 
-function toMetadata(entries: Readonly<Record<string, string>>): grpc.Metadata {
+export function toMetadata(entries: Readonly<Record<string, string>>): grpc.Metadata {
   const metadata = new grpc.Metadata()
   for (const [key, value] of Object.entries(entries)) {
     try {
@@ -87,7 +87,7 @@ function toMetadata(entries: Readonly<Record<string, string>>): grpc.Metadata {
   return metadata
 }
 
-function fromMetadata(metadata: grpc.Metadata | undefined): Record<string, string> {
+export function fromMetadata(metadata: grpc.Metadata | undefined): Record<string, string> {
   const record: Record<string, string> = {}
   if (metadata === undefined) return record
   for (const [key, values] of Object.entries(metadata.toJSON()).slice(0, MAX_METADATA_ENTRIES)) {

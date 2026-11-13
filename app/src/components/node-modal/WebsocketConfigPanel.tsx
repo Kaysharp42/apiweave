@@ -7,10 +7,9 @@ import { Toggle } from "../atoms/Toggle";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
+import { StreamFinishConditionsEditor } from "../molecules/StreamFinishConditionsEditor";
 import ButtonSelect from "../ButtonSelect";
-import { AssertionOperatorSchema } from "@shared/zod-schemas/AssertionOperatorSchema";
 import type { KeyValuePair, NodeModalWebsocketConfig, SelectOption, WebsocketConfigPanelProps } from "../../types";
-import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition";
 
 function createCardIcon(Icon: typeof Cable) {
   return function CardIcon({ className }: { className?: string | undefined }) {
@@ -57,18 +56,10 @@ function numberInput(min: number, max: number, value: number, onChange: (value: 
   return <Input type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} className="max-w-40 font-mono" />;
 }
 
-const FINISH_OPERATOR_OPTIONS: SelectOption[] = AssertionOperatorSchema.options.map(
-  (operator) => ({ label: operator, value: operator }),
-);
-
 const MESSAGE_TYPE_OPTIONS: SelectOption[] = [
   { label: "text", value: "text" },
   { label: "binary", value: "binary" },
 ];
-
-function emptyFinishCondition(): StreamFinishCondition {
-  return { path: "data.status", operator: "equals", expectedValue: "" };
-}
 
 function emptyMessage(): WebsocketMessage {
   return { data: "", type: "text" };
@@ -191,38 +182,13 @@ export function WebsocketConfigPanel({ initialConfig, workingDataRef, activeTab 
   }
 
   if (activeTab === "finish") {
-    const updateCondition = (index: number, patch: Partial<StreamFinishCondition>) => {
-      updateConfig({ finishConditions: config.finishConditions.map((condition, currentIndex) => currentIndex === index ? { ...condition, ...patch } : condition) });
-    };
-    const removeCondition = (index: number) => {
-      updateConfig({ finishConditions: config.finishConditions.filter((_, currentIndex) => currentIndex !== index) });
-    };
     return (
       <Card title="Finish trigger" icon={SettingsCardIcon}>
-        <div className="space-y-4">
-          <div className="rounded-xs border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-(--aw-status-info)/30 dark:bg-(--aw-status-info)/10 dark:text-(--aw-status-info)">
-            The connection closes when every rule matches the same message. Use <code className="font-mono">data.status</code> for JSON message data, or <code className="font-mono">data</code> and <code className="font-mono">type</code> for the raw message.
-          </div>
-          {config.finishConditions.map((condition, index) => (
-            <div key={index} className="space-y-3 rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FormField label="Message path">
-                  <Input value={condition.path} onChange={(event) => updateCondition(index, { path: event.target.value })} placeholder="data.status" className="font-mono" />
-                </FormField>
-                <FormField label="Operator">
-                  <ButtonSelect options={FINISH_OPERATOR_OPTIONS} value={condition.operator} onChange={(operator) => updateCondition(index, { operator: operator as StreamFinishCondition["operator"] })} buttonClass="flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 font-mono text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark" />
-                </FormField>
-              </div>
-              {condition.operator !== "exists" && condition.operator !== "notExists" && (
-                <FormField label="Expected value">
-                  <Input value={typeof condition.expectedValue === "string" ? condition.expectedValue : String(condition.expectedValue ?? "")} onChange={(event) => updateCondition(index, { expectedValue: event.target.value })} placeholder="completed" className="font-mono" />
-                </FormField>
-              )}
-              <Button variant="ghost" intent="error" size="xs" onClick={() => removeCondition(index)}>Remove rule</Button>
-            </div>
-          ))}
-          <Button variant="secondary" size="sm" onClick={() => updateConfig({ finishConditions: [...config.finishConditions, emptyFinishCondition()] })}>Add finish rule</Button>
-        </div>
+        <StreamFinishConditionsEditor
+          conditions={config.finishConditions}
+          onChange={(finishConditions) => updateConfig({ finishConditions })}
+          hint={<>The connection closes when every rule matches the same message. Use <code className="font-mono">data.status</code> for JSON message data, or <code className="font-mono">data</code> and <code className="font-mono">type</code> for the raw message.</>}
+        />
       </Card>
     );
   }
