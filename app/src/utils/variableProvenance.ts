@@ -15,6 +15,7 @@ export function computeProvenance(
     nodes.map((node) => ({
       nodeId: node.id,
       label: node.data?.label ?? node.id,
+      ...(node.type === undefined ? {} : { type: node.type }),
       ...(node.data?.config === undefined ? {} : { config: node.data.config }),
     })),
   );

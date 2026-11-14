@@ -82,6 +82,18 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
       }
     }
 
+    // A browser `extract` step writes the variable it names.
+    if (node.type === "browser" && config?.["action"] === "extract" && typeof config["variable"] === "string") {
+      const variableName = config["variable"]
+      const from = typeof config["from"] === "string" ? config["from"] : "text"
+      const path = from === "attribute" && typeof config["attribute"] === "string" ? `page.attribute.${config["attribute"]}` : `page.${from}`
+      const entry = ensure(variableName)
+      map[variableName] = {
+        producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
+        consumers: entry.consumers,
+      }
+    }
+
     const references = new Map<string, Set<string>>()
     forEachConfigString(config, (rootKey, value) => {
       VARIABLE_REF_RE.lastIndex = 0
@@ -740,6 +752,100 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
 }
 
+/** Whether a locator, or a parent it is searched within, is a raw recorder selector. */
+function usesSelectorFallback(locator: unknown): boolean {
+  if (locator === null || typeof locator !== "object") return false
+  const record = locator as Readonly<Record<string, unknown>>
+  return record["kind"] === "selector" || usesSelectorFallback(record["within"])
+}
+
+/**
+ * Browser steps share one page, so they must run one after another:
+ *  - two browser steps neither of which reaches the other would act on the
+ *    page at the same time (an error: the run's outcome would depend on timing);
+ *  - the first step of the chain should open a page, unless a Call Workflow
+ *    node before it may have (a login sub-workflow);
+ *  - a raw recorder selector works but breaks easily, and is worth replacing.
+ */
+function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
+  const steps = workflow.nodes.filter((node): node is Extract<WorkflowNode, { type: "browser" }> => node.type === "browser")
+  if (steps.length === 0) return
+  const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
+  const downstream = new Map(steps.map((step) => [step.nodeId, traverse([step.nodeId], successors)]))
+  // What only an assertion's pass edges reach, and what only its fail edges
+  // reach: one run takes one side, so steps on opposite sides never overlap.
+  const exclusiveSides = workflow.nodes
+    .filter((node) => node.type === "assertion")
+    .map((assertion) => {
+      const side = (handle: string): Set<string> =>
+        traverse(workflow.edges.filter((edge) => edge.source === assertion.nodeId && edge.sourceHandle === handle).map((edge) => edge.target), successors)
+      const pass = side("pass")
+      const fail = side("fail")
+      return {
+        pass: new Set([...pass].filter((id) => !fail.has(id))),
+        fail: new Set([...fail].filter((id) => !pass.has(id))),
+      }
+    })
+  const exclusive = (left: string, right: string): boolean =>
+    exclusiveSides.some(({ pass, fail }) => (pass.has(left) && fail.has(right)) || (fail.has(left) && pass.has(right)))
+  const ordered = (left: string, right: string): boolean =>
+    downstream.get(left)!.has(right) || downstream.get(right)!.has(left) || exclusive(left, right)
+
+  const parallel = new Set<string>()
+  for (const [index, left] of steps.entries()) {
+    for (const right of steps.slice(index + 1)) {
+      if (!ordered(left.nodeId, right.nodeId)) {
+        parallel.add(left.nodeId)
+        parallel.add(right.nodeId)
+      }
+    }
+  }
+  if (parallel.size > 0) {
+    const nodeIds = [...parallel].sort()
+    diagnostics.push(diagnostic(
+      "browser_parallel_branches",
+      "error",
+      "topology",
+      nodeIds,
+      "Browser steps share one page, so they must form a single chain; these steps are on parallel branches.",
+      { count: nodeIds.length },
+      { kind: "chain_browser_steps", nodeId: nodeIds[0]! },
+    ))
+  }
+
+  // The chain's first steps: those no other browser step reaches.
+  const firsts = steps.filter((step) => !steps.some((other) => other !== step && downstream.get(other.nodeId)!.has(step.nodeId)))
+  for (const first of firsts) {
+    if (first.config?.action === "navigate" || first.config === undefined) continue
+    const upstream = traverse([first.nodeId], predecessors)
+    const calledBefore = [...upstream].some((id) => id !== first.nodeId && nodesById.get(id)?.type === "workflow")
+    if (calledBefore) continue
+    diagnostics.push(diagnostic(
+      "browser_chain_starts_without_navigate",
+      "warning",
+      "execution",
+      [first.nodeId],
+      "The first browser step is not a navigate, so it runs on an empty page.",
+      { action: first.config.action },
+      { kind: "add_navigate_step", nodeId: first.nodeId },
+    ))
+  }
+
+  for (const step of steps) {
+    const config = step.config
+    if (config === undefined || !("locator" in config) || !usesSelectorFallback(config.locator)) continue
+    diagnostics.push(diagnostic(
+      "browser_selector_fallback",
+      "notice",
+      "execution",
+      [step.nodeId],
+      "This step finds its element with a raw recorded selector, which breaks easily; prefer a role, label or test id locator.",
+      { action: config.action },
+      { kind: "replace_locator", nodeId: step.nodeId },
+    ))
+  }
+}
+
 /** Flag `{{someFunction(...)}}` placeholders that don't name a real dynamic function — they'd go out as literal text. */
 function addUnknownFunctionDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   for (const node of workflow.nodes) {
@@ -1017,6 +1123,7 @@ export function analyzeWorkflowGraph(input: WorkflowGraphInput, run?: Run): Work
   addExpectedStatusMigrationDiagnostics(workflow, diagnostics)
   addDataflowDiagnostics(workflow, diagnostics)
   addUnknownFunctionDiagnostics(workflow, diagnostics)
+  addBrowserDiagnostics(workflow, diagnostics)
   if (run !== undefined) addRunDiagnostics(workflow, run, diagnostics)
 
   diagnostics.sort((left, right) =>
