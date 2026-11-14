@@ -1066,3 +1066,83 @@ describe("apiweave run — load mode", () => {
     expect(result.stderr).toContain("load mode runs one workflow")
   })
 })
+
+describe("apiweave run — snapshot identity across invocations", () => {
+  let snapshotServer: http.Server
+  let snapshotBody: string
+  let snapshotUrl: string
+
+  beforeAll(async () => {
+    snapshotServer = http.createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" }).end(snapshotBody)
+    })
+    await new Promise<void>((resolve) => snapshotServer.listen(0, "127.0.0.1", resolve))
+    snapshotUrl = `http://127.0.0.1:${(snapshotServer.address() as AddressInfo).port}`
+  })
+
+  afterAll(async () => {
+    await new Promise((resolve) => snapshotServer.close(resolve))
+  })
+
+  /** A workflow export with no `workflowId`, like a hand-written file or another tool's. */
+  function writeExport(file: string): void {
+    const workflow = {
+      name: "Snapshot identity",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "get", type: "http-request", label: "GET /", position: { x: 240, y: 0 }, config: { method: "GET", url: `${snapshotUrl}/` } },
+        { nodeId: "check", type: "assertion", label: "Matches baseline", position: { x: 480, y: 0 }, config: { assertions: [{ source: "prev", path: "response.body", operator: "matchesSnapshot" }] } },
+        { nodeId: "end", type: "end", position: { x: 720, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "get" },
+        { edgeId: "e2", source: "get", target: "check" },
+        { edgeId: "e3", source: "check", target: "end", sourceHandle: "pass" },
+      ],
+      variables: {},
+      tags: [],
+    }
+    fs.writeFileSync(path.join(dir, file), JSON.stringify({ workflow }))
+  }
+
+  it("compares against the baseline the previous invocation recorded, for an export without a workflowId", async () => {
+    writeExport("export.json")
+    const snapshots = path.join(dir, "baselines.json")
+    snapshotBody = JSON.stringify({ status: "ok" })
+
+    const recorded = await run(["run", "export.json", "--snapshots", snapshots])
+    expect(recorded.code).toBe(EXIT_PASSED)
+    const baseline = fs.readFileSync(snapshots, "utf8")
+    expect(Object.keys((JSON.parse(baseline) as { workflows: object }).workflows)).toHaveLength(1)
+
+    // The file is rewritten only when a baseline is recorded or updated: a run that compares leaves it byte for byte.
+    const compared = await run(["run", "export.json", "--snapshots", snapshots])
+    expect(compared.code).toBe(EXIT_PASSED)
+    expect(fs.readFileSync(snapshots, "utf8")).toBe(baseline)
+
+    snapshotBody = JSON.stringify({ status: "changed" })
+    const changed = await run(["run", "export.json", "--snapshots", snapshots])
+    expect(changed.code).toBe(EXIT_FAILED)
+    expect(fs.readFileSync(snapshots, "utf8")).toBe(baseline)
+  })
+
+  it("does the same for a project bundle", async () => {
+    const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: Array<Record<string, unknown>> }
+    writeExport("export.json")
+    const exported = JSON.parse(fs.readFileSync(path.join(dir, "export.json"), "utf8")) as { workflow: Record<string, unknown> }
+    project.workflows = [{ ...exported.workflow, workflowId: "wf_snapshot", selectedEnvironmentId: null }]
+    const bundle = { ...project, project: { ...(project as unknown as { project: object }).project, workflowOrder: [{ workflowId: "wf_snapshot", order: 0, enabled: true, continueOnFail: false }] } }
+    fs.writeFileSync(path.join(dir, "project.aweproject"), JSON.stringify(bundle))
+    const snapshots = path.join(dir, "baselines.json")
+    snapshotBody = JSON.stringify({ status: "ok" })
+
+    const first = await run(["run", "project.aweproject", "--snapshots", snapshots])
+    expect(first.stderr).toBe("")
+    expect(first.code).toBe(EXIT_PASSED)
+    const baseline = fs.readFileSync(snapshots, "utf8")
+    expect((await run(["run", "project.aweproject", "--snapshots", snapshots])).code).toBe(EXIT_PASSED)
+    expect(fs.readFileSync(snapshots, "utf8")).toBe(baseline)
+    snapshotBody = JSON.stringify({ status: "changed" })
+    expect((await run(["run", "project.aweproject", "--snapshots", snapshots])).code).toBe(EXIT_FAILED)
+  })
+})
