@@ -36,6 +36,8 @@ import "@xyflow/react/dist/style.css";
 
 import HTTPRequestNode from "./nodes/HTTPRequestNode";
 import SseNode from "./nodes/SseNode";
+import WebsocketNode from "./nodes/WebsocketNode";
+import GrpcNode from "./nodes/GrpcNode";
 import AssertionNode from "./nodes/AssertionNode";
 import DelayNode from "./nodes/DelayNode";
 import StartNode from "./nodes/StartNode";
@@ -57,6 +59,7 @@ import { AppContext } from "../contexts/AppContext";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
+import { LoadRunDialog } from "./organisms/LoadRunDialog";
 import { CanvasNodeContextMenu } from "./organisms/CanvasNodeContextMenu";
 import useTabStore from "../stores/TabStore";
 import useSidebarStore from "../stores/SidebarStore";
@@ -180,6 +183,8 @@ const nodeTypes: NodeTypes = {
     "http-request",
   ) as NodeTypes[string],
   sse: withNodeBoundary(SseNode, "sse") as NodeTypes[string],
+  websocket: withNodeBoundary(WebsocketNode, "websocket") as NodeTypes[string],
+  grpc: withNodeBoundary(GrpcNode, "grpc") as NodeTypes[string],
   assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
   delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
   start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
@@ -439,6 +444,7 @@ function WorkflowCanvas({
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const pendingHistory = useCanvasStore((state) => state.pendingHistory);
@@ -534,6 +540,7 @@ function WorkflowCanvas({
     currentIteration,
     runWorkflow,
     runWorkflowWithData,
+    runWorkflowLoad,
     cancelRun,
     runFromNode,
     rerunFailed,
@@ -559,7 +566,7 @@ function WorkflowCanvas({
     const parts: string[] = [];
     for (const node of nodes) {
       if (
-        (node.type === "http-request" || node.type === "sse") &&
+        (node.type === "http-request" || node.type === "sse" || node.type === "grpc") &&
         node.data?.config?.extractors
       ) {
         const extractors = node.data.config.extractors as object;
@@ -578,7 +585,7 @@ function WorkflowCanvas({
     const extractorsFromNodes: Record<string, string> = {};
     nodesRef.current.forEach((node) => {
       if (
-        (node.type === "http-request" || node.type === "sse") &&
+        (node.type === "http-request" || node.type === "sse" || node.type === "grpc") &&
         node.data?.config?.extractors
       ) {
         Object.entries(node.data.config.extractors).forEach(([name, value]) => {
@@ -626,7 +633,7 @@ function WorkflowCanvas({
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
           if (
-            (node.type === "http-request" || node.type === "sse") &&
+            (node.type === "http-request" || node.type === "sse" || node.type === "grpc") &&
             node.data?.config?.extractors
           ) {
             const updatedExtractors = {
@@ -1764,7 +1771,7 @@ function WorkflowCanvas({
     if (n.type === "end") return "var(--aw-status-error)";
     if (n.type === "httpRequest" || n.type === "http-request")
       return "var(--aw-status-info)";
-    if (n.type === "sse") return "var(--aw-status-info)";
+    if (n.type === "sse" || n.type === "grpc") return "var(--aw-status-info)";
     if (n.type === "assertion") return "var(--aw-status-success)";
     if (n.type === "delay") return "var(--aw-status-warning)";
     if (n.type === "merge") return "var(--aw-branch-edge)";
@@ -2120,6 +2127,7 @@ function WorkflowCanvas({
         onCommandPalette={() => setIsCommandPaletteOpen(true)}
         onRun={runWorkflow}
         onRunWithData={(file) => void runWorkflowWithData(file)}
+        onLoad={() => setShowLoadDialog(true)}
         onCancel={cancelRun}
         onRerunFailed={() => rerunFailed()}
         onRunFromFailedNode={(nodeId) =>
@@ -2242,6 +2250,7 @@ function WorkflowCanvas({
               type: modalNode.type as
                 | "http-request"
                 | "sse"
+                | "grpc"
                 | "assertion"
                 | "delay"
                 | "merge"
@@ -2275,6 +2284,11 @@ function WorkflowCanvas({
         </Suspense>
       )}
 
+      <LoadRunDialog
+        isOpen={showLoadDialog}
+        onClose={() => setShowLoadDialog(false)}
+        onStart={(request) => void runWorkflowLoad(request)}
+      />
       {showHistory && (
         <Suspense fallback={null}>
           <HistoryModal

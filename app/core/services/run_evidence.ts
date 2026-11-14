@@ -223,7 +223,7 @@ function redactBody(body: JsonValue): JsonValue {
 function selectResponsePath(
   scope: JsonValue,
   path: string,
-): { found: true; value: unknown } | { found: false; reason: "path-missing" | "type-mismatch" } {
+): { found: true; value: unknown } | { found: false; reason: "path-missing" | "type-mismatch" | "invalid-path" } {
   const resolution = resolveExtractorPath({ response: scope }, path)
   if (resolution.failureReason !== null) {
     return { found: false, reason: resolution.failureReason }

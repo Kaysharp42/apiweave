@@ -209,6 +209,26 @@ describe("CanvasToolbar", () => {
   });
 });
 
+describe("CanvasToolbar load run", () => {
+  it("opens the Load run dialog from the Run options menu", async () => {
+    const onLoad = vi.fn();
+    renderToolbar({ onLoad });
+
+    await userEvent.click(screen.getByRole("button", { name: "Run options" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /Load run/ }));
+
+    expect(onLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it("has no Load run row without a handler", async () => {
+    renderToolbar();
+
+    await userEvent.click(screen.getByRole("button", { name: "Run options" }));
+
+    expect(screen.queryByRole("menuitem", { name: /Load run/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("CanvasToolbar at the compact density", () => {
   const initialScrollWidth = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,

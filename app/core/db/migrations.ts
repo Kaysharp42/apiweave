@@ -40,6 +40,7 @@ export const CONTENT_TABLES: ReadonlySet<string> = new Set([
   "workspace_git",
   "workspace_merge",
   "workspace_merge_pick",
+  "snapshots",
 ])
 
 /**

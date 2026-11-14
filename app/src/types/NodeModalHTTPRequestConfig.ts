@@ -8,6 +8,9 @@ import type { NodeModalHttpRetryConfig } from "./NodeModalHttpRetryConfig";
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
 import type { JsonValue } from "@shared/types/JsonValue";
 import type { GraphqlBody } from "@shared/types/GraphqlBody";
+import type { SoapBody } from "@shared/types/SoapBody";
+import type { JsonrpcBody } from "@shared/types/JsonrpcBody";
+import type { ContractMode } from "@shared/types/ContractMode";
 
 export interface NodeModalHTTPRequestConfig {
   url?: string;
@@ -18,6 +21,9 @@ export interface NodeModalHTTPRequestConfig {
   body?: string;
   bodyType?: HTTPRequestBodyType;
   graphql?: GraphqlBody | undefined;
+  soap?: SoapBody | undefined;
+  jsonrpc?: JsonrpcBody | undefined;
+  allowRpcError?: boolean;
   timeout?: number;
   extractors?: Record<string, string>;
   fileUploads?: FileUpload[];
@@ -30,6 +36,7 @@ export interface NodeModalHTTPRequestConfig {
   retry?: NodeModalHttpRetryConfig | undefined;
   scripts?: HttpScriptsConfig | undefined;
   responseSchemas?: Record<string, JsonValue> | undefined;
+  contract?: ContractMode | undefined;
   formDataEntries?: FormDataEntry[];
   urlEncodedEntries?: UrlEncodedEntry[];
 }

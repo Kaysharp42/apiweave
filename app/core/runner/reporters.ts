@@ -6,6 +6,7 @@ import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import type { Workflow } from "@shared/types/Workflow"
+import type { LoadRun } from "@shared/types/LoadRun"
 
 /**
  * JUnit XML and HTML reports of a finished workflow run or project run.
@@ -50,6 +51,11 @@ export type ReportInput =
       /** One input per project that ran, in run order. */
       readonly projects: readonly SingleReportInput[]
     }
+  | {
+      readonly kind: "load"
+      readonly title: string
+      readonly loadRun: LoadRun
+    }
 
 /** One workflow run or one project run. */
 export type SingleReportInput =
@@ -83,6 +89,8 @@ interface ReportCase {
   readonly attempts: number | null
   /** What the node's scripts printed with console.log, in order. */
   readonly logs: readonly string[]
+  /** Contract violations recorded on a node that still passed (contract mode `warn`). */
+  readonly warnings: readonly string[]
 }
 
 interface ReportSuite {
@@ -101,6 +109,8 @@ interface Report {
   readonly suites: readonly ReportSuite[]
   /** One status per iteration of a data-driven run, or per project of a repository run, under the label the summary gives that row. */
   readonly rollup?: { readonly label: "Iterations" | "Projects"; readonly statuses: readonly string[] }
+  /** The load run a `kind: "load"` input describes; drives the latency table. */
+  readonly load?: LoadRun
 }
 
 const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "note"])
@@ -110,6 +120,15 @@ const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "n
 function toReport(input: ReportInput): Report {
   if (input.kind === "iterations") {
     return combine(input.title, input.iterations.map(toReport), "Iterations", (_report, suite, index) => `${suite.name} [iteration ${index + 1}]`)
+  }
+  if (input.kind === "load") {
+    return {
+      title: input.title,
+      status: input.loadRun.status,
+      startedAt: input.loadRun.startedAt,
+      suites: [loadSuite(input.loadRun)],
+      load: input.loadRun,
+    }
   }
   if (input.kind === "projects") {
     // Two projects can both hold a "Login", so the project's name always leads: a suite is named the same
@@ -149,7 +168,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [], warnings: [] }],
       }
     }),
   }
@@ -194,6 +213,125 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
   }
 }
 
+/** A load run's one suite: a case per node plus a Thresholds case, so JUnit and the console stay CI-usable. */
+function loadSuite(loadRun: LoadRun): ReportSuite {
+  const cases: ReportCase[] = loadRun.nodeStats.map((stats) => {
+    const failed = stats.errorCount > 0
+    return {
+      name: stats.label || stats.nodeId,
+      type: stats.type,
+      outcome: failed ? "failed" : "passed",
+      durationMs: stats.latency.meanMs ?? 0,
+      message: failed ? `${stats.errorCount} of ${stats.count} iterations failed (${percent(stats.errorRate)})` : null,
+      details: [],
+      attempts: null,
+      logs: [],
+      warnings: [],
+    }
+  })
+  if (loadRun.settings.thresholds.length > 0) {
+    cases.push({
+      name: "Thresholds",
+      type: "thresholds",
+      outcome: loadRun.breachedThresholds.length > 0 ? "failed" : "passed",
+      durationMs: 0,
+      message: loadRun.breachedThresholds.length > 0 ? `${loadRun.breachedThresholds.length} threshold(s) breached` : null,
+      details: loadRun.breachedThresholds,
+      attempts: null,
+      logs: [],
+      warnings: [],
+    })
+  }
+  return {
+    name: "Load run",
+    runId: null,
+    status: loadRun.status,
+    startedAt: loadRun.startedAt,
+    durationMs: loadRun.durationMs ?? 0,
+    cases,
+  }
+}
+
+/** `0.125` → `12.5%`. */
+function percent(rate: number): string {
+  return `${(rate * 100).toFixed(1).replace(/\.0$/, "")}%`
+}
+
+function msOrDash(value: number | null): string {
+  return value === null ? "—" : String(value)
+}
+
+/** The latency table's column order and widths. */
+const LOAD_COLUMNS = ["Node", "Count", "Errors", "Error rate", "Min", "Mean", "p50", "p90", "p95", "p99", "Max", "Throughput"] as const
+
+/** One `<section>` holding the load run's latency table, plus its settings and threshold outcome. */
+function htmlLoadSection(loadRun: LoadRun): string {
+  const settings = loadRun.settings
+  const rows = loadRun.nodeStats
+    .map(
+      (stats) => `        <tr>
+          <td>${escapeHtml(stats.label || stats.nodeId)}<div class="type">${escapeHtml(stats.type)}</div></td>
+          <td class="num">${stats.count}</td>
+          <td class="num">${stats.errorCount}</td>
+          <td class="num">${percent(stats.errorRate)}</td>
+          <td class="num">${msOrDash(stats.latency.minMs)}</td>
+          <td class="num">${msOrDash(stats.latency.meanMs)}</td>
+          <td class="num">${msOrDash(stats.latency.p50Ms)}</td>
+          <td class="num">${msOrDash(stats.latency.p90Ms)}</td>
+          <td class="num">${msOrDash(stats.latency.p95Ms)}</td>
+          <td class="num">${msOrDash(stats.latency.p99Ms)}</td>
+          <td class="num">${msOrDash(stats.latency.maxMs)}</td>
+          <td class="num">${stats.throughput.toFixed(2)}/s</td>
+        </tr>`,
+    )
+    .join("\n")
+  const settingsText = [
+    `${loadRun.iterationCount} iterations`,
+    `concurrency ${settings.concurrency}`,
+    ...(settings.durationMs === null ? [] : [`duration ${seconds(settings.durationMs)}s`]),
+    ...(settings.rampUpMs === null ? [] : [`ramp-up ${seconds(settings.rampUpMs)}s`]),
+  ].join(" · ")
+  const thresholds =
+    settings.thresholds.length === 0
+      ? ""
+      : `<p class="meta">Thresholds: ${loadRun.breachedThresholds.length === 0 ? "all passed" : `${loadRun.breachedThresholds.length} breached`}</p>` +
+        loadRun.breachedThresholds.map((breach) => `<div class="message">${escapeHtml(breach)}</div>`).join("")
+  return `  <section>
+    <h2>Latency <span class="status">${settingsText}</span></h2>
+    ${thresholds}
+    <table>
+      <thead><tr>${LOAD_COLUMNS.map((column) => `<th class="num">${column}</th>`).join("")}</tr></thead>
+      <tbody>
+${rows}
+      </tbody>
+    </table>
+  </section>`
+}
+
+/** The load run's latency table as plain text for the console. */
+function consoleLoadTable(loadRun: LoadRun): string[] {
+  const header = LOAD_COLUMNS.map((column) => column)
+  const rows: (string | number)[][] = [
+    header,
+    ...loadRun.nodeStats.map((stats) => [
+      stats.label || stats.nodeId,
+      stats.count,
+      stats.errorCount,
+      percent(stats.errorRate),
+      msOrDash(stats.latency.minMs),
+      msOrDash(stats.latency.meanMs),
+      msOrDash(stats.latency.p50Ms),
+      msOrDash(stats.latency.p90Ms),
+      msOrDash(stats.latency.p95Ms),
+      msOrDash(stats.latency.p99Ms),
+      msOrDash(stats.latency.maxMs),
+      `${stats.throughput.toFixed(2)}/s`,
+    ]),
+  ]
+  const widths = header.map((_, column) => Math.max(...rows.map((row) => String(row[column]).length)))
+  return rows.map((row) => row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))
+}
+
 function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown): ReportCase {
   const recorded = statusOf(entry) ?? result?.status ?? "idle"
   const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
@@ -211,6 +349,7 @@ function nodeCase(name: string, type: string, result: RunResult | undefined, ent
     details: details(result, outcome),
     attempts: result?.attempts?.length ?? null,
     logs: (result?.scripts ?? []).flatMap((script) => script.logs),
+    warnings: outcome === "passed" ? (result?.assertions ?? []).filter((rule) => rule.outcome === "fail").flatMap(describeRule).map((line) => `Contract warning: ${line}`) : [],
   }
 }
 
@@ -226,6 +365,7 @@ function runCase(run: Run): ReportCase {
     details: [],
     attempts: null,
     logs: [],
+    warnings: [],
   }
 }
 
@@ -370,7 +510,8 @@ function junitCase(suite: ReportSuite, testCase: ReportCase): string {
   } else if (testCase.outcome === "skipped") {
     children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
-  if (testCase.logs.length > 0) children.push(`      <system-out>${escapeXmlText(testCase.logs.join("\n"))}</system-out>`)
+  const out = [...testCase.warnings, ...testCase.logs]
+  if (out.length > 0) children.push(`      <system-out>${escapeXmlText(out.join("\n"))}</system-out>`)
   return children.length === 0 ? `${head}/>` : `${head}>\n${children.join("\n")}\n    </testcase>`
 }
 
@@ -479,6 +620,7 @@ export function buildHtmlReport(input: ReportInput): string {
     <div><b>${all.failures}</b>failed</div>
     <div><b>${all.skipped}</b>skipped</div>
   </div>
+${report.load === undefined ? "" : htmlLoadSection(report.load)}
 ${report.suites.map(htmlSuite).join("\n")}
 </main>
 </body>
@@ -520,7 +662,10 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
       const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
       const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
       lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`)
-      if (testCase.outcome === "passed") continue
+      if (testCase.outcome === "passed") {
+        for (const line of testCase.warnings) lines.push(`      ${paint(ANSI.yellow, line)}`)
+        continue
+      }
       if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
       if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
       if (testCase.outcome === "failed") for (const line of testCase.logs) lines.push(`      ${paint(ANSI.dim, `> ${line}`)}`)
@@ -545,6 +690,13 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
     lines.push(row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))
   }
   lines.push(`Duration ${seconds(report.suites.reduce((sum, suite) => sum + suite.durationMs, 0))}s`, "")
+  if (report.load !== undefined) {
+    lines.push("", "Latency", ...consoleLoadTable(report.load))
+    if (report.load.breachedThresholds.length > 0) {
+      lines.push("", `Thresholds breached: ${report.load.breachedThresholds.length}`)
+      lines.push(...report.load.breachedThresholds.map((breach) => `  ${breach}`))
+    }
+  }
   return lines.join("\n")
 }
 

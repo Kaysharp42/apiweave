@@ -22,6 +22,16 @@ export interface NetworkConfig {
   readonly clientCertificates?: readonly ClientCertificate[]
 }
 
+/** The TLS settings of one outgoing connection: what undici's `connect` and gRPC's secure context both take. */
+export interface TlsClientOptions {
+  readonly rejectUnauthorized: boolean
+  readonly ca?: string[]
+  readonly cert?: Buffer
+  readonly key?: Buffer
+  readonly pfx?: Buffer
+  readonly passphrase?: string
+}
+
 export interface ClientCertificate {
   /** `api.example.com`, `*.example.com`, optionally with a port (`api.example.com:8443`). */
   readonly host: string
@@ -76,8 +86,18 @@ export class NetworkDispatchers {
     this.agents.clear()
   }
 
-  private createAgent(certificate: ClientCertificate | undefined, rejectUnauthorized: boolean): Dispatcher {
-    const tlsOptions = {
+  /**
+   * The TLS settings for a connection to `url` that does not go through undici
+   * (gRPC): the trusted CAs and the client certificate for its host. The proxy
+   * is not part of it — those connections are not proxied.
+   */
+  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): TlsClientOptions {
+    const certificate = (this.config.clientCertificates ?? []).find((candidate) => hostMatches(candidate.host, url))
+    return this.tlsOptions(certificate, rejectUnauthorized)
+  }
+
+  private tlsOptions(certificate: ClientCertificate | undefined, rejectUnauthorized: boolean): TlsClientOptions {
+    return {
       rejectUnauthorized,
       ...(this.ca ? { ca: this.ca } : {}),
       ...(certificate?.cert ? { cert: certificate.cert } : {}),
@@ -85,6 +105,10 @@ export class NetworkDispatchers {
       ...(certificate?.pfx ? { pfx: certificate.pfx } : {}),
       ...(certificate?.passphrase !== undefined ? { passphrase: certificate.passphrase } : {}),
     }
+  }
+
+  private createAgent(certificate: ClientCertificate | undefined, rejectUnauthorized: boolean): Dispatcher {
+    const tlsOptions = this.tlsOptions(certificate, rejectUnauthorized)
     if (!this.config.proxy) return new Agent({ connect: tlsOptions })
     // Explicit values for every proxy setting: undefined would make undici read
     // HTTP_PROXY/NO_PROXY from the app's own environment. The proxy itself is

@@ -4,5 +4,7 @@ export interface CanvasToolbarRunMenuProps {
   readonly resumeOptions: Array<{ nodeId: string; label: string }>;
   readonly isResumeLoading: boolean;
   readonly onRerunFailed?: (() => void) | undefined;
+  /** Open the Load run dialog. */
+  readonly onLoad?: (() => void) | undefined;
   readonly onRunFromFailedNode?: ((nodeId: string) => void) | undefined;
 }

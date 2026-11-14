@@ -14,6 +14,7 @@ import type { WorkflowRevision } from "@shared/types/WorkflowRevision";
 import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSummary";
 import type { WorkflowSearchPage } from "@shared/types/WorkflowSearchPage";
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage";
+import type { LoadRun } from "@shared/types/LoadRun";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
@@ -73,6 +74,7 @@ import type { AssertionApplyResult } from "@shared/types/AssertionApplyResult";
 import type { AssertionItem } from "@shared/types/AssertionItem";
 import type { AssertionSuggestionResult } from "@shared/types/AssertionSuggestionResult";
 import type { AssertionValidationResult } from "@shared/types/AssertionValidationResult";
+import type { GrpcDiscoveryResult } from "@shared/types/GrpcDiscoveryResult";
 import type { NodePreset } from "../types/NodePreset";
 import type { NodePresetNodeType } from "../types/NodePresetNodeType";
 import type { Project } from "../types/Project";
@@ -449,6 +451,12 @@ export const apiweave = {
       readonly workflowId?: string;
       readonly collectionId?: string;
     }) => invoke<unknown>("workflows", "importCurl", input),
+    importWsdl: (input: {
+      readonly workspaceId: string;
+      readonly wsdlText: string;
+      readonly endpointUrl?: string;
+      readonly forceHttps?: boolean;
+    }) => invoke<unknown>("workflows", "importWsdl", input),
     saveTemplates: (
       workspaceId: string,
       workflowId: string,
@@ -459,6 +467,16 @@ export const apiweave = {
         workflowId,
         templates,
       }),
+  },
+  /** gRPC schema discovery for the gRPC node: reflection or inline .proto files in, services and methods out. */
+  grpc: {
+    discover: (input: {
+      readonly schemaSource: "reflection" | "proto";
+      readonly target?: string;
+      readonly tls?: boolean;
+      readonly sslVerify?: boolean;
+      readonly protoFiles?: Readonly<Record<string, string>>;
+    }) => invoke<GrpcDiscoveryResult>("grpc", "discover", input),
   },
   assertions: {
     suggest: (
@@ -597,6 +615,14 @@ export const apiweave = {
       invoke<null>("nodePresets", "delete", { workspaceId, presetId }),
   },
   runs: {
+    /** Records the response a run just produced as the baseline for a "matchesSnapshot" rule. */
+    acceptSnapshot: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly nodeId: string;
+      readonly ruleIndex: number;
+      readonly value: JsonValue;
+    }) => invoke<{ accepted: boolean; updatedAt: string }>("runs", "acceptSnapshot", input),
     create: (
       input: {
         readonly workspaceId: string;
@@ -614,6 +640,23 @@ export const apiweave = {
       readonly selectedEnvironmentId?: string | null;
       readonly rows: readonly IterationRow[];
     }) => invoke<IpcRun>("runs", "createIterations", input),
+    /** A load run: the workflow in parallel. Returns iteration 1's run; its `iteration.groupId` names the load run. */
+    createLoad: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly selectedEnvironmentId?: string | null;
+      readonly rows?: readonly IterationRow[];
+      readonly iterations: number;
+      readonly concurrency: number;
+      readonly durationMs?: number;
+      readonly rampUpMs?: number;
+      readonly thresholds?: readonly string[];
+    }) => invoke<IpcRun>("runs", "createLoad", input),
+    /** The finished load run of a group; null while it still runs. */
+    loadResult: (workspaceId: string, groupId: string) =>
+      invoke<LoadRun | null>("runs", "loadResult", { workspaceId, groupId }),
+    loadReport: (workspaceId: string, groupId: string, format: ReportFormat) =>
+      invoke<string>("runs", "loadReport", { workspaceId, groupId, format }),
     wait: (workspaceId: string, runId: string, waitMs?: number) =>
       invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>

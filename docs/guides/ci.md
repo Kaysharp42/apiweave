@@ -86,8 +86,15 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--reporter-html-export <path>` | Where to write the HTML report (default `apiweave-report.html`). Naming a path turns the HTML report on. |
 | `-d, --iteration-data <file>` | Run once per row of a CSV or JSON array file; each row's values are `{{data.<column>}}`. See [Data-driven runs](#data-driven-runs). |
 | `-n, --iteration-count <n>` | Run `n` times; with `--iteration-data`, its first `n` rows. |
+| `-c, --concurrency <n>` | Load mode: run `n` iterations at once and report latency percentiles. Needs one workflow (`--workflow`). See [Load runs](#load-runs). |
+| `--duration <time>` | Load mode: stop starting iterations after this long (`30s`, `500ms`, `2m`). |
+| `--ramp-up <time>` | Load mode: grow from 1 to `--concurrency` over this long. |
+| `--threshold <expr>` | Load mode: exit `1` when breached, e.g. `p95<500`, `errors<1%`. Repeatable. |
 | `--bail` | Stop a project run at its first failed workflow, whatever its row says, a repository run at the first project that did not complete, and a data-driven run at its first failed iteration. |
 | `--timeout-request <ms>` | Timeout for every request, replacing each node's own timeout. |
+| `--contract <off\|warn\|fail>` | Override every node's contract check against its `responseSchemas` (default: each node's own setting, `fail` for OpenAPI-imported nodes). |
+| `--snapshots <file>` | Where `matchesSnapshot` baselines live (default `.apiweave-snapshots.json`). Commit it so CI compares against the accepted responses. Baselines are keyed by workflow id, and the CLI gives a file the same id on every run (the declared `workflowId`, or one derived from the workflow's name when the file has none), so renaming an id-less workflow orphans its baselines. |
+| `--update-snapshots` | Record every snapshot baseline again instead of comparing. Use it when a response change is intended, then commit the updated file. |
 | `-k, --insecure` | Do not verify TLS certificates (self-signed test servers). |
 | `--proxy <url>` | Send every request through this proxy. Default: the `HTTPS_PROXY` (or `HTTP_PROXY`) variable. See [Network](#network-proxy-and-certificates). |
 | `--ca-cert <file>` | Also trust this CA certificate (PEM). Repeatable. |
@@ -110,6 +117,18 @@ apiweave run api.aweproject --env Staging --iteration-data users.csv --reporter 
 A CSV file's header row names the columns; a JSON file is an array of objects. Iterations run one after another, each reading its row as `{{data.<column>}}`; a project bundle runs the whole project per row. A workspace repository runs one project per row, so with more than one project to run, pick it with `--project` (without it the CLI exits `2` and names the flag). The exit code is `1` if any iteration failed, and `--bail` stops at the first one that does. The console report adds an **Iterations** row to its summary, and the JUnit report has one `<testsuite>` per workflow per iteration, named `Health check [iteration 2]`.
 
 Data values are not masked. Keep credentials in secrets (`--secret`, `APIWEAVE_SECRET_<NAME>`), not in the data file. See [Data-Driven Runs](../features/data-driven-runs.md).
+
+## Load runs
+
+`--concurrency` turns the run into a load run of one workflow:
+
+```bash
+apiweave run api.aweproject --workflow "Search" --env Staging \
+  --concurrency 20 --duration 60s --ramp-up 10s \
+  --threshold "p95<500" --threshold "errors<1%" --reporter cli,html
+```
+
+The console report ends with a latency table, and the HTML report carries the same table. The exit code is `1` when any step failed in any iteration or a threshold is breached. See [Load Runs](../features/load-runs.md).
 
 ## Secrets
 

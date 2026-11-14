@@ -1,6 +1,6 @@
 import type { AuthConfig } from "@shared/types/AuthConfig";
 import type { KeyValuePair } from "@shared/types/KeyValuePair";
-import type { SseFinishCondition } from "@shared/types/SseFinishCondition";
+import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition";
 
 export interface NodeModalSseConfig {
   url: string;
@@ -12,7 +12,7 @@ export interface NodeModalSseConfig {
   sslVerify: boolean;
   eventType?: string;
   maxEvents: number;
-  finishConditions: SseFinishCondition[];
+  finishConditions: StreamFinishCondition[];
   continueOnFail: boolean;
   extractors: Record<string, string>;
 }

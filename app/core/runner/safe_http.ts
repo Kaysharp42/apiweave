@@ -1,6 +1,6 @@
 import type { CookieJar } from "tough-cookie"
-import { Headers, fetch, type RequestInit, type Response } from "undici"
-import { NetworkDispatchers, type NetworkConfig } from "./network"
+import { Headers, fetch, type Dispatcher, type Headers as UndiciHeaders, type RequestInit, type Response } from "undici"
+import { NetworkDispatchers, type NetworkConfig, type TlsClientOptions } from "./network"
 
 /**
  * The outbound HTTP client for the runner (HTTP request nodes) and URL imports.
@@ -79,6 +79,18 @@ export class SafeHttp {
     previous.close().catch(() => undefined)
   }
 
+  /** Throws unless this client may reach `host` (with port): always on an unrestricted client. Also gates gRPC, which does not go through `safeFetch`. */
+  public assertHostAllowed(host: string): void {
+    if (this.allowedHosts && !this.allowedHosts.has(host)) {
+      throw new SafeUrlError(`Refused: ${host} is not among the hosts this run was allowed to reach`)
+    }
+  }
+
+  /** TLS settings (CAs, client certificate) for a connection to `url` made outside undici, such as gRPC. */
+  public tlsOptionsFor(url: string, rejectUnauthorized: boolean): TlsClientOptions {
+    return this.network.tlsOptionsFor(url, rejectUnauthorized)
+  }
+
   /**
    * This client, refusing every request and redirect hop to a host (with
    * port) outside `hosts`. The view inherits from this instance through its
@@ -93,6 +105,15 @@ export class SafeHttp {
   /** Close the connection pools a network config opened (the global agent is not ours). */
   public close(): Promise<void> {
     return this.network.close()
+  }
+
+  /**
+   * The dispatcher (proxy, trusted CAs, client certificate) for a request to
+   * `url` (an http(s) URL), or undefined for undici's global agent. Exposed so
+   * a non-fetch protocol (WebSocket) can reuse the same network settings.
+   */
+  public dispatcherFor(url: string, rejectUnauthorized: boolean): Dispatcher | undefined {
+    return this.network.dispatcherFor(url, rejectUnauthorized)
   }
 
   // -------------------- Pure validation (no I/O) --------------------
@@ -113,6 +134,26 @@ export class SafeHttp {
   public validateUrl(url: string): void {
     if (!this.isSafeUrl(url)) {
       throw new SafeUrlError(`Not a requestable http(s) URL: ${url}`)
+    }
+  }
+
+  /**
+   * Throw `SafeUrlError` if `url` is not a connectable ws(s) URL, or names a
+   * host this view was not allowed to reach. WebSocket nodes call it before
+   * connecting, since they do not go through `safeFetch`.
+   */
+  public validateWebSocketUrl(url: string): void {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      throw new SafeUrlError(`Not a WebSocket (ws:// or wss://) URL: ${url}`)
+    }
+    if ((parsed.protocol !== "ws:" && parsed.protocol !== "wss:") || stripIpv6Brackets(parsed.hostname).length === 0) {
+      throw new SafeUrlError(`Not a WebSocket (ws:// or wss://) URL: ${url}`)
+    }
+    if (this.allowedHosts && !this.allowedHosts.has(parsed.host)) {
+      throw new SafeUrlError(`Refused: ${parsed.host} is not among the hosts this run was allowed to reach`)
     }
   }
 
@@ -158,9 +199,7 @@ export class SafeHttp {
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
       const host = new URL(currentUrl).host
-      if (this.allowedHosts && !this.allowedHosts.has(host)) {
-        throw new SafeUrlError(`Refused: ${host} is not among the hosts this run was allowed to reach`)
-      }
+      this.assertHostAllowed(host)
       const jar = opts.cookieJar
       // Per hop: a redirect to another host may need another client certificate, or bypass the proxy.
       const dispatcher = this.network.dispatcherFor(currentUrl, opts.rejectUnauthorized ?? true)
@@ -245,6 +284,22 @@ export const HTTPS_DOWNGRADE_MESSAGE = "Refused redirect from HTTPS to HTTP"
 
 /** Every message `describeNetworkError` returns starts with this. */
 export const NETWORK_ERROR_PREFIX = "Network error: "
+
+/**
+ * Response headers as a name → value record. Set-Cookie is the one header that
+ * cannot be comma-joined (an Expires date contains a comma), and `forEach`
+ * would keep only the last one, so every Set-Cookie is kept, one per line —
+ * a header value can never contain a newline itself.
+ */
+export function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
+  const record: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    record[key] = value
+  })
+  const setCookies = headers.getSetCookie()
+  if (setCookies.length > 0) record["set-cookie"] = setCookies.join("\n")
+  return record
+}
 
 const TLS_ERROR_CODE = /CERT|SELF_SIGNED|ERR_TLS|ERR_SSL|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER/
 

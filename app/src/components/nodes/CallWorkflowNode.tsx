@@ -3,6 +3,7 @@ import {
   Workflow,
   CheckCircle,
   XCircle,
+  Circle,
   ArrowRightLeft,
   ExternalLink,
 } from "lucide-react";
@@ -38,6 +39,10 @@ async function openSubWorkflowRun(
   }
 }
 
+function iterationRunId(iteration: { runId?: string | undefined }): string {
+  return iteration.runId ?? "";
+}
+
 interface SubWorkflowSummaryProps {
   result: CallResult;
   workspaceId: string | null | undefined;
@@ -58,6 +63,7 @@ const SubWorkflowSummary = ({
   if (!subWorkflow) return null;
   // Pre-fix runs (and harness runs, which persist nothing) carry no child run.
   const subRunId = subWorkflow.runId;
+  const forEach = subWorkflow.forEach;
 
   return (
     <div className="text-xs p-2 rounded-node-ctl border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark">
@@ -69,32 +75,100 @@ const SubWorkflowSummary = ({
         )}
         <span>{result.message}</span>
       </div>
+      {forEach ? (
+        <ForEachSummary subWorkflow={subWorkflow} workspaceId={workspaceId} />
+      ) : (
+        <>
+          <div>
+            {subWorkflow.nodeCount} node(s)
+            {subWorkflow.failedNodeCount > 0 &&
+              `, ${subWorkflow.failedNodeCount} failed`}
+          </div>
+          {subWorkflow.outputVariableNames.length > 0 && (
+            <div className="mt-1 text-(--aw-node-text-muted)">
+              Mapped: {subWorkflow.outputVariableNames.join(", ")}
+            </div>
+          )}
+          {subRunId && workspaceId && (
+            <button
+              type="button"
+              onClick={() =>
+                void openSubWorkflowRun(
+                  workspaceId,
+                  subWorkflow.workflowId,
+                  subRunId,
+                )
+              }
+              className="nodrag cursor-pointer mt-2 flex items-center gap-1 text-(--aw-primary) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+            >
+              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+              Open this run in the target workflow
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+/**
+ * The per-iteration list a for-each call produced. Each row names the item and
+ * links to that iteration's child run, so a single failure is one click away.
+ */
+const ForEachSummary = ({
+  subWorkflow,
+  workspaceId,
+}: {
+  subWorkflow: SubWorkflow;
+  workspaceId: string | null | undefined;
+}) => {
+  const forEach = subWorkflow.forEach;
+  if (!forEach) return null;
+
+  return (
+    <div className="mt-1 space-y-1">
       <div>
-        {subWorkflow.nodeCount} node(s)
-        {subWorkflow.failedNodeCount > 0 &&
-          `, ${subWorkflow.failedNodeCount} failed`}
+        {forEach.itemCount} item(s)
+        {forEach.failedCount > 0 && `, ${forEach.failedCount} failed`}
       </div>
       {subWorkflow.outputVariableNames.length > 0 && (
-        <div className="mt-1 text-(--aw-node-text-muted)">
+        <div className="text-(--aw-node-text-muted)">
           Mapped: {subWorkflow.outputVariableNames.join(", ")}
         </div>
       )}
-      {subRunId && workspaceId && (
-        <button
-          type="button"
-          onClick={() =>
-            void openSubWorkflowRun(
-              workspaceId,
-              subWorkflow.workflowId,
-              subRunId,
-            )
-          }
-          className="nodrag cursor-pointer mt-2 flex items-center gap-1 text-(--aw-primary) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
-        >
-          <ExternalLink className="w-3 h-3" aria-hidden="true" />
-          Open this run in the target workflow
-        </button>
-      )}
+      <div className="space-y-0.5">
+        {forEach.iterations.map((iteration) => (
+          <div
+            key={iteration.index}
+            className="flex items-center gap-1.5 text-(--aw-node-text-muted)"
+          >
+            {iteration.status === "passed" ? (
+              <CheckCircle className="w-3.5 h-3.5 text-(--aw-status-success)" />
+            ) : iteration.status === "failed" ? (
+              <XCircle className="w-3.5 h-3.5 text-(--aw-status-error)" />
+            ) : (
+              <Circle className="w-3.5 h-3.5" />
+            )}
+            <span>Item {iteration.index + 1}</span>
+            {iterationRunId(iteration) && workspaceId && (
+              <button
+                type="button"
+                onClick={() =>
+                  void openSubWorkflowRun(
+                    workspaceId,
+                    subWorkflow.workflowId,
+                    iterationRunId(iteration),
+                  )
+                }
+                className="nodrag cursor-pointer inline-flex items-center gap-0.5 text-(--aw-primary) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+              >
+                <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                Open
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -133,6 +207,14 @@ function summaryFor(
 ): { operation: string; argument?: string } | undefined {
   if (!subWorkflow) return undefined;
 
+  if (subWorkflow.forEach) {
+    const operation = `${subWorkflow.forEach.itemCount} ${subWorkflow.forEach.itemCount === 1 ? "item" : "items"}`;
+    if (subWorkflow.forEach.failedCount > 0) {
+      return { operation, argument: `${subWorkflow.forEach.failedCount} failed` };
+    }
+    return { operation };
+  }
+
   const operation = `${subWorkflow.nodeCount} ${subWorkflow.nodeCount === 1 ? "node" : "nodes"}`;
   if (subWorkflow.failedNodeCount > 0) {
     return { operation, argument: `${subWorkflow.failedNodeCount} failed` };
@@ -142,6 +224,16 @@ function summaryFor(
 
 /** The metrics row holds its shape: a missing field renders `—`, never gone. */
 function metricsFor(subWorkflow: SubWorkflow | undefined) {
+  if (subWorkflow?.forEach) {
+    return [
+      {
+        label: "items",
+        value: `${subWorkflow.forEach.itemCount} items`,
+      },
+      // The sub-workflow summary carries counts, not a wall-clock duration.
+      { label: "duration", value: null },
+    ];
+  }
   return [
     {
       label: "nodes",

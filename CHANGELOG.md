@@ -9,6 +9,122 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Contract checks against imported OpenAPI schemas.** An HTTP node has a
+  `contract` setting (`off`, `warn` or `fail`) governing its `responseSchemas`
+  check: `fail` for nodes imported from OpenAPI, `off` otherwise. A response
+  status the spec does not declare is now a violation. `warn` records and shows
+  violations without failing the node; the HTML and JUnit reports list them.
+  `apiweave run --contract <off|warn|fail>` overrides the setting for a run,
+  and **Settings → Contract check** sets it per node. This replaces the old
+  always-on check, so a hand-built node with `responseSchemas` must set
+  `contract` to be checked.
+
+- **gRPC Call node.** A new `grpc` node calls a unary method of a gRPC server.
+  The schema comes from server reflection (`grpc.reflection.v1`, falling back
+  to `v1alpha`) or from `.proto` files stored inside the workflow, so they
+  travel in `.aweproject` exports and git. The editor's **Discover** button
+  lists services and unary methods and fills the message from a skeleton of the
+  request type. The result exposes `response.body`, `status`, `statusCode`,
+  `statusMessage`, `headers` and `trailers`; any status other than the
+  configured `expectedStatus` (default `OK`) fails the node. Bearer and API-key
+  auth become metadata, TLS follows Settings → Network (CAs and client
+  certificates, not the proxy), and the read-only `grpc_discover` MCP tool lets
+  agents list a server's schema. Streaming calls are not supported yet.
+
+- **RFC 9535 JSONPath in the path resolver.** An extractor or assertion path
+  beginning with `$` is now evaluated as JSONPath rooted at the node result
+  (`$.response.body.items[?@.id==3].name`), alongside the existing dot grammar.
+  A singular query returns the selected value, a non-singular query returns an
+  array of every match, a query that matches nothing reports `path-missing`,
+  and an expression the parser rejects reports a new `invalid-path` failure
+  reason, surfaced in validation and the extractor preview. The grammar
+  dispatch lives in `resolveExtractorPath`.
+- **JSON-RPC 2.0 body type.** The HTTP request node now offers a JSON-RPC body
+  type alongside GraphQL: a method, params (a JSON template, by name or by
+  position) and an optional notification flag. It is POSTed as
+  `application/json` with a per-request `id` that increases through the run, and
+  a response carrying an `error` member fails the node with its code and message
+  unless **Allow error responses** is turned on.
+- **WebSocket node.** A new node opens a `ws://` or `wss://` connection, sends
+  an ordered list of text or binary (base64) messages once the handshake
+  completes, collects the incoming frames and closes on a finish rule, a
+  message limit or a timeout. Like SSE it has **Ready** and **Complete**
+  outputs, and its result exposes `response.body.messages`, `messageCount`,
+  `termination`, `closeCode` and `closeReason`. Headers, auth (bearer, basic,
+  API key, JWT, OAuth 2.0) and subprotocols go in the handshake, and the
+  proxy, trusted CA, client certificate and TLS-verification settings apply.
+  Finish rules accept dot paths and JSONPath.
+- **For-each on Call Workflow.** A Call Workflow node can run its target once
+  per item of a list: `forEach` takes `items` (a `{{...}}` placeholder, a JSON
+  array literal, or a `$` JSONPath over `variables`, `env`, `data` and node
+  results), an `itemVariable`, an optional `indexVariable`, `concurrency` from
+  1 to 16 and `stopOnFailure`. Each iteration is its own run of the target,
+  every output-mapping variable becomes an array in item order, the count is
+  capped at 1000, and the node shows each iteration with a link to its run.
+- **Load runs.** Run a workflow many times at once and measure it. In the
+  desktop app, **Run options → Load run…** takes iterations or a data file,
+  concurrency, an optional duration and ramp-up, and thresholds. In CI,
+  `apiweave run --workflow <name> --concurrency 20 --iteration-count 500`
+  adds `--duration`, `--ramp-up` and `--threshold "p95<500"` /
+  `--threshold "errors<1%"`; a breached threshold exits `1`. A load run keeps
+  per node the count, error rate, latency min/mean/p50/p90/p95/p99/max and
+  throughput, plus the first failure of each node, and drops every other
+  iteration's results. The console and HTML reports carry a latency table.
+  See [Load Runs](docs/features/load-runs.md).
+
+- **gRPC server streaming.** A gRPC Call node's `callType` also accepts
+  `server-streaming`: the call is opened once and its decoded responses are
+  collected until the server ends the stream, a finish rule matches, a response
+  limit is reached or the deadline expires. Like SSE and WebSocket it has
+  **Ready** and **Complete** outputs, and `response.body` carries `messages`,
+  `messageCount` and `termination` beside the final status, status message and
+  trailers. A non-OK final status fails the node unless it is the expected one.
+  The Finish tab is shared by every stream node, so the finish-rule editor now
+  lives in `StreamFinishConditionsEditor`.
+
+- **SOAP and XML requests, XPath, and WSDL import.** An HTTP Request node takes
+  `bodyType: "soap"` with a version (1.1 or 1.2), an action and a complete
+  envelope, and sends the Content-Type and SOAPAction each version prescribes. A
+  SOAP Fault fails the node unless its status is expected, with the fault's code
+  and reason on `response.fault`. A path beginning with `xpath:` is now evaluated
+  as XPath 1.0 over the response body as XML, with inline namespace declarations
+  (`xpath[s=https://...]:/s:Envelope/...`), alongside dot paths and JSONPath.
+  WSDL 1.1 import (**Import to Add Nodes → WSDL**) creates one POST node per
+  operation from its port's `soap:address`. XML is parsed by
+  `@xmldom/xmldom` and queried by `xpath`, both pure JavaScript; DTDs are
+  refused so entity attacks never parse.
+
+- **Snapshot assertions.** The Assertion node has a `matchesSnapshot`
+  operator: the first run records the value at the rule's path and passes, and
+  later runs compare against it and fail with the differing locations and both
+  values. `ignorePaths` (JSONPath) masks values that change every run. In the
+  app a baseline lives in the local database and the response view offers
+  **Accept snapshot**; the CLI reads and writes `.apiweave-snapshots.json`
+  (`--snapshots`, `--update-snapshots`) so CI can commit it.
+
+### Changed
+
+- **SSE and WebSocket share one stream-listener lifecycle.** The executor's
+  SSE-only handshake, consumer and completion code is now a protocol-neutral
+  seam (`core/runner/stream_listener.ts`) driven by an adapter per protocol,
+  and finish rules are one `StreamFinishCondition` evaluated by one function.
+  SSE behaves as before. The `SseFinishCondition` type is renamed
+  `StreamFinishCondition`.
+
+### Fixed
+
+- **Snapshot baselines survive across CLI runs for every file.** The CLI
+  imports its file into a fresh database each run, and an export without a
+  `workflowId` got a random one, so `matchesSnapshot` never found its baseline
+  and re-recorded. A workflow import now gives the same file the same id every
+  time: the declared id when no workflow holds it, otherwise an id derived from
+  the workflow's name. A project bundle's workflows keep their declared ids the
+  same way, and an id already held (in any workspace) still gets a fresh one.
+
 ## [1.0.0] — 2026-11-10
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported

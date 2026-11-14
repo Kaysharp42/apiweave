@@ -95,6 +95,60 @@ describe("workflow graph analyzer", () => {
     })
   })
 
+  it("accepts a $-prefixed JSONPath extractor and assertion path", () => {
+    const workflow = healthyWorkflow()
+    const jsonPathWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? {
+            ...node,
+            config: {
+              ...node.config,
+              extractors: { firstId: "$.response.body.items[*].id" },
+            },
+          }
+        : node.nodeId === "assert-login"
+          ? {
+              ...node,
+              config: {
+                assertions: [{ source: "prev", path: "$.response.body.items[?@.id==3].name", operator: "exists" }],
+              },
+            }
+          : node),
+    })
+
+    const codes = analyzeWorkflowGraph(jsonPathWorkflow).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("extractor_path_invalid")
+    expect(codes).not.toContain("assertion_source_path_invalid")
+  })
+
+  it("flags an invalid $-prefixed JSONPath as an invalid path", () => {
+    const workflow = healthyWorkflow()
+    const jsonPathWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? {
+            ...node,
+            config: {
+              ...node.config,
+              extractors: { bad: "$.response.body[" },
+            },
+          }
+        : node.nodeId === "assert-login"
+          ? {
+              ...node,
+              config: {
+                assertions: [{ source: "prev", path: "$.response.body[", operator: "exists" }],
+              },
+            }
+          : node),
+    })
+
+    const codes = analyzeWorkflowGraph(jsonPathWorkflow).diagnostics.map((item) => item.code)
+    expect(codes).toContain("extractor_path_invalid")
+    expect(codes).toContain("assertion_source_path_invalid")
+  })
+
   it("accepts an assertion immediately downstream from an SSE stream", () => {
     const workflow = healthyWorkflow()
     const streamWorkflow = WorkflowSchema.parse({
@@ -737,5 +791,41 @@ describe("cycle helpers", () => {
     expect(wouldCreateCycle(chain, "b", "b")).toBe(true)
     expect(wouldCreateCycle(chain, "a", "c")).toBe(false)
     expect(wouldCreateCycle(chain, "c", "d")).toBe(false)
+  })
+})
+
+describe("analyzeWorkflowGraph — gRPC node", () => {
+  const grpcWorkflow = (extractors: Record<string, string>) => WorkflowSchema.parse({
+    workflowId: "workflow-g",
+    workspaceId: "workspace-1",
+    name: "gRPC",
+    nodes: [
+      { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+      { nodeId: "rpc", type: "grpc", position: { x: 100, y: 0 }, config: { target: "localhost:50051", service: "a.B", method: "C", extractors } },
+      { nodeId: "check", type: "assertion", position: { x: 200, y: 0 }, config: { assertions: [{ source: "prev", path: "response.status", operator: "equals", expectedValue: "OK" }] } },
+      { nodeId: "end", type: "end", position: { x: 300, y: 0 }, config: {} },
+    ],
+    edges: [
+      { edgeId: "e1", source: "start", target: "rpc" },
+      { edgeId: "e2", source: "rpc", target: "check" },
+      { edgeId: "e3", source: "check", target: "end", sourceHandle: "pass" },
+    ],
+    variables: {},
+    tags: [],
+    nodeTemplates: [],
+    rev: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+  const codes = (workflow: Workflow) => analyzeWorkflowGraph(workflow).diagnostics.map((item) => item.code)
+
+  it("treats the call as the assertion's response source and accepts gRPC result paths", () => {
+    const diagnostics = codes(grpcWorkflow({ id: "response.body.id", code: "response.statusCode", trailer: "response.trailers.x-id", name: "response.statusMessage", jp: "$.response.body.items[0]" }))
+    expect(diagnostics).not.toContain("assertion_source_missing")
+    expect(diagnostics).not.toContain("extractor_path_invalid")
+  })
+
+  it("still rejects a path that addresses nothing in the result", () => {
+    expect(codes(grpcWorkflow({ x: "response.nonsense" }))).toContain("extractor_path_invalid")
   })
 })

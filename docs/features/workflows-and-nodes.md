@@ -17,6 +17,8 @@
   - [End](#end)
   - [HTTP Request](#http-request)
   - [SSE Stream](#sse-stream)
+  - [WebSocket](#websocket)
+  - [gRPC Call](#grpc-call)
   - [Assertion](#assertion)
   - [Delay](#delay)
   - [Merge](#merge)
@@ -91,7 +93,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
 | `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
 | `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20), [AWS Signature V4](#aws-signature-v4), [Digest](#digest) or [JWT Bearer](#jwt-bearer). Supports placeholders |
-| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
+| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, GraphQL (see [GraphQL](#graphql)), or JSON-RPC (see [JSON-RPC](#json-rpc)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
@@ -103,6 +105,8 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
+
+**SOAP bodies.** Set `bodyType` to `soap` to send a SOAP envelope. `soap.version` (`1.1` default, `1.2`) decides the Content-Type: 1.1 sends `text/xml` with a quoted `SOAPAction` header, 1.2 sends `application/soap+xml` with the action in the Content-Type parameter. `soap.action` and `soap.envelope` are substituted, and the envelope is sent exactly as written. A SOAP Fault in the response fails the node (unless its status is the `expectedStatus`) with the fault's code and reason, and `response.fault` holds them; read other fields with XPath extractors (`xpath://*[local-name()="Total"]/text()`), which parse the XML body on demand. Import a WSDL 1.1 document from **Import to Add Nodes → WSDL** to get one POST node per operation, addressed from its port's `soap:address` and pre-filled with an envelope skeleton.
 
 **Handles:** one input, one output.
 
@@ -126,18 +130,29 @@ without the session, for a negative test.
 
 #### Response schemas
 
-`responseSchemas` maps a status to the JSON Schema its body must match. After
-the response arrives, the node picks the most specific key for the actual
+`responseSchemas` maps a status to the JSON Schema its body must match, and
+the node's `contract` setting (`off`, `warn` or `fail`) decides whether and how
+that is checked. `contract` defaults to `fail` on a node imported from OpenAPI
+(it carries `openapiMeta`) and to `off` on any other node.
+
+With the check on, the node picks the most specific key for the actual
 status — the exact code (`201`), then its class (`2XX`), then `default` — and
-validates the body against it. A status with no key is not checked. A mismatch
-fails the node with "Response does not match the schema for status 200", and
-its result lists each violation with where in the body it is and why, in the
-output panel, in run reports and on the CLI console. The check runs on negative
-tests too: a request expecting `404` is checked against the `404` (or `4XX`)
-schema.
+validates the body against it. A status with no key at all is itself a
+contract violation: "Status 201 is not declared by the contract". Under `fail`
+a violation fails the node ("Response does not match the schema for status
+200"); under `warn` it is recorded and shown but the node passes. Each
+violation says where in the body it is and why, in the output panel, in the
+HTML and JUnit reports (a warning on a passing node appears as a "Contract
+warning" line, in `system-out` for JUnit) and on the CLI console. The check
+runs on negative tests too: a request expecting `404` is checked against the
+`404` (or `4XX`) schema, so a negative test of an undeclared status needs
+`contract: "warn"` or `"off"`.
+
+`apiweave run --contract <off|warn|fail>` overrides every node's setting for
+the run. This is the one validation path: there is no separate check beside it.
 
 [OpenAPI import](swagger-import.md#response-schema-checks) fills this from the
-spec. On the **Settings** tab, **Response schemas** lists the statuses and
+spec. On the **Settings** tab, **Contract check** sets the mode and **Response schemas** lists the statuses and
 removes one; edit a schema itself in the workflow's JSON. To check a schema
 from an Assertion node instead, use the `matchesSchema` operator.
 
@@ -169,6 +184,35 @@ Postman collections import their GraphQL bodies as GraphQL. To turn a JSON
 body that already holds `{"query": ..., "variables": ...}` into one, copy the
 two values into the GraphQL editors.
 
+#### JSON-RPC
+
+Choose **JSON-RPC** as the body type to call a
+[JSON-RPC 2.0](https://www.jsonrpc.org/specification) endpoint. The request is
+POSTed as `application/json`:
+
+```json
+{"jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1}
+```
+
+- **Method** — the RPC method to invoke, e.g. `subtract` or `eth_blockNumber`.
+  Placeholders are substituted.
+- **Params** — a JSON template, like a JSON body. By-name parameters are an
+  object (`{"minuend": 42, "subtrahend": 23}`); by-position parameters are an
+  array (`[42, 23]`). A placeholder inside a string is escaped, and one standing
+  alone is inserted as a value. Params that are not a JSON object or array once
+  filled fail the node with "JSON-RPC params are not valid JSON" (or "must be a
+  JSON object or array"). Leave empty for a method that takes none.
+- **Notification** — a notification omits the `id` member, and the server sends
+  no response. Turn it on for fire-and-forget calls.
+
+The `id` increases with each request in a run, so a server that correlates
+requests with responses sees unique ids. A server usually answers `200` even
+when the call failed, putting an `error` object with a `code` and `message` in
+the body. That fails the node with "JSON-RPC error -32601: Method not found".
+Turn **Allow error responses** on to let it pass instead, then check the error
+with ordinary rules on `response.body.error.code` and
+`response.body.error.message`. Batch requests are not supported.
+
 ### SSE Stream
 
 **Purpose:** Starts a bounded Server-Sent Events listener for contract testing. It signals **Ready** only after the SSE handshake succeeds, so a downstream trigger can run without racing the subscription. It closes deliberately on an event cap, a matching finish trigger, timeout, cancellation, or workflow failure.
@@ -187,6 +231,34 @@ two values into the GraphQL editors.
 The output body has `events`, `eventCount`, and `termination`. Each event records its `event` type, optional `id`, and exact `data` string, including multi-line data. A downstream Assertion can validate a frontend-facing payload directly, for example `response.body.events[0].data` or `response.body.eventCount`.
 
 **Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final bounded result exists. Use the Complete path for a regular Assertion node that checks `response.body.events`.
+
+### gRPC Call
+
+**Purpose:** Calls a gRPC method and asserts on the result, the way an HTTP Request node does for REST. `callType` is **unary** (one request, one response) or **server streaming** (one request, a stream of responses with **Ready** and **Complete** outputs, like SSE and WebSocket). Client and bidirectional streaming are not supported.
+
+| Field | What it does |
+| --- | --- |
+| `target` | `host:port`. Supports environment and variable placeholders (not secrets). |
+| `tls` / `verify TLS` | Use a TLS channel. The trusted CAs and the client certificate for the host come from [Settings → Network](network.md); `verify TLS` off accepts an untrusted server. |
+| `schema source` | `reflection` asks the server for its schema at run time; `proto` uses `.proto` files stored **inside the workflow**. |
+| `service` / `method` | The fully-qualified service (`shop.Orders`) and the method. |
+| `message` | The request as JSON text, with field names as written in the `.proto`. Placeholders are substituted JSON-aware. int64 values may be strings and bytes are base64. |
+| `metadata` / `auth` | Metadata pairs (keys are sent in lowercase). Bearer and API-key auth become `authorization` or the named metadata key. Digest and AWS Signature V4 are not available. |
+| `deadline` | Seconds before the call ends with `DEADLINE_EXCEEDED` (default 30). |
+| `expected status` | A gRPC code name. The node passes on a match and fails otherwise; empty expects `OK`. Use it for negative tests, such as `NOT_FOUND`. On a server stream it is checked against the final status. |
+| `max responses` | Server streaming only: the most responses retained (default 1000, so a normal stream is captured whole). Without finish rules the call also closes when this limit is reached. |
+| `finish rules` | Server streaming only: all rules must match one received response to close the call and fire **Complete**. Paths address the decoded message (`status`, `$.items[0].done`). |
+| `continue on fail` / `extractors` | As on the HTTP Request node. |
+
+**Choosing the schema.** In the editor, enter the target and click **Discover**. With *Server reflection* that queries the server (`grpc.reflection.v1`, falling back to `v1alpha`); with *Proto files* it reads the files you chose or pasted, where imports resolve among the files and Google's well-known types are built in. Pick a service and a unary method from the lists and the message is filled with a skeleton generated from the request type. Because the `.proto` text is saved in the workflow, it travels in `.aweproject` exports and git; reflection needs the server to be reachable.
+
+**Result.** For a unary call `response.body` is the decoded message (int64 as strings, enums as names, bytes as base64); `response.status` is the code name (`OK`, `NOT_FOUND`), `response.statusCode` its number, plus `response.statusMessage`, `response.headers` (initial metadata), `response.trailers` and `response.duration`. For a server stream the same status and metadata fields describe the final state, and `response.body` is `messages` (the decoded responses, in order), `messageCount` and `termination` (`finish-condition`, `message-limit` or `stream-ended`). Extractors and assertions use the same paths as for HTTP, including `$` JSONPath: `response.body.order_id`, `$.response.body.items[0].id`, `response.trailers.x-request-id`.
+
+**Ready and Complete (server streaming).** The node's **Ready** output fires once the call is accepted (initial metadata, the first response, or the final status); the **Complete** output fires when the stream closes, and the node's result carries the final status and trailers. A non-OK status that the node does not expect fails it; an expected one is the call's outcome. The `deadline` bounds the whole call, so it is also the listener's timeout.
+
+**Limits.** A gRPC channel is not proxied (Settings → Network's proxy does not apply), a unary response is bounded to gRPC's default 4 MiB message size, a server stream captures at most 1 MiB of decoded responses, and reflection reads at most 500 files. Agents can list a server's schema with the read-only `grpc_discover` tool.
+
+**Handles:** one input, one output.
 
 #### OAuth 2.0
 
@@ -273,6 +345,26 @@ A polling request for `{"status": "pending"}` → `{"status": "done"}`:
 
 **Expected status (negative tests).** By default a node passes on any 2xx status and fails on everything else. Set **Expected status** — for example `409` or `409, 422` — and that rule is fully replaced: the node passes only when the actual status matches one of the expected values, and fails otherwise, *even for a 2xx response*. This is how you assert a negative test ("the API must reject this with 409") on the request itself. A matched status renders as a green node showing the status text (for example `409 Conflict`). Use it instead of a `continueOnFail` flag plus a downstream assertion that pins a non-2xx status; `workflow_diagnose` suggests exactly that migration when it sees that pattern.
 
+### WebSocket
+
+**Purpose:** Opens a bounded WebSocket connection for contract testing, sends the messages you configure, and collects what comes back. It has the same two-phase lifecycle as the SSE Stream: **Ready** fires once the handshake succeeded and the outbound messages were sent, and the connection then closes on a message cap, a matching finish rule, a timeout, cancellation or workflow failure. It is a test probe, not a long-lived session.
+
+| Field | What it does |
+| --- | --- |
+| `url` | `ws://` or `wss://` endpoint. Supports environment and variable placeholders; `{{secrets.*}}` is refused in the URL. |
+| `query params` / `headers` | Optional structured values sent in the handshake request. |
+| `auth` | Applied to the handshake: bearer, basic, API key (header or query), JWT or OAuth 2.0. Digest and AWS Signature V4 are not available. |
+| `subprotocols` | Requested in `Sec-WebSocket-Protocol`. |
+| `messages` | Ordered `{data, type, delayMs}` list sent after the handshake. `type` is `text` or `binary` (`data` is base64). Placeholders, secrets included, are substituted. |
+| `messages to collect` | Maximum incoming messages retained (default 1; maximum 100). With no finish rule, reaching it closes the connection. |
+| `finish trigger` | Rules evaluated against each incoming message; all must match one message. Paths address `type`, raw `data` and JSON `data.*`; a `$` path is [JSONPath](variables-and-extractors.md). |
+| `timeout` | Maximum time for the whole connection, in seconds. `0` only with a finish rule. |
+| `verify TLS` / `continue on fail` | As on every network node. The proxy, CA and client-certificate settings of [Network](network.md) apply. |
+
+The output body has `messages` (each `{type, data}`; binary `data` is base64), `messageCount`, `termination`, `closeCode` and `closeReason`; `response.duration` is the connection's lifetime in milliseconds. Captured frames are bounded to 1 MiB in total.
+
+**Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final result exists. Use the Complete path for a regular Assertion node that checks `response.body.messages`.
+
 ### Assertion
 
 **Purpose:** Validates values from a previous node and branches the flow based on the result.
@@ -289,8 +381,9 @@ Each assertion rule:
 | --- | --- |
 | `source` | Where the value comes from: `prev` (the upstream response object), `status`, `headers`, `cookies`, or `variables` |
 | `path` | What it means depends on `source` — see the table below |
-| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists`, `matches`, `notMatches`, `type`, `matchesSchema` — see [Validation operators](#validation-operators) |
-| `expectedValue` | Value to compare against (omitted for `exists` and `notExists`) |
+| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists`, `matches`, `notMatches`, `type`, `matchesSchema`, `matchesSnapshot` — see [Validation operators](#validation-operators) |
+| `expectedValue` | Value to compare against (omitted for `exists`, `notExists` and `matchesSnapshot`) |
+| `ignorePaths` | Only for `matchesSnapshot`: JSONPath expressions whose values are ignored when comparing |
 
 | `source` | `path` |
 | --- | --- |
@@ -302,6 +395,24 @@ A bare field name is not a path: the value at the top of a JSON body is
 `response.body.id`, not `id`. `count` takes a non-negative integer and compares
 the length of an array or string; `status` accepts only the numeric comparison
 operators.
+
+#### Snapshots
+
+`matchesSnapshot` records the value at `path` on the first run that has no
+baseline yet, and passes. Later runs compare against that baseline and fail
+with the differing locations when it changed. Values that change every run
+(timestamps, ids, etags) go in `ignorePaths` as JSONPath expressions, for
+example `$..updatedAt` and `$..requestId`; a location one selects is equal on
+both sides, whatever it holds.
+
+The baseline belongs to the rule, so a node can snapshot several values
+separately. In the app, the node's response view offers **Accept snapshot** for
+each snapshot rule, which records the response just received as the new
+baseline. In the CLI, `--update-snapshots` records every baseline again instead
+of comparing, and `--snapshots <file>` (default `.apiweave-snapshots.json`)
+names the file the baselines live in, so committing that file lets CI compare
+against what was accepted locally. The app keeps its baselines in its local
+database.
 
 #### Validation operators
 
@@ -381,6 +492,8 @@ operators.
 | `input mapping` | `target variable = caller expression`. Each entry names a variable the sub-workflow will read as `{{variables.NAME}}`, set from an expression resolved in the *caller's* context |
 | `output mapping` | `caller variable = sub-workflow variable`. Each entry copies one of the sub-workflow's final variables back into the caller's scope |
 
+| `for each` | Optional. Runs the target once per item: `items`, `item variable`, `index variable`, `concurrency` (1 to 16, default 1) and `stop on failure` (default on) |
+
 **Handles:** one input, one output.
 
 How the call behaves:
@@ -390,6 +503,14 @@ How the call behaves:
 - **Secrets cannot be passed through an input mapping.** A `{{secrets.NAME}}` on the right-hand side fails the node rather than copying a secret value into a plain child variable. Let the sub-workflow read the secret directly.
 - **The caller's variables only change where you asked.** An output mapping entry is applied when the sub-workflow actually produced that variable; anything you did not map stays inside the sub-workflow.
 - **A failed sub-workflow fails the calling node**, which then follows its own **Continue on failure** setting like any other failure.
+
+**For each.** With **For each** on, the target runs once per item. `items` is a single placeholder that holds an array (`{{variables.userIds}}`, `{{list.response.body.items}}`), a JSON array literal, or a `$` JSONPath that selects an array, rooted at `{ variables, env, data, <nodeId>: result }` (`$.variables.users[?@.active==true].id`). Each iteration gets the current item as `item variable` and, if set, its zero-based position as `index variable`, on top of the input mapping.
+
+- **Output mapping becomes arrays.** Each mapped caller variable holds one entry per item, in item order whatever the concurrency; an iteration that did not run or did not produce the variable leaves `null`.
+- **Pass and fail.** The node passes only if every iteration passes. With **stop on failure** on, no new iteration starts after the first failure; with it off every item runs and the node fails reporting how many iterations failed (use **Continue on failure** to carry on past it).
+- **At most 1000 items run**; further items are ignored. Nesting still stops at 8 levels.
+- **Each iteration is its own run** of the target, so its History has one entry per item. The node lists the iterations, each with a link to its run.
+- **Cancel.** Cancelling stops starting iterations, cancels the ones in flight, and shows the node as skipped.
 
 A login flow reused by a checkout flow:
 

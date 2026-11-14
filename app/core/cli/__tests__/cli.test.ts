@@ -153,6 +153,61 @@ describe("apiweave run", () => {
     expect(result.stderr).toContain("is not an APIWeave workspace repository, workflow export, .aweproject project bundle or Postman collection")
   })
 
+  it("honours --contract against a node's responseSchemas", async () => {
+    const workflow = {
+      workflowId: "wf_contract",
+      name: "Contract",
+      description: "",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "req", type: "http-request", label: "GET /other.json", position: { x: 240, y: 0 },
+          config: {
+            method: "GET",
+            url: `${baseUrl}/other.json`,
+            responseSchemas: { "200": { type: "object", required: ["status"], properties: { status: { type: "integer" } } } },
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 480, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "req" },
+        { edgeId: "e2", source: "req", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      selectedEnvironmentId: null,
+    }
+    fs.writeFileSync(path.join(dir, "contract.json"), JSON.stringify({ workflow }))
+
+    // No OpenAPI metadata: the contract check is off by default.
+    expect((await run(["run", "contract.json"])).code).toBe(EXIT_PASSED)
+
+    // --contract fail forces the check, and the body does not match.
+    const junitPath = path.join(dir, "contract-junit.xml")
+    const htmlPath = path.join(dir, "contract-report.html")
+    const failed = await run(
+      ["run", "contract.json", "--contract", "fail", "--reporter-junit-export", junitPath, "--reporter-html-export", htmlPath],
+    )
+    expect(failed.code).toBe(EXIT_FAILED)
+    expect(failed.stdout).toContain("Response does not match the schema for status 200")
+    expect(fs.readFileSync(junitPath, "utf8")).toContain('Expected "integer"')
+
+    // --contract warn records it without failing the run.
+    const warned = await run(
+      ["run", "contract.json", "--contract", "warn", "--reporter-junit-export", junitPath, "--reporter-html-export", htmlPath],
+    )
+    expect(warned.code).toBe(EXIT_PASSED)
+    expect(fs.readFileSync(htmlPath, "utf8")).toContain("Expected &quot;integer&quot;")
+    expect(fs.readFileSync(junitPath, "utf8")).toContain("Contract warning")
+    expect(warned.stdout).toContain("Contract warning")
+
+    // An unknown mode is a usage error.
+    const bad = await run(["run", "contract.json", "--contract", "bogus"])
+    expect(bad.code).toBe(EXIT_USAGE)
+    expect(bad.stderr).toContain("--contract must be one of off, warn or fail")
+  })
+
   it("masks a secret in a node label before escaping, so the JUnit and HTML stay well-formed", async () => {
     const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; label?: string }[] }[]; environments: unknown[] }
     const workflow = project.workflows[0]!
@@ -393,6 +448,7 @@ describe("apiweave run", () => {
               ...node,
               config: {
                 url: `${baseUrl}/health.json`,
+                openapiMeta: { source: "openapi", method: "GET", path: "/health.json", operationId: null, fingerprint: "|GET|/health.json|" },
                 responseSchemas: {
                   "200": { type: "object", required: ["status", "version"], properties: { status: { enum: ["up"] } } },
                 },
@@ -947,5 +1003,146 @@ describe("apiweave run — network flags", () => {
 
     expect((await run(against(tlsServer, ...ca), { ...secretEnv, HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1" })).code).toBe(EXIT_PASSED)
     expect(proxy.tunnels).toHaveLength(2)
+  })
+})
+
+describe("apiweave run — load mode", () => {
+  const base = (): string[] => ["run", FIXTURE, "--workflow", "Health check", "--var", `baseUrl=${baseUrl}`]
+  const secretEnv = { APIWEAVE_SECRET_API_TOKEN: TOKEN }
+
+  it("runs n iterations at the given concurrency and reports per-node latency", async () => {
+    const result = await run([...base(), "-c", "3", "-n", "9"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(requests).toHaveLength(9)
+    expect(result.stdout).toMatch(/Latency/)
+    expect(result.stdout).toMatch(/p95/)
+    expect(result.stdout).toMatch(/Throughput/)
+  })
+
+  it("exits 1 when a threshold is breached and 0 when it holds", async () => {
+    const breached = await run([...base(), "-c", "2", "-n", "4", "--threshold", "p95<0"], secretEnv)
+    expect(breached.code).toBe(EXIT_FAILED)
+    expect(breached.stdout).toContain("Thresholds breached")
+
+    const held = await run([...base(), "-c", "2", "-n", "4", "--threshold", "p95<60000", "--threshold", "errors<1%"], secretEnv)
+    expect(held.code).toBe(EXIT_PASSED)
+  })
+
+  it("stops starting iterations after --duration", async () => {
+    const result = await run([...base(), "-c", "1", "--duration", "300ms"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(requests.length).toBeGreaterThan(0)
+    expect(requests.length).toBeLessThan(100_000)
+  })
+
+  it("writes an HTML report with a latency table", async () => {
+    const result = await run([...base(), "-c", "2", "-n", "4", "-r", "html", "--reporter-html-export", "load.html"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    const html = fs.readFileSync(path.join(dir, "load.html"), "utf8")
+    expect(html).toContain("<h2>Latency")
+    expect(html).toContain("<th class=\"num\">p99</th>")
+  })
+
+  it.each([
+    [["--duration", "5s"], "belong to load mode"],
+    [["-c", "2", "--threshold", "bogus"], "--threshold: invalid threshold"],
+    [["-c", "2", "--duration", "soon"], "--duration must be a positive time"],
+    [["-c", "2"], "needs --iteration-count, --iteration-data or --duration"],
+  ])("exits 2 on bad load options: %j", async (extra, message) => {
+    const result = await run([...base(), ...extra], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain(message)
+    expect(requests).toEqual([])
+  })
+
+  it("refuses a project run", async () => {
+    const result = await run(["run", FIXTURE, "-c", "2", "-n", "2", "--var", `baseUrl=${baseUrl}`], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("load mode runs one workflow")
+  })
+})
+
+describe("apiweave run — snapshot identity across invocations", () => {
+  let snapshotServer: http.Server
+  let snapshotBody: string
+  let snapshotUrl: string
+
+  beforeAll(async () => {
+    snapshotServer = http.createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" }).end(snapshotBody)
+    })
+    await new Promise<void>((resolve) => snapshotServer.listen(0, "127.0.0.1", resolve))
+    snapshotUrl = `http://127.0.0.1:${(snapshotServer.address() as AddressInfo).port}`
+  })
+
+  afterAll(async () => {
+    await new Promise((resolve) => snapshotServer.close(resolve))
+  })
+
+  /** A workflow export with no `workflowId`, like a hand-written file or another tool's. */
+  function writeExport(file: string): void {
+    const workflow = {
+      name: "Snapshot identity",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "get", type: "http-request", label: "GET /", position: { x: 240, y: 0 }, config: { method: "GET", url: `${snapshotUrl}/` } },
+        { nodeId: "check", type: "assertion", label: "Matches baseline", position: { x: 480, y: 0 }, config: { assertions: [{ source: "prev", path: "response.body", operator: "matchesSnapshot" }] } },
+        { nodeId: "end", type: "end", position: { x: 720, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "get" },
+        { edgeId: "e2", source: "get", target: "check" },
+        { edgeId: "e3", source: "check", target: "end", sourceHandle: "pass" },
+      ],
+      variables: {},
+      tags: [],
+    }
+    fs.writeFileSync(path.join(dir, file), JSON.stringify({ workflow }))
+  }
+
+  it("compares against the baseline the previous invocation recorded, for an export without a workflowId", async () => {
+    writeExport("export.json")
+    const snapshots = path.join(dir, "baselines.json")
+    snapshotBody = JSON.stringify({ status: "ok" })
+
+    const recorded = await run(["run", "export.json", "--snapshots", snapshots])
+    expect(recorded.code).toBe(EXIT_PASSED)
+    const baseline = fs.readFileSync(snapshots, "utf8")
+    expect(Object.keys((JSON.parse(baseline) as { workflows: object }).workflows)).toHaveLength(1)
+
+    // The file is rewritten only when a baseline is recorded or updated: a run that compares leaves it byte for byte.
+    const compared = await run(["run", "export.json", "--snapshots", snapshots])
+    expect(compared.code).toBe(EXIT_PASSED)
+    expect(fs.readFileSync(snapshots, "utf8")).toBe(baseline)
+
+    snapshotBody = JSON.stringify({ status: "changed" })
+    const changed = await run(["run", "export.json", "--snapshots", snapshots])
+    expect(changed.code).toBe(EXIT_FAILED)
+    expect(fs.readFileSync(snapshots, "utf8")).toBe(baseline)
+  })
+
+  it("does the same for a project bundle", async () => {
+    const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: Array<Record<string, unknown>> }
+    writeExport("export.json")
+    const exported = JSON.parse(fs.readFileSync(path.join(dir, "export.json"), "utf8")) as { workflow: Record<string, unknown> }
+    project.workflows = [{ ...exported.workflow, workflowId: "wf_snapshot", selectedEnvironmentId: null }]
+    const bundle = { ...project, project: { ...(project as unknown as { project: object }).project, workflowOrder: [{ workflowId: "wf_snapshot", order: 0, enabled: true, continueOnFail: false }] } }
+    fs.writeFileSync(path.join(dir, "project.aweproject"), JSON.stringify(bundle))
+    const snapshots = path.join(dir, "baselines.json")
+    snapshotBody = JSON.stringify({ status: "ok" })
+
+    const first = await run(["run", "project.aweproject", "--snapshots", snapshots])
+    expect(first.stderr).toBe("")
+    expect(first.code).toBe(EXIT_PASSED)
+    const baseline = fs.readFileSync(snapshots, "utf8")
+    expect((await run(["run", "project.aweproject", "--snapshots", snapshots])).code).toBe(EXIT_PASSED)
+    expect(fs.readFileSync(snapshots, "utf8")).toBe(baseline)
+    snapshotBody = JSON.stringify({ status: "changed" })
+    expect((await run(["run", "project.aweproject", "--snapshots", snapshots])).code).toBe(EXIT_FAILED)
   })
 })

@@ -1,11 +1,21 @@
 {
+  "kind": "health",
   "finding_counts": {
     "core/cli/cli.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
       "complexity_moderate": {
         "count": 1
       },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
       "crap_moderate": {
-        "count": 6
+        "count": 5
       }
     },
     "core/ipc/router.ts": {
@@ -27,17 +37,6 @@
       },
       "crap_moderate": {
         "count": 1
-      }
-    },
-    "core/repositories/CloudSyncRepository.ts": {
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 3
       }
     },
     "core/repositories/RunRepository.ts": {
@@ -81,49 +80,35 @@
     },
     "core/runner/executor.ts": {
       "complexity_critical": {
-        "count": 6
+        "count": 7
       },
       "complexity_high": {
-        "count": 4
-      },
-      "complexity_moderate": {
-        "count": 1
-      },
-      "crap_critical": {
         "count": 6
       },
-      "crap_high": {
-        "count": 9
-      },
-      "crap_moderate": {
-        "count": 11
-      }
-    },
-    "core/runner/harness/json-utils.ts": {
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "core/runner/harness/mock-server.ts": {
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
+      "complexity_moderate": {
         "count": 2
-      }
-    },
-    "core/runner/harness/parity-runner.ts": {
+      },
       "crap_critical": {
-        "count": 1
+        "count": 7
       },
       "crap_high": {
-        "count": 5
+        "count": 13
       },
       "crap_moderate": {
+        "count": 18
+      }
+    },
+    "core/runner/grpc_schema.ts": {
+      "complexity_moderate": {
         "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/runner/load.ts": {
+      "crap_moderate": {
+        "count": 1
       }
     },
     "core/runner/network.ts": {
@@ -156,14 +141,14 @@
       }
     },
     "core/runner/reporters.ts": {
-      "complexity_high": {
+      "complexity_critical": {
         "count": 1
       },
       "crap_high": {
         "count": 2
       },
       "crap_moderate": {
-        "count": 3
+        "count": 2
       }
     },
     "core/runner/resume.ts": {
@@ -172,9 +157,6 @@
       }
     },
     "core/runner/safe_http.ts": {
-      "complexity_moderate": {
-        "count": 1
-      },
       "crap_moderate": {
         "count": 3
       }
@@ -204,6 +186,16 @@
         "count": 1
       }
     },
+    "core/runner/snapshots.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/runner/thresholds.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
     "core/secrets/keyfile.ts": {
       "complexity_moderate": {
         "count": 1
@@ -222,15 +214,7 @@
         "count": 2
       },
       "crap_moderate": {
-        "count": 1
-      }
-    },
-    "core/services/cloud_first_sync_service.ts": {
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
+        "count": 2
       }
     },
     "core/services/environment_service.ts": {
@@ -309,7 +293,7 @@
         "count": 3
       },
       "crap_moderate": {
-        "count": 3
+        "count": 2
       }
     },
     "core/services/secret_utils.ts": {
@@ -317,12 +301,15 @@
         "count": 1
       }
     },
-    "core/services/workflow_reads.ts": {
-      "complexity_moderate": {
+    "core/services/workflow_service.ts": {
+      "crap_high": {
         "count": 1
       }
     },
-    "core/services/workflow_service.ts": {
+    "core/services/wsdl_parsers.ts": {
+      "complexity_high": {
+        "count": 1
+      },
       "crap_high": {
         "count": 1
       }
@@ -340,62 +327,15 @@
         "count": 1
       }
     },
-    "electron/cloud/__tests__/cloud-transport.test.ts": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "electron/cloud/__tests__/link.test.ts": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "electron/cloud/cloud-client.ts": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "electron/cloud/cloud-link.ts": {
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "electron/cloud/cloud-sync-control.ts": {
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 3
-      }
-    },
-    "electron/cloud/cloud-transport.ts": {
-      "complexity_critical": {
-        "count": 2
-      },
-      "crap_critical": {
-        "count": 2
-      },
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 4
-      }
-    },
-    "electron/cloud/cloud-workspace-reconciler.ts": {
-      "complexity_high": {
-        "count": 1
-      }
-    },
     "electron/main.ts": {
       "crap_critical": {
-        "count": 1
+        "count": 2
       },
       "crap_high": {
         "count": 4
       },
       "crap_moderate": {
-        "count": 6
+        "count": 4
       }
     },
     "scripts/audit-types.mjs": {
@@ -413,19 +353,27 @@
     },
     "shared/analysis/workflow_graph_analyzer.ts": {
       "complexity_critical": {
-        "count": 1
+        "count": 2
       },
       "complexity_high": {
-        "count": 3
+        "count": 2
       },
       "complexity_moderate": {
-        "count": 1
+        "count": 2
       },
       "crap_critical": {
-        "count": 1
+        "count": 2
       },
       "crap_high": {
-        "count": 4
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "shared/extractors/xpathQuery.ts": {
+      "crap_moderate": {
+        "count": 1
       }
     },
     "shared/iteration-data/iterationData.ts": {
@@ -474,7 +422,7 @@
       }
     },
     "src/components/CurlImport.tsx": {
-      "complexity_high": {
+      "complexity_moderate": {
         "count": 1
       }
     },
@@ -507,16 +455,11 @@
         "count": 1
       }
     },
-    "src/components/MCPManager.tsx": {
+    "src/components/NodeModal.tsx": {
       "complexity_critical": {
         "count": 1
       },
-      "crap_critical": {
-        "count": 1
-      }
-    },
-    "src/components/NodeModal.tsx": {
-      "complexity_critical": {
+      "complexity_high": {
         "count": 1
       },
       "crap_high": {
@@ -531,9 +474,6 @@
         "count": 1
       },
       "crap_critical": {
-        "count": 1
-      },
-      "crap_high": {
         "count": 1
       },
       "crap_moderate": {
@@ -558,7 +498,7 @@
         "count": 2
       },
       "crap_high": {
-        "count": 1
+        "count": 2
       },
       "crap_moderate": {
         "count": 2
@@ -566,16 +506,13 @@
     },
     "src/components/WorkflowExportImport.tsx": {
       "complexity_critical": {
-        "count": 1
-      },
-      "complexity_high": {
-        "count": 1
+        "count": 2
       },
       "crap_critical": {
-        "count": 1
+        "count": 2
       },
-      "crap_high": {
-        "count": 1
+      "crap_moderate": {
+        "count": 2
       }
     },
     "src/components/WorkflowJsonEditor.tsx": {
@@ -612,21 +549,6 @@
         "count": 1
       }
     },
-    "src/components/audit/AuditFilters.tsx": {
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "src/components/layout/AccountMenu.tsx": {
-      "complexity_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/layout/AppNavBar.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
     "src/components/layout/Sidebar.tsx": {
       "complexity_critical": {
         "count": 1
@@ -646,17 +568,25 @@
       }
     },
     "src/components/layout/sidebar/ProjectItem.tsx": {
-      "complexity_high": {
+      "complexity_moderate": {
         "count": 1
       }
     },
     "src/components/layout/sidebar/ProjectList.tsx": {
       "complexity_moderate": {
         "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
       }
     },
     "src/components/layout/sidebar/WorkflowList.tsx": {
       "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/molecules/AssertionRulesEditor.tsx": {
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -668,24 +598,38 @@
         "count": 1
       }
     },
-    "src/components/node-modal/HTTPRequestConfigPanel.tsx": {
+    "src/components/node-modal/GrpcConfigPanel.tsx": {
       "complexity_high": {
-        "count": 1
+        "count": 2
       },
-      "crap_moderate": {
-        "count": 3
+      "crap_high": {
+        "count": 2
       }
     },
-    "src/components/node-modal/HttpRequestOutputPanel.tsx": {
+    "src/components/node-modal/HTTPRequestConfigPanel.tsx": {
       "complexity_high": {
         "count": 1
       },
       "crap_high": {
         "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "src/components/node-modal/HttpRequestOutputPanel.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
       }
     },
     "src/components/node-modal/NodeModalHeader.tsx": {
-      "complexity_moderate": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
         "count": 1
       }
     },
@@ -705,8 +649,16 @@
       }
     },
     "src/components/node-modal/copyAsCurl.ts": {
+      "crap_high": {
+        "count": 1
+      },
       "crap_moderate": {
-        "count": 2
+        "count": 1
+      }
+    },
+    "src/components/node-modal/httpRequestConfigCompat.ts": {
+      "crap_moderate": {
+        "count": 1
       }
     },
     "src/components/nodes/AssertionNode.tsx": {
@@ -720,6 +672,11 @@
         "count": 2
       },
       "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/nodes/GrpcNode.tsx": {
+      "crap_high": {
         "count": 1
       }
     },
@@ -745,11 +702,13 @@
         "count": 1
       }
     },
-    "src/components/organisms/CanvasToolbar.tsx": {
-      "complexity_critical": {
+    "src/components/organisms/BackgroundSettingsPanel.tsx": {
+      "crap_high": {
         "count": 1
-      },
-      "crap_critical": {
+      }
+    },
+    "src/components/organisms/CanvasToolbar.tsx": {
+      "complexity_high": {
         "count": 1
       }
     },
@@ -763,6 +722,11 @@
     },
     "src/components/organisms/EnvironmentForm.tsx": {
       "complexity_high": {
+        "count": 1
+      }
+    },
+    "src/components/organisms/LoadRunDialog.tsx": {
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -800,11 +764,6 @@
         "count": 1
       }
     },
-    "src/hooks/useCloudSync.ts": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
     "src/hooks/useNodeBranchCounts.ts": {
       "crap_moderate": {
         "count": 2
@@ -822,10 +781,10 @@
       }
     },
     "src/hooks/useWorkflowPolling.ts": {
-      "complexity_high": {
+      "complexity_critical": {
         "count": 2
       },
-      "crap_high": {
+      "crap_critical": {
         "count": 1
       },
       "crap_moderate": {
@@ -841,29 +800,18 @@
       }
     },
     "src/pages/WorkspaceProjectPage.tsx": {
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "src/pages/cloud/CloudSyncPage.tsx": {
       "complexity_critical": {
-        "count": 1
-      },
-      "complexity_high": {
         "count": 1
       },
       "crap_critical": {
         "count": 1
       },
-      "crap_high": {
-        "count": 1
+      "crap_moderate": {
+        "count": 3
       }
     },
-    "src/pages/cloud/ConflictDetailPage.tsx": {
-      "complexity_moderate": {
+    "src/pages/WorkspaceSecretsPage.tsx": {
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -873,6 +821,11 @@
       }
     },
     "src/stores/SidebarStore.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/types/GitRepositoryRouteState.ts": {
       "crap_moderate": {
         "count": 1
       }
@@ -898,54 +851,83 @@
   },
   "runtime_coverage_findings": [],
   "target_keys": [
+    "src/components/node-modal/NodeModalHeader.tsx:complexity",
     "core/runner/executor.ts:high impact",
-    "core/services/project_export_service.ts:high impact",
-    "core/services/assertion_authoring_service.ts:high impact",
-    "core/services/workflow_service.ts:complexity",
-    "src/hooks/useCloudSync.ts:high impact",
-    "src/components/atoms/flow/BaseNode.tsx:complexity",
+    "src/utils/apiweaveClient.ts:hidden coupling",
     "core/runner/scheduler.ts:complexity",
-    "src/components/node-modal/HttpRequestOutputPanel.tsx:complexity",
-    "core/services/run_evidence.ts:untested risk",
-    "src/components/layout/Workspace.tsx:circular dependency",
+    "shared/git-merge/record.ts:high impact",
+    "core/services/assertion_authoring_service.ts:high impact",
+    "src/components/node-modal/httpRequestConfigCompat.ts:high impact",
+    "core/services/workspace_repo_import.ts:high impact",
+    "core/git/git_sync_service.ts:hidden coupling",
+    "core/services/workflow_service.ts:complexity",
+    "electron/git_sync.ts:hidden coupling",
     "shared/analysis/workflow_graph_analyzer.ts:high impact",
-    "src/hooks/useWorkspaceTabs.ts:high impact",
-    "src/pages/WorkspaceEnvironmentsPage.tsx:complexity",
-    "src/App.tsx:circular dependency",
-    "core/runner/harness/json-utils.ts:untested risk",
-    "src/components/node-modal/copyAsCurl.ts:high impact",
-    "shared/env-file/envFile.ts:high impact",
-    "src/stores/TabStore.ts:high impact",
-    "core/runner/oauth.ts:complexity",
-    "src/components/organisms/AgentLaunchButton.tsx:complexity",
-    "shared/iteration-data/iterationData.ts:high impact",
-    "src/components/layout/MainLayout.tsx:circular dependency",
-    "src/components/OpenAPIImport.tsx:complexity",
-    "core/runner/resume.ts:high impact",
-    "src/hooks/useSwaggerRefresh.ts:complexity",
-    "src/components/node-modal/nodeModalUtils.ts:high impact",
-    "src/components/layout/MainHeader.tsx:circular dependency",
-    "core/runner/__tests__/auth_test_servers.ts:high impact",
-    "src/pages/WorkspaceProjectPage.tsx:complexity",
-    "core/runner/reporters.ts:high impact",
-    "src/utils/environmentInheritance.ts:high impact",
-    "src/components/layout/Sidebar.tsx:complexity",
-    "core/runner/network.ts:high impact",
-    "src/components/CollectionExportImport.tsx:complexity",
-    "core/services/import_parsers.ts:high impact",
-    "src/components/molecules/ResponseInspector.tsx:complexity",
-    "core/mcp/harness/measurements.ts:high impact",
-    "src/components/CollectionManager.tsx:complexity",
-    "core/services/postman_import.ts:high impact",
+    "src/components/node-modal/HttpRequestOutputPanel.tsx:complexity",
+    "src/components/node-modal/GrpcConfigPanel.tsx:complexity",
+    "core/git/__tests__/git_sync_harness.ts:hidden coupling",
+    "shared/conflict-diff/diff.ts:high impact",
+    "src/__tests__/setup.ts:high impact",
     "src/components/organisms/CreateWorkspaceModal.tsx:complexity",
-    "src/hooks/useWorkflowPolling.ts:complexity",
-    "src/components/NodeModal.tsx:complexity",
-    "core/runner/sse.ts:untested risk",
-    "src/components/organisms/AgentsSettingsPanel.tsx:complexity",
+    "src/__tests__/gitFixtures.ts:high impact",
+    "core/runner/grpc_schema.ts:high impact",
+    "src/hooks/useWorkspaceTabs.ts:high impact",
+    "shared/iteration-data/iterationData.ts:high impact",
+    "core/services/node_facts.ts:high impact",
     "src/components/WorkflowExportImport.tsx:complexity",
     "src/components/WorkflowCanvas.tsx:complexity",
-    "src/pages/cloud/CloudSyncPage.tsx:complexity",
+    "src/components/organisms/AgentLaunchButton.tsx:complexity",
+    "src/pages/WorkspaceEnvironmentsPage.tsx:complexity",
+    "core/runner/oauth.ts:complexity",
+    "electron/main.ts:hidden coupling",
+    "src/components/node-modal/copyAsCurl.ts:high impact",
+    "core/cli/cli.ts:untested risk",
+    "core/runner/dynamic_functions.ts:high impact",
+    "core/runner/reporters.ts:high impact",
+    "src/hooks/useSwaggerRefresh.ts:complexity",
+    "shared/env-file/envFile.ts:high impact",
+    "src/components/node-modal/nodeModalUtils.ts:high impact",
+    "core/runner/network.ts:high impact",
+    "core/git/git_service.ts:hidden coupling",
+    "core/services/import_parsers.ts:high impact",
+    "core/mcp/tools.ts:hidden coupling",
+    "core/runner/resume.ts:high impact",
+    "electron/preload.ts:hidden coupling",
+    "shared/extractors/xmlDocument.ts:high impact",
+    "src/pages/WorkspaceProjectPage.tsx:complexity",
+    "core/ipc/handlers/workflows.ts:hidden coupling",
+    "src/components/atoms/flow/BaseNode.tsx:complexity",
+    "core/mcp/harness/measurements.ts:high impact",
+    "core/repositories/WorkspaceGitRepository.ts:hidden coupling",
+    "shared/workspace-repo/paths.ts:high impact",
+    "src/components/layout/Sidebar.tsx:complexity",
+    "electron/__tests__/git_sync.test.ts:hidden coupling",
+    "src/hooks/useWorkflowPolling.ts:complexity",
+    "core/mcp/bridge.ts:hidden coupling",
+    "core/runner/__tests__/auth_test_servers.ts:high impact",
+    "core/mcp/token-file.ts:high impact",
+    "src/components/molecules/ResponseInspector.tsx:complexity",
     "src/components/organisms/CanvasToolbar.tsx:complexity",
-    "src/pages/cloud/ConflictDetailPage.tsx:complexity"
+    "src/utils/environmentInheritance.ts:high impact",
+    "src/components/CollectionExportImport.tsx:complexity",
+    "src/components/NodeModal.tsx:complexity",
+    "core/ipc/opaque_cursor.ts:high impact",
+    "src/components/HARImport.tsx:hidden coupling",
+    "src/components/organisms/MergeView.tsx:complexity",
+    "core/services/postman_import.ts:high impact",
+    "src/components/CollectionManager.tsx:complexity",
+    "src/components/nodes/HTTPRequestNode.tsx:hidden coupling",
+    "core/git/accounts/host_cli_parse.ts:hidden coupling",
+    "src/components/organisms/AgentsSettingsPanel.tsx:complexity",
+    "core/git/git_parse.ts:hidden coupling",
+    "src/components/nodes/AssertionNode.tsx:hidden coupling",
+    "src/components/ImportToNodesPanel.tsx:hidden coupling",
+    "src/hooks/useRunCamera.ts:hidden coupling",
+    "src/components/node-modal/httpRequestConfigCompat.test.ts:hidden coupling",
+    "core/ipc/channels.ts:hidden coupling",
+    "core/git/__tests__/git_sync_cycle.test.ts:hidden coupling",
+    "core/services/__tests__/secret_utils.test.ts:hidden coupling",
+    "core/git/__tests__/git_sync_remote.test.ts:hidden coupling",
+    "src/utils/__tests__/runCamera.test.ts:hidden coupling"
   ]
 }

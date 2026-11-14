@@ -49,6 +49,21 @@ export const RunResultSchema = z
         nodeCount: z.number().int().nonnegative(),
         failedNodeCount: z.number().int().nonnegative(),
         outputVariableNames: z.array(z.string()),
+        /** Present only when the node ran with `forEach`. */
+        forEach: z
+          .object({
+            itemCount: z.number().int().nonnegative(),
+            ranCount: z.number().int().nonnegative(),
+            failedCount: z.number().int().nonnegative(),
+            iterations: z.array(
+              z.object({
+                index: z.number().int().nonnegative(),
+                runId: z.string().min(1).optional(),
+                status: z.enum(["passed", "failed", "cancelled"]),
+              }),
+            ),
+          })
+          .optional(),
       })
       .optional(),
   })

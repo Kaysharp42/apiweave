@@ -9,6 +9,8 @@ import type { NodePresetNodeType } from "../types/NodePresetNodeType";
 export const PRESETABLE_NODE_TYPES: readonly NodePresetNodeType[] = [
   "http-request",
   "sse",
+  "websocket",
+  "grpc",
   "assertion",
   "delay",
   "merge",

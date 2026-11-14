@@ -120,6 +120,8 @@ rejected config names its node's list index and field in the error path.
 | \`end\` | terminal point | input only, one or more per workflow |
 | \`http-request\` | sends one request, optionally extracts variables | 1 in, 1 out |
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
+| \`websocket\` | opens a bounded WebSocket, sends its messages, captures what comes back | 1 in, **2 out: \`ready\` and \`complete\`** |
+| \`grpc\` | calls one unary gRPC method | 1 in, 1 out |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
@@ -146,6 +148,10 @@ rejected config names its node's list index and field in the error path.
 - \`body\` is a **string**, not an object. A JSON body is its serialized text.
 - GraphQL: \`"bodyType": "graphql"\` with \`"graphql": {"query": "...", "variables": "<JSON text>"}\`
   instead of \`body\`. A GraphQL error answers 200: assert \`response.body.errors\` notExists.
+- JSON-RPC 2.0: \`"bodyType": "jsonrpc"\` with \`"jsonrpc": {"method": "...", "params": "<JSON text>", "notification": false}\`
+  instead of \`body\`, POSTed as \`{"jsonrpc":"2.0","method","params","id"}\`. A response carrying an
+  \`error\` member fails the node; set \`"allowRpcError": true\` to opt out and assert
+  \`response.body.error.code\` / \`response.body.error.message\`.
 - \`extractors\` is a map of variable name to response path. After this node runs,
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
   \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.
@@ -178,9 +184,12 @@ rejected config names its node's list index and field in the error path.
   Secrets only as \`aw.secrets.get("NAME")\` with a literal name. Prefer
   extractors and assertion nodes when they can express it.
 - \`responseSchemas\` — JSON Schemas keyed by status (\`"200"\`, \`"2XX"\`,
-  \`"default"\`); the body must match the most specific one for the actual
-  status or the node fails, with the violations in its result's \`assertions\`.
-  OpenAPI import fills it from the spec.
+  \`"default"\`); OpenAPI import fills it from the spec. Whether a mismatch
+  fails the node is set by \`contract\` (\`"off"\`, \`"warn"\`, \`"fail"\`),
+  which defaults to \`"fail"\` for an imported endpoint and \`"off"\`
+  otherwise. With the check on, the body must match the most specific schema
+  for the actual status, and a status the schemas do not declare is itself a
+  violation; violations land in the node result's \`assertions\`.
 
 ### sse
 
@@ -197,6 +206,31 @@ raw capture cap.
 The captured result body has \`events\`, \`eventCount\`, and \`termination\`.
 Each event has \`event\`, optional \`id\`, and its exact string \`data\`, so an
 assertion or extractor can target \`response.body.events[0].data\`.
+
+### websocket
+
+A WebSocket node is a **bounded test probe** with the same lifecycle as \`sse\`:
+\`ready\` runs once the handshake succeeded and its \`messages\` (\`{data, type:
+"text"|"binary" (base64), delayMs}\`) were sent; \`complete\` runs when it closes
+at \`maxMessages\` (default 1), on a matching \`finishConditions\` rule
+(all rules must match one message; paths address \`type\`, raw \`data\` or parsed
+JSON \`data.*\`, or JSONPath such as \`$.data.status\`), or at \`timeout\`
+(\`0\` only with finish rules). \`url\` is \`ws://\` or \`wss://\`; \`headers\`, \`auth\`
+(bearer, basic, API key, JWT, OAuth 2.0) and \`subprotocols\` go in the handshake.
+The body has \`messages\`, \`messageCount\`, \`termination\`, \`closeCode\` and
+\`closeReason\`: assert on \`response.body.messages[0].data\`.
+
+### grpc
+
+A unary gRPC call. \`target\` is \`host:port\` (literal when you rely on reflection discovery), \`service\` and
+\`method\` name the RPC, and \`message\` is the request as **JSON text** with field names as written in the
+.proto. The schema comes from \`schemaSource: "reflection"\` (the server must expose it; call
+\`grpc_discover\` to list its services, methods and request skeletons) or \`"proto"\` with the files inline in
+\`protoFiles\` (path to content, imports resolve inside the map). \`metadata\` is \`{key, value}\` pairs; bearer
+and API-key \`auth\` become metadata. The result has \`response.body\` (int64 as strings, enums as names,
+bytes as base64), \`response.status\` (code name), \`response.statusCode\`, \`response.statusMessage\`,
+\`response.headers\` and \`response.trailers\`. Any non-OK status fails the node unless it equals
+\`expectedStatus\` (a code name such as \`"NOT_FOUND"\`): that is how to write a negative test.
 
 ### assertion
 
@@ -541,7 +575,7 @@ Clear every \`error\` before running.
 
 | code | meaning |
 | --- | --- |
-| \`extractor_path_invalid\` | an extractor path does not start at the response object |
+| \`extractor_path_invalid\` | an extractor path is not rooted at the response object (response.…) or is an invalid \`$\` JSONPath expression |
 | \`variable_source_missing\` | \`{{variables.x}}\` is read but nothing produces it |
 | \`variable_producer_duplicate\` | two nodes write the same variable |
 | \`variable_producer_not_upstream\` | the producer is not upstream of the consumer, so the value is not set yet |
@@ -551,6 +585,7 @@ Clear every \`error\` before running.
 | code | meaning |
 | --- | --- |
 | \`http_request_failed\` | a request returned >= 400 or failed in transport; \`evidence.blockedNodeIds\` lists what it stopped |
+| \`grpc_call_failed\` | a gRPC call ended with a status other than the expected one; \`evidence.statusCode\` is the gRPC code number |
 | \`assertion_failed\` | a rule compared false |
 | \`assertion_source_mismatch\` | the run resolved a different source node than static analysis expects |
 | \`extractor_path_missing\` / \`extractor_type_mismatch\` | the path did not match the real response shape |

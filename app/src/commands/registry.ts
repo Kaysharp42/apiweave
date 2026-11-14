@@ -32,6 +32,12 @@ const nodeCommands: readonly CanvasNodeTemplate[] = [
     config: { method: "PATCH" },
   },
   { type: "sse", label: "SSE Stream", config: { maxEvents: 1, timeout: 30 } },
+  {
+    type: "websocket",
+    label: "WebSocket",
+    config: { maxMessages: 1, timeout: 30 },
+  },
+  { type: "grpc", label: "gRPC Call" },
   { type: "assertion", label: "Assertion" },
   { type: "delay", label: "Delay" },
   { type: "merge", label: "Merge" },

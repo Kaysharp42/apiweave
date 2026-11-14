@@ -43,3 +43,15 @@ function encodeRandom(): string {
   }
   return chars.join("")
 }
+
+/**
+ * A 26-character id derived from `seed` alone: the same seed always gives the
+ * same id. For records whose identity must survive being imported again from
+ * the same file; anything created fresh uses `generateId`.
+ */
+export function stableId(seed: string): string {
+  const digest = crypto.createHash("sha256").update(seed).digest()
+  let id = ""
+  for (let i = 0; i < 26; i++) id += ALPHABET[digest[i]! & 0x1f] ?? ""
+  return id
+}

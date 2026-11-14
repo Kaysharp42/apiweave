@@ -18,7 +18,7 @@
 
 ## What the settings apply to
 
-The settings are machine-wide: every HTTP Request and SSE Stream node in every workspace, OAuth 2.0 token requests, and OpenAPI imports from a URL. They are not part of any workflow, project bundle or export, so a bundle runs anywhere with that machine's network settings.
+The settings are machine-wide: every HTTP Request, SSE Stream, WebSocket and gRPC Call node (gRPC uses the CAs, client certificates and TLS verification, but is not sent through the proxy) in every workspace, OAuth 2.0 token requests, and OpenAPI imports from a URL. They are not part of any workflow, project bundle or export, so a bundle runs anywhere with that machine's network settings.
 
 **Save** checks everything before it stores anything: each file is read, each certificate parsed, each key matched to its certificate and each passphrase tried. A problem is shown under the form and nothing changes. The new settings apply to the next request; requests already in flight finish on the old connections.
 

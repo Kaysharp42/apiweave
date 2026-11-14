@@ -1,4 +1,5 @@
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
+import type { ContractMode } from "@shared/types/ContractMode";
 import { MAX_JWT_LIFETIME_SECONDS } from "@shared/zod-schemas/AuthConfigSchema";
 import {
   DEFAULT_SCRIPT_TIMEOUT_MS,
@@ -7,6 +8,8 @@ import {
 import type {
   AssertionItem,
   GraphqlBody,
+  SoapBody,
+  JsonrpcBody,
   AuthConfig,
   FormDataEntry,
   HTTPRequestBodyType,
@@ -385,6 +388,34 @@ export function normalizeGraphql(value: unknown): GraphqlBody | undefined {
   };
 }
 
+/** A missing version and an empty action are dropped, so the request leaves them out. */
+export function normalizeSoap(value: unknown): SoapBody | undefined {
+  if (!isRecord(value)) return undefined;
+  const action = getString(value.action);
+  const version = value.version === "1.2" ? "1.2" : value.version === "1.1" ? "1.1" : undefined;
+  return {
+    envelope: getString(value.envelope),
+    ...(version === undefined ? {} : { version }),
+    ...(action ? { action } : {}),
+  };
+}
+
+/** Empty params and a falsy notification flag are dropped, so the request leaves them out. */
+export function normalizeJsonrpc(value: unknown): JsonrpcBody | undefined {
+  if (!isRecord(value)) return undefined;
+  const params = getString(value.params);
+  return {
+    method: getString(value.method),
+    ...(params ? { params } : {}),
+    ...(value.notification === true ? { notification: true } : {}),
+  };
+}
+
+function normalizeContract(value: unknown): ContractMode | undefined {
+  if (value === "off" || value === "warn" || value === "fail") return value;
+  return undefined;
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -393,7 +424,9 @@ function normalizeBodyType(value: unknown): HTTPRequestBodyType {
     value === "form-data" ||
     value === "x-www-form-urlencoded" ||
     value === "binary" ||
-    value === "graphql"
+    value === "graphql" ||
+    value === "soap" ||
+    value === "jsonrpc"
   ) {
     return value;
   }
@@ -414,6 +447,9 @@ export function normalizeHttpRequestConfig(
     body: bodyToString(config.body),
     bodyType: normalizeBodyType(config.bodyType),
     graphql: normalizeGraphql(config.graphql),
+    soap: normalizeSoap(config.soap),
+    jsonrpc: normalizeJsonrpc(config.jsonrpc),
+    allowRpcError: getBoolean(config.allowRpcError, false),
     timeout: Math.min(Math.max(getNumber(config.timeout, 30), 1), 300),
     fileUploads: config.fileUploads || [],
     auth: normalizeAuthConfig(config.auth),
@@ -422,6 +458,7 @@ export function normalizeHttpRequestConfig(
     useCookieJar: getBoolean(config.useCookieJar, true),
     continueOnFail: getBoolean(config.continueOnFail, false),
     expectedStatus: normalizeExpectedStatus(config.expectedStatus),
+    contract: normalizeContract(config.contract),
     retry: normalizeRetry(config.retry),
     scripts: normalizeScripts(config.scripts),
     formDataEntries: normalizeFormDataEntries(config.formDataEntries),

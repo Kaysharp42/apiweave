@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { FormData as UndiciFormData, Response as UndiciResponse, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, Response as UndiciResponse, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { CookieJar } from "tough-cookie"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
@@ -10,7 +10,13 @@ import { AuthError } from "./auth_error"
 import { signAwsSigV4 } from "./aws_sigv4"
 import { digestAuthorization, parseDigestChallenge } from "./digest_auth"
 import { signJwt } from "./jwt"
-import { collectSseEvents, type SseEvent } from "./sse"
+import { toHeaderRecord } from "./safe_http"
+import { StreamHandshakeError, collectStreamMessages, type StreamAdapter, type StreamMessage } from "./stream_listener"
+import { SseAdapter } from "./streams/sse"
+import { WebsocketAdapter, type WebsocketMessageToSend } from "./streams/websocket"
+import { callUnary, loadGrpcSchema, type GrpcConnection, type GrpcSchemaSource } from "./grpc"
+import { GrpcStreamAdapter } from "./streams/grpc"
+import { GrpcSchemaError } from "./grpc_schema"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
 import { compileSchema, MAX_SCHEMA_VIOLATIONS, schemaViolations } from "./json_schema"
@@ -27,6 +33,7 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation"
 import type { AssertionOperator } from "@shared/types/AssertionOperator"
 import type { AssertionSource } from "@shared/types/AssertionSource"
+import type { ContractMode } from "@shared/types/ContractMode"
 import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
 import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import type { HttpAttempt } from "@shared/types/HttpAttempt"
@@ -37,11 +44,18 @@ import type { DigestAuthConfig } from "@shared/types/DigestAuthConfig"
 import type { JwtAuthConfig } from "@shared/types/JwtAuthConfig"
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
 import type { GraphqlBody } from "@shared/types/GraphqlBody"
+import type { JsonrpcBody } from "@shared/types/JsonrpcBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
-import { resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS } from "@shared/zod-schemas/WorkflowCallForEachSchema"
+import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { findSoapFault } from "@shared/extractors/xmlDocument"
+import type { SoapBody } from "@shared/types/SoapBody"
+import type { SoapFault } from "@shared/types/SoapFault"
+import { compareSnapshot, describeSnapshotDifference, snapshotValue, type SnapshotStore } from "./snapshots"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
+import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
 
 /**
  * Workflow executor.
@@ -55,7 +69,7 @@ import type { JsonValueType } from "@shared/types/JsonValueType"
 
 export interface WorkflowNode {
   readonly nodeId: string
-  readonly type: "http-request" | "sse" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
+  readonly type: "http-request" | "sse" | "websocket" | "grpc" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
   readonly label?: string | null
   readonly config?: Record<string, unknown>
 }
@@ -126,6 +140,31 @@ export interface ResolvedSubWorkflow {
   readonly variables?: Readonly<Record<string, unknown>>
 }
 
+/** The Call Workflow node's config, as the executor reads it. */
+interface WorkflowCallConfig {
+  readonly targetWorkflowId?: string | null
+  readonly inputMapping?: Record<string, string>
+  readonly outputMapping?: Record<string, string>
+  readonly forEach?: WorkflowCallForEachConfig
+}
+
+/** The `forEach` slice of a Call Workflow node's config (see `WorkflowCallForEachSchema`). */
+interface WorkflowCallForEachConfig {
+  readonly items?: string
+  readonly itemVariable?: string
+  readonly indexVariable?: string
+  readonly concurrency?: number
+  readonly stopOnFailure?: boolean
+}
+
+/** One iteration's result, indexed by item position so concurrent runs stay ordered. */
+interface ForEachIterationOutcome {
+  readonly index: number
+  readonly status: ExecutorOutput["status"]
+  readonly output: ExecutorOutput
+  readonly runId?: string
+}
+
 export interface ExecutorDeps {
   readonly clock: ClockProvider
   readonly rng: RngProvider
@@ -134,6 +173,18 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
+  /**
+   * Overrides every node's `contract` setting for the run (the CLI's
+   * `--contract` flag). Absent: each node's own setting, defaulting to `fail`
+   * when it has OpenAPI metadata and `off` otherwise.
+   */
+  readonly contract?: ContractMode
+  /** The workflow this executor runs, which keys its snapshot baselines. Absent: snapshots cannot be stored. */
+  readonly workflowId?: string
+  /** Baseline storage for the `matchesSnapshot` operator. Undefined: that operator fails the rule. */
+  readonly snapshots?: SnapshotStore
+  /** Records every snapshot baseline again instead of comparing (the CLI's `--update-snapshots`). */
+  readonly updateSnapshots?: boolean
   /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
   readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
@@ -211,26 +262,65 @@ function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean 
   return Object.entries(headers).some(([name, value]) => name.toLowerCase() === "content-type" && /\bjson\b/i.test(value))
 }
 
-interface SseFinishCondition {
-  readonly path: string
-  readonly operator: string
-  readonly expectedValue?: unknown
+/** Node types that ride the two-phase (Ready / Complete) stream-listener lifecycle. */
+const STREAM_NODE_TYPES: ReadonlySet<string> = new Set(["sse", "websocket", "grpc"])
+
+/** Node types whose result an assertion or merge branch can read as a response. */
+const RESPONSE_NODE_TYPES: ReadonlySet<string> = new Set(["http-request", "sse", "websocket", "grpc"])
+
+type KeyValueRows = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
+
+/** One WebSocket message a node sends after the handshake, as stored in its config. */
+interface WebsocketOutboundConfig {
+  readonly data: string
+  readonly type?: "text" | "binary"
+  readonly delayMs?: number
+}
+
+/** A gRPC call's fully resolved request, shared by the unary call and the server-streaming adapter. */
+interface GrpcCall {
+  readonly connection: GrpcConnection
+  readonly source: GrpcSchemaSource
+  readonly service: string
+  readonly method: string
+  readonly message: unknown
+  readonly metadata: Readonly<Record<string, string>>
+  readonly deadlineMs: number
+  readonly target: string
+  readonly rpc: string
+  readonly unresolvedPlaceholders: readonly string[]
+}
+
+/** A stream node's request, ready to open: the adapter plus what the shared lifecycle needs around it. */
+interface PreparedStream {
+  readonly adapter: StreamAdapter
+  /** Request facts echoed on the node result (gRPC adds `target` and `rpc`). */
+  readonly request: { readonly method: string; readonly url: string; readonly [key: string]: unknown }
+  readonly maxMessages: number
+  readonly finishConditions: readonly StreamFinishCondition[]
+  readonly extractors: Record<string, string> | undefined
+  readonly unresolvedPlaceholders: readonly string[]
+}
+
+/** A readable cause for a stream failure: a blocked URL, a network error, or the error itself. */
+function streamErrorText(error: unknown, url: string): string {
+  return error instanceof SafeUrlError || error instanceof StreamHandshakeError
+    ? error.message
+    : (describeNetworkError(error, url) ?? String(error))
 }
 
 /**
- * Response headers as a name → value record. Set-Cookie is the one header that
- * cannot be comma-joined (an Expires date contains a comma), and `forEach`
- * would keep only the last one, so every Set-Cookie is kept, one per line —
- * a header value can never contain a newline itself.
+ * Whether a node is driven by the two-phase stream lifecycle rather than a
+ * single call. gRPC is both: a unary call is one result, a server-streaming
+ * call is a stream, chosen by the node's `callType`.
  */
-function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
-  const record: Record<string, string> = {}
-  headers.forEach((value, key) => {
-    record[key] = value
-  })
-  const setCookies = headers.getSetCookie()
-  if (setCookies.length > 0) record["set-cookie"] = setCookies.join("\n")
-  return record
+function isStreamNode(node: WorkflowNode): boolean {
+  if (!STREAM_NODE_TYPES.has(node.type)) return false
+  return node.type !== "grpc" || node.config?.["callType"] === "server-streaming"
+}
+
+function isResponseNodeType(type: string | undefined): boolean {
+  return type !== undefined && RESPONSE_NODE_TYPES.has(type)
 }
 
 /**
@@ -303,12 +393,18 @@ export interface NodeResult {
     readonly body: unknown
     readonly headers: Record<string, string>
     readonly statusCode: number
+    /** gRPC only: the status code name (`OK`, `NOT_FOUND`), its message and the trailing metadata. */
+    readonly status?: string
+    readonly statusMessage?: string
+    readonly trailers?: Record<string, string>
     /** The body is the first SIDE_TABLE_THRESHOLD_BYTES bytes only. */
     readonly truncated?: boolean
     /** The body is not UTF-8 text and is stored base64-encoded. */
     readonly bodyEncoding?: "base64"
     /** Full body size, when known (always, unless truncated without an unencoded Content-Length). */
     readonly responseSizeBytes?: number
+    /** Stream nodes: milliseconds from open to close. */
+    readonly duration?: number
   }
   readonly mergedByOther?: boolean
   readonly startedAt?: string
@@ -330,6 +426,20 @@ export interface NodeResult {
     readonly nodeCount: number
     readonly failedNodeCount: number
     readonly outputVariableNames: readonly string[]
+    /** Present only when the node ran with `forEach`: one entry per iteration, in item order. */
+    readonly forEach?: {
+      /** The number of items resolved (after the iteration cap). */
+      readonly itemCount: number
+      /** The number of iterations actually started — fewer than `itemCount` when the node stopped early or was cancelled. */
+      readonly ranCount: number
+      /** The number of iterations that failed. */
+      readonly failedCount: number
+      readonly iterations: readonly {
+        readonly index: number
+        readonly runId?: string
+        readonly status: ExecutorOutput["status"]
+      }[]
+    }
   }
   readonly [key: string]: unknown
 }
@@ -390,6 +500,32 @@ export function retryDelayMs(retry: HttpRetryConfig, attempt: number): number {
   return Math.min(base, retry.maxIntervalMs ?? Number.POSITIVE_INFINITY)
 }
 
+/**
+ * The failure message for a JSON-RPC response that carries an `error` member,
+ * or `undefined` when it does not. Per JSON-RPC 2.0 the error is an object
+ * with a `code` and a `message`; both are read leniently so a malformed error
+ * still fails the node rather than passing through.
+ */
+/** The node's failure message for a SOAP Fault: its code and reason, whichever the version supplied. */
+function soapFaultText(fault: SoapFault): string {
+  const code = fault.code === undefined ? "" : ` ${fault.code}`
+  const reason = fault.reason === undefined ? "" : `: ${fault.reason}`
+  return `SOAP Fault${code}${reason}`
+}
+
+function jsonRpcErrorFailure(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (!("error" in record)) return undefined
+  const error = record["error"]
+  if (typeof error !== "object" || error === null || Array.isArray(error)) return "JSON-RPC error"
+  const { code, message } = error as Record<string, unknown>
+  const codeText = code === undefined ? "" : ` ${String(code)}`
+  const messageText =
+    message === undefined || message === "" ? "" : `: ${typeof message === "string" ? message : JSON.stringify(message)}`
+  return `JSON-RPC error${codeText}${messageText}`
+}
+
 // -------------------- Internal sentinel --------------------
 
 class StopBranch extends Error {
@@ -419,9 +555,9 @@ export class WorkflowExecutor {
    * join it. See `executeFromNode`.
    */
   private readonly nodeRuns = new Map<string, Promise<unknown>>()
-  /** Background SSE consumers which own connections after the Ready path has started. */
-  private readonly sseListeners = new Map<string, AbortController>()
-  private readonly sseTasks = new Set<Promise<void>>()
+  /** Background stream consumers which own connections after the Ready path has started. */
+  private readonly streamListeners = new Map<string, AbortController>()
+  private readonly streamTasks = new Set<Promise<void>>()
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
   private cancelSignal: AbortSignal | undefined
@@ -431,6 +567,8 @@ export class WorkflowExecutor {
   // still can't hang or stack-overflow a run.
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
+  /** The next JSON-RPC request id, incremented per request within a run. */
+  private rpcId = 0
   private readonly oauthTokens: OAuthTokenCache
   private readonly cookieJar: CookieJar
   /** Loaded on the first rule that needs it (see `prepareRules`); `matches` and `matchesSchema` are synchronous after that. */
@@ -487,8 +625,9 @@ export class WorkflowExecutor {
     // Per-run: a handle left over from a previous run would make every node on
     // that path look already-executed.
     this.nodeRuns.clear()
-    this.sseListeners.clear()
-    this.sseTasks.clear()
+    this.streamListeners.clear()
+    this.streamTasks.clear()
+    this.rpcId = 0
     if (options.resume) this.seedResume(options.resume, nodes, edges)
 
     // Workflows have no loops: a cycle would send its requests until something
@@ -543,16 +682,16 @@ export class WorkflowExecutor {
         }
       }
 
-      await this.waitForSseTasks()
+      await this.waitForStreamTasks()
       const finalStatus: "passed" | "failed" = this.hasFailures ? "failed" : "passed"
       return this.buildOutput(caseName, startedAt, seed, finalStatus)
     } catch (error) {
       if (error instanceof StopBranch) {
-        // The Ready branch can fail while an SSE consumer is still running.
+        // The Ready branch can fail while a stream consumer is still running.
         // Settle those consumers before snapshotting the run so no completed
-        // run can retain a running SSE node or omit its terminal result.
-        this.abortSseListeners()
-        await this.waitForSseTasks()
+        // run can retain a running stream node or omit its terminal result.
+        this.abortStreamListeners()
+        await this.waitForStreamTasks()
         return this.buildOutput(caseName, startedAt, seed, "failed")
       }
       throw error
@@ -560,8 +699,8 @@ export class WorkflowExecutor {
       // A trigger-path failure, cancellation, or executor exception must not
       // leave a stream alive. Successful runs have already waited above, so
       // this is a no-op in the normal case.
-      this.abortSseListeners()
-      await this.waitForSseTasks()
+      this.abortStreamListeners()
+      await this.waitForStreamTasks()
     }
   }
 
@@ -718,10 +857,11 @@ export class WorkflowExecutor {
     // consumer reaches does not inherit the entry's.
     const prev = this.resumeEntryIds.has(nodeId) ? this.seededPrev(nodeId, edges) : undefined
 
-    // SSE has two phases. The Ready path continues after its handshake; its
-    // Complete path is scheduled by the background consumer when it closes.
-    if (node.type === "sse") {
-      const ready = await this.entryPrev.run(prev, () => this.startSseListener(node, nodes, edges, cancelSignal))
+    // A stream node has two phases. The Ready path continues after its
+    // handshake; its Complete path is scheduled by the background consumer when
+    // it closes.
+    if (isStreamNode(node)) {
+      const ready = await this.entryPrev.run(prev, () => this.startStreamListener(node, nodes, edges, cancelSignal))
       if (!ready) return
     // Execute node (skip start)
     } else if (node.type !== "start") {
@@ -740,7 +880,7 @@ export class WorkflowExecutor {
 
     // Find next nodes
     let nextEdges = edges.filter((e) => e.source === nodeId)
-    if (node.type === "sse") {
+    if (isStreamNode(node)) {
       nextEdges = nextEdges.filter((edge) => edge.sourceHandle === "ready")
     }
     if (nextEdges.length === 0) return
@@ -875,6 +1015,8 @@ export class WorkflowExecutor {
 
       if (nodeType === "http-request") {
         result = await this.executeHttpRequestNode(node, cancelSignal)
+      } else if (nodeType === "grpc") {
+        result = await this.executeGrpc(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -970,12 +1112,13 @@ export class WorkflowExecutor {
 
   private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
-    let method = (config["method"] as string | undefined) ?? "GET"
+    const bodyType = config["bodyType"] as string | undefined
+    // JSON-RPC over HTTP is always a POST, whatever method the node was left on.
+    let method = bodyType === "jsonrpc" ? "POST" : ((config["method"] as string | undefined) ?? "GET")
     let url = (config["url"] as string | undefined) ?? ""
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headersField = config["headers"] as KVField
     const body = config["body"] as string | Record<string, unknown> | undefined
-    const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
     const auth = config["auth"] as HttpAuthConfig | undefined
     // A signature covers one URL: a redirect would carry it somewhere it does not fit.
@@ -988,6 +1131,7 @@ export class WorkflowExecutor {
     const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
     const extractors = config["extractors"] as Record<string, string> | undefined
     const expectedStatus = config["expectedStatus"] as number | readonly number[] | undefined
+    const allowRpcError = (config["allowRpcError"] as boolean | undefined) ?? false
     const withExtractorOutcomes = (result: NodeResult): NodeResult => extractors
       ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
       : result
@@ -1039,7 +1183,11 @@ export class WorkflowExecutor {
     try {
       fetchBody = bodyType === "graphql"
         ? this.buildGraphqlRequest(config["graphql"] as GraphqlBody | undefined, method, headers, queryParams)
-        : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+        : bodyType === "jsonrpc"
+          ? this.buildJsonrpcRequest(config["jsonrpc"] as JsonrpcBody | undefined, headers)
+          : bodyType === "soap"
+            ? this.buildSoapRequest(config["soap"] as SoapBody | undefined, headers)
+            : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
       return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url: appendQueryParams(url, queryParams), duration: 0 })
     }
@@ -1167,12 +1315,30 @@ export class WorkflowExecutor {
         status = expectedList.includes(statusCode) ? "success" : "error"
       }
 
+      // A JSON-RPC server answers 200 with an `error` member when the call
+      // failed, exactly like a GraphQL `errors` array. Unlike GraphQL, the
+      // node fails on it by default; `allowRpcError` opts out so an assertion
+      // can check `response.body.error`.
+      const rpcErrorFailure = bodyType === "jsonrpc" && !allowRpcError ? jsonRpcErrorFailure(responseBody) : undefined
+      if (rpcErrorFailure !== undefined) {
+        status = "error"
+      }
+
+      // A SOAP Fault is the message's own failure report on an HTTP 200. It
+      // fails the node unless the expected status says this outcome was wanted.
+      const soapFault = bodyType === "soap" && typeof responseBody === "string" ? findSoapFault(responseBody) : undefined
+      if (soapFault !== undefined && expectedStatus === undefined) {
+        status = "error"
+      }
+
       const responseHeaders = toHeaderRecord(response.headers)
 
       const result: NodeResult = {
         status,
         statusCode,
         ...(expectedStatus !== undefined ? { expectedStatus } : {}),
+        ...(rpcErrorFailure !== undefined ? { error: rpcErrorFailure } : {}),
+        ...(soapFault !== undefined && status === "error" ? { error: soapFaultText(soapFault) } : {}),
         headers: responseHeaders,
         body: responseBody,
         duration,
@@ -1185,6 +1351,7 @@ export class WorkflowExecutor {
           ...(truncated ? { truncated: true } : {}),
           ...(responseText === null ? { bodyEncoding: "base64" as const } : {}),
           ...(responseSizeBytes !== undefined ? { responseSizeBytes } : {}),
+          ...(soapFault === undefined ? {} : { fault: soapFault }),
         },
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
@@ -1224,19 +1391,61 @@ export class WorkflowExecutor {
    * The node's request (retried per `config.retry`), then its post-response
    * script, once, on the response the node ends with. A request that got no
    * response has nothing for the script to read, so the script does not run.
+   * Finally the contract check: with `contract` on, the response body must
+   * match the `responseSchemas` entry for its status (exact, then class, then
+   * default), and a status the schemas do not declare is itself a violation.
    */
   private async executeHttpRequestNode(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const result = await this.executeHttpRequestWithScript(node, cancelSignal)
+    const contract = effectiveContract(node.config, this.deps.contract)
+    if (contract === "off") return result
     const schemas = node.config?.["responseSchemas"] as Readonly<Record<string, unknown>> | undefined
-    const key = schemas && result.statusCode !== undefined && !cancelSignal?.aborted ? responseSchemaKey(schemas, result.statusCode) : undefined
-    if (schemas === undefined || key === undefined) return result
-    const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
-    await this.prepareRules([rule])
-    const evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }))
+    if (schemas === undefined) return result
+    if (result.statusCode === undefined || cancelSignal?.aborted) return result
+
+    const key = responseSchemaKey(schemas, result.statusCode)
+    let evaluation: AssertionEvaluation
+    if (key === undefined) {
+      evaluation = this.undeclaredStatusEvaluation(node.nodeId, result, schemas)
+    } else {
+      const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
+      await this.prepareRules([rule])
+      evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }), node.nodeId)
+    }
+
     const checked: NodeResult = { ...result, assertionEvaluations: [evaluation] }
-    if (evaluation.outcome === "pass") return checked
+    // "warn" records and shows the violation without failing the node.
+    if (evaluation.outcome === "pass" || contract === "warn") return checked
     // A request that already failed keeps its own reason; the violations are in `assertions`.
-    return { ...checked, status: "error", error: result.error ?? `Response does not match the schema for status ${key}` }
+    const error =
+      key === undefined
+        ? `Response status ${result.statusCode} is not declared by the contract (declared: ${Object.keys(schemas).join(", ")})`
+        : `Response does not match the schema for status ${key}`
+    return { ...checked, status: "error", error: result.error ?? error }
+  }
+
+  /** The violation for a status `responseSchemas` never declared: a single SchemaViolation at the root. */
+  private undeclaredStatusEvaluation(
+    nodeId: string,
+    result: NodeResult,
+    schemas: Readonly<Record<string, unknown>>,
+  ): AssertionEvaluation {
+    const declared = Object.keys(schemas).sort().join(", ")
+    return {
+      ruleIndex: 0,
+      source: "prev",
+      path: "",
+      operator: "matchesSchema",
+      sourceNodeId: nodeId,
+      expectedState: "literal",
+      expectedType: null,
+      actualState: "present",
+      actualType: jsonValueType(result.body),
+      outcome: "fail",
+      reasonCode: "comparison-failed",
+      detail: `status ${result.statusCode} is not declared`,
+      schemaErrors: [{ path: "", message: `Status ${result.statusCode} is not declared by the contract (declared: ${declared})` }],
+    }
   }
 
   private async executeHttpRequestWithScript(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
@@ -1319,48 +1528,266 @@ export class WorkflowExecutor {
     if (!sent) return true
     if (until.length === 0) return attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500
     return until.every((rule, index) =>
-      this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt })).outcome === "pass")
+      this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt }), nodeId).outcome === "pass")
+  }
+
+  // -------------------- gRPC --------------------
+
+  /**
+   * A unary gRPC call. Any status but the expected one (OK unless
+   * `expectedStatus` names another) fails the node; the result carries the
+   * decoded message, the status, and the initial and trailing metadata.
+   */
+  // fallow-ignore-next-line complexity -- one call lifecycle: build the request, resolve the schema, call, classify the status; the failure returns share one result shape.
+  private async executeGrpc(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const prepared = await this.prepareGrpcCall(node, cancelSignal)
+    if ("failure" in prepared) return prepared.failure
+    const { call, extractors, expectedStatus } = prepared
+    const failed = (error: string, extra: Partial<NodeResult> = {}): NodeResult =>
+      this.grpcResult(node.nodeId, extractors, { status: "error", error, target: call.target, rpc: call.rpc, duration: 0, ...extra })
+    if (node.config?.["callType"] === "server-streaming") {
+      return failed("A server-streaming call runs through the stream lifecycle, not this path")
+    }
+    const startTime = Date.now()
+    try {
+      this.deps.http.assertHostAllowed(call.target)
+      const schema = await loadGrpcSchema(call.connection, call.source)
+      const response = await callUnary({
+        connection: call.connection,
+        schema,
+        service: call.service,
+        method: call.method,
+        message: call.message,
+        metadata: call.metadata,
+        deadlineMs: call.deadlineMs,
+        signal: cancelSignal,
+      })
+      const duration = Date.now() - startTime
+      const ok = expectedStatus === undefined ? response.code === 0 : response.codeName === expectedStatus
+      const shaped = {
+        body: response.body,
+        status: response.codeName,
+        statusCode: response.code,
+        statusMessage: response.statusMessage,
+        headers: response.headers,
+        trailers: response.trailers,
+      }
+      const base = { target: call.target, rpc: call.rpc, duration, statusCode: response.code, headers: response.headers, body: response.body, response: shaped }
+      if (ok) return this.grpcResult(node.nodeId, extractors, this.grpcUnresolved(call, { status: "success", ...base }))
+      const expectation = expectedStatus === undefined ? "" : ` (expected ${expectedStatus})`
+      const reason = response.statusMessage === "" ? "" : `: ${response.statusMessage}`
+      return this.grpcResult(node.nodeId, extractors, this.grpcUnresolved(call, { status: "error", ...base, error: `gRPC ${call.rpc} returned ${response.codeName}${expectation}${reason}` }))
+    } catch (error) {
+      const text = error instanceof SafeUrlError || error instanceof GrpcSchemaError ? error.message : String(error)
+      return failed(cancelSignal?.aborted ? "Call cancelled" : text, { duration: Date.now() - startTime })
+    }
+  }
+
+  /** A node result with the node's extractors applied, so a gRPC node captures variables like an HTTP one. */
+  private grpcResult(nodeId: string, extractors: Record<string, string> | undefined, result: NodeResult): NodeResult {
+    return extractors ? { ...result, extractorOutcomes: this.extractVariables(nodeId, extractors, result) } : result
+  }
+
+  private grpcUnresolved(call: GrpcCall, result: NodeResult): NodeResult {
+    return call.unresolvedPlaceholders.length > 0 ? { ...result, unresolvedPlaceholders: call.unresolvedPlaceholders } : result
+  }
+
+  /**
+   * Everything a gRPC node needs before it connects: the substituted target and
+   * message, metadata with auth applied, the schema source and the TLS
+   * connection. Shared by the unary call and the server-streaming adapter, so
+   * both read the node's config the same way.
+   */
+  private async prepareGrpcCall(
+    node: WorkflowNode,
+    cancelSignal: AbortSignal | undefined,
+  ): Promise<{ readonly call: GrpcCall; readonly extractors: Record<string, string> | undefined; readonly expectedStatus: string | undefined } | { readonly failure: NodeResult }> {
+    const config = node.config ?? {}
+    const extractors = config["extractors"] as Record<string, string> | undefined
+    const service = (config["service"] as string | undefined) ?? ""
+    const method = (config["method"] as string | undefined) ?? ""
+    const expectedStatus = config["expectedStatus"] as string | undefined
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const deadline = (config["deadline"] as number | undefined) ?? 30
+    const target = this.substituteVariables((config["target"] as string | undefined) ?? "", { allowSecrets: false }).trim()
+    const rpc = `${service}/${method}`
+    const failed = (error: string, extra: Partial<NodeResult> = {}): { failure: NodeResult } => ({
+      failure: this.grpcResult(node.nodeId, extractors, { status: "error", error, target, rpc, duration: 0, ...extra }),
+    })
+    if (target === "") return failed("Target is required for a gRPC call")
+    if (service === "" || method === "") return failed("Service and method are required for a gRPC call")
+
+    let message: unknown
+    try {
+      message = JSON.parse(this.substituteVariables((config["message"] as string | undefined) ?? "{}", { json: true }))
+    } catch {
+      return failed("The message is not valid JSON")
+    }
+    if (typeof message !== "object" || message === null || Array.isArray(message)) return failed("The message must be a JSON object")
+
+    const headers = this.normalizeKeyValueField(config["metadata"] as Array<{ key: string; value: string; active?: boolean }> | undefined)
+    const query: Record<string, string> = {}
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    try {
+      if (auth?.type === "awsSigV4" || auth?.type === "digest") throw new AuthError(`${auth.type === "digest" ? "Digest" : "AWS Signature V4"} auth is not supported on gRPC nodes`)
+      await this.applyAuthConfig(auth, headers, query, { signal: cancelSignal, timeoutMs: deadline * 1000, sslVerify, forceRefresh: false })
+      if (Object.keys(query).length > 0) throw new AuthError("An API key cannot be added to the query of a gRPC call: send it in metadata")
+    } catch (authError) {
+      if (!(authError instanceof AuthError)) throw authError
+      return failed(authError.message)
+    }
+    const metadata = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
+    const unresolvedPlaceholders = collectUnresolvedPlaceholders([target, JSON.stringify(message), ...Object.values(metadata)])
+    const source: GrpcSchemaSource = config["schemaSource"] === "proto"
+      ? { kind: "proto", files: (config["protoFiles"] as Record<string, string> | undefined) ?? {} }
+      : { kind: "reflection" }
+    const connection: GrpcConnection = {
+      target,
+      tls: (config["tls"] as boolean | undefined) ?? false,
+      sslVerify,
+      tlsOptionsFor: (url, verify) => this.deps.http.tlsOptionsFor(url, verify),
+    }
+    return {
+      call: { connection, source, service, method, message, metadata, deadlineMs: deadline * 1000, target, rpc, unresolvedPlaceholders },
+      extractors,
+      expectedStatus,
+    }
   }
 
   // -------------------- Server-Sent Events --------------------
+  // -------------------- Stream listeners (SSE, WebSocket) --------------------
 
-  // fallow-ignore-next-line complexity -- this is one listener lifecycle: normalize its request, validate the response, then register its owned task; splitting those transitions obscures the cancellation boundary between them.
-  private async startSseListener(
+  /**
+   * One stream node's two-phase lifecycle, protocol-neutral. The protocol's
+   * adapter opens the stream; the node's Ready path continues once it has, and
+   * a background consumer collects messages until the limit, a finish rule, the
+   * timeout or the end of the stream, then records the result and traverses the
+   * Complete path. Returns false when the handshake failed (the node's failed
+   * result is already recorded and nothing further runs).
+   */
+  // fallow-ignore-next-line complexity -- this is one listener lifecycle: prepare the request, open the stream, then register its owned task; splitting those transitions obscures the cancellation boundary between them.
+  private async startStreamListener(
     node: WorkflowNode,
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
   ): Promise<boolean> {
-    const config = node.config ?? {}
-    const timeout = (config["timeout"] as number | undefined) ?? 30
-    const maxEvents = (config["maxEvents"] as number | undefined) ?? 1
-    const eventType = config["eventType"] as string | undefined
-    const finishConditions = (config["finishConditions"] as readonly SseFinishCondition[] | undefined) ?? []
-    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
-    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
-    const auth = config["auth"] as HttpAuthConfig | undefined
-    const extractors = config["extractors"] as Record<string, string> | undefined
     const startedAt = this.deps.clock.isoNow()
     const secretRefs = collectSecretRefs(node.config)
-    let url = (config["url"] as string | undefined) ?? ""
     const startTime = Date.now()
+    const abortController = new AbortController()
+    const signal = cancelSignal ? AbortSignal.any([abortController.signal, cancelSignal]) : abortController.signal
 
     this.updateNodeStatus(node.nodeId, "running")
-    if (!url) {
-      this.completeSseNode(node, { status: "error", error: "URL is required for SSE stream", duration: 0 }, startedAt, secretRefs)
+    let prepared: PreparedStream
+    try {
+      prepared = node.type === "websocket"
+        ? await this.prepareWebsocketStream(node, signal)
+        : node.type === "grpc"
+          ? await this.prepareGrpcStream(node, signal)
+          : await this.prepareSseStream(node, signal)
+    } catch (error) {
+      if (error instanceof StreamHandshakeError) {
+        this.completeStreamNode(node, { status: "error", error: error.message, ...error.details, duration: 0 }, startedAt, secretRefs)
+        return false
+      }
+      if (error instanceof SafeUrlError) {
+        this.completeStreamNode(node, { status: "error", error: error.message, duration: 0 }, startedAt, secretRefs)
+        return false
+      }
+      throw error
+    }
+
+    const { adapter, request, unresolvedPlaceholders } = prepared
+    const unresolved = unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}
+    try {
+      await adapter.open()
+    } catch (error) {
+      await adapter.close().catch(() => undefined)
+      const base: NodeResult = { status: "error", ...request, duration: Date.now() - startTime, ...unresolved }
+      this.completeStreamNode(node, error instanceof StreamHandshakeError
+        ? { ...base, ...error.details, error: error.message }
+        : { ...base, error: streamErrorText(error, request.url) }, startedAt, secretRefs)
       return false
     }
 
+    this.streamListeners.set(node.nodeId, abortController)
+    let task: Promise<void>
+    task = this.consumeStreamListener({ node, nodes, edges, cancelSignal, prepared, startedAt, secretRefs, startTime }).finally(() => {
+      this.streamListeners.delete(node.nodeId)
+      this.streamTasks.delete(task)
+    })
+    this.streamTasks.add(task)
+    return true
+  }
+
+  // fallow-ignore-next-line complexity -- success, an incomplete stream, and cancellation errors are the terminal states of the same listener task; extracting them would split its result ownership.
+  private async consumeStreamListener(input: {
+    readonly node: WorkflowNode
+    readonly nodes: Map<string, WorkflowNode>
+    readonly edges: readonly WorkflowEdge[]
+    readonly cancelSignal: AbortSignal | undefined
+    readonly prepared: PreparedStream
+    readonly startedAt: string
+    readonly secretRefs: readonly string[]
+    readonly startTime: number
+  }): Promise<void> {
+    const { node, prepared, startedAt, secretRefs, startTime } = input
+    const { adapter, request, maxMessages, finishConditions, extractors, unresolvedPlaceholders } = prepared
+    const unresolved = unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}
+    try {
+      await this.prepareRules(finishConditions)
+      const collected = await collectStreamMessages(adapter, {
+        maxMessages,
+        ...(finishConditions.length === 0 ? {} : { finishWhen: (message: StreamMessage) => this.streamMessageMatches(message, finishConditions) }),
+      })
+      const duration = Date.now() - startTime
+      const body = adapter.resultBody(collected)
+      const handshake = adapter.handshake
+      const base = { ...handshake, body, duration, ...request, response: { ...handshake, body, duration }, ...unresolved }
+      const incomplete = collected.termination === "stream-ended" && adapter.endsCleanly !== true
+      // The node's own status goes last: a protocol status name in the
+      // handshake (gRPC's "OK") is result detail, not the node's outcome.
+      const result: NodeResult = incomplete
+        ? {
+            ...base, status: "error",
+            error: `${adapter.label} stream ended after ${collected.messageCount}/${maxMessages} captured matching ${adapter.unit}(s)`,
+          }
+        : { ...base, status: "success" }
+      const completed = this.completeStreamNode(node, result, startedAt, secretRefs, extractors)
+      if (completed.status === "success") {
+        await this.traverseStreamCompleteEdges(node, input.nodes, input.edges, input.cancelSignal)
+      }
+    } catch (error) {
+      await adapter.close().catch(() => undefined)
+      this.completeStreamNode(node, {
+        status: "error",
+        error: streamErrorText(error, request.url),
+        ...request,
+        duration: Date.now() - startTime,
+        ...unresolved,
+      }, startedAt, secretRefs, extractors)
+    }
+  }
+
+  /** The request an SSE node sends: GET with `Accept: text/event-stream`, auth and cookies applied. */
+  private async prepareSseStream(node: WorkflowNode, signal: AbortSignal): Promise<PreparedStream> {
+    const config = node.config ?? {}
+    const timeout = (config["timeout"] as number | undefined) ?? 30
+    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    let url = (config["url"] as string | undefined) ?? ""
+    if (!url) throw new StreamHandshakeError("URL is required for SSE stream")
+
     url = this.substituteVariables(url, { allowSecrets: false })
     if (this.deps.baseUrl && !url.startsWith("http")) url = `${this.deps.baseUrl}${url}`
-    type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
-    let headers = this.normalizeKeyValueField(config["headers"] as KVField)
-    const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
-    const followSseRedirects = followRedirects && auth?.type !== "awsSigV4"
+    let headers = this.normalizeKeyValueField(config["headers"] as KeyValueRows)
+    const queryParams = this.normalizeKeyValueField(config["queryParams"] as KeyValueRows)
     try {
       await this.applyAuthConfig(auth, headers, queryParams, {
         // A zero SSE timeout means "no deadline" for the stream, not for the token request.
-        signal: cancelSignal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
+        signal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
       })
       if (auth?.type === "digest") throw new AuthError("Digest auth: not supported on SSE Stream nodes")
       for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
@@ -1371,129 +1798,117 @@ export class WorkflowExecutor {
       }
     } catch (authError) {
       if (!(authError instanceof AuthError)) throw authError
-      this.completeSseNode(node, { status: "error", error: authError.message, method: "GET", url, duration: 0 }, startedAt, secretRefs)
-      return false
+      throw new StreamHandshakeError(authError.message, { method: "GET", url })
     }
-    const unresolvedPlaceholders = collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams)])
-    const abortController = new AbortController()
-    const signal = cancelSignal ? AbortSignal.any([abortController.signal, cancelSignal]) : abortController.signal
-
-    // fallow-ignore-next-line code-duplication -- both sides of the listener boundary complete the same SSE node shape, but one owns HTTP setup while the other owns stream consumption and edge traversal.
-    try {
-      this.deps.http.validateUrl(url)
-      const response = await this.deps.http.safeFetch(
-        url,
-        { method: "GET", headers, signal },
-        { followRedirects: followSseRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000, cookieJar: this.cookieJar },
-      )
-      const responseHeaders = toHeaderRecord(response.headers)
-      const statusCode = response.status
-      if (statusCode < 200 || statusCode >= 300) {
-        const { text, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
-        this.completeSseNode(node, {
-          status: "error", statusCode, headers: responseHeaders, body: text, duration: Date.now() - startTime, method: "GET", url,
-          response: { statusCode, headers: responseHeaders, body: text, ...(truncated ? { truncated: true } : {}) },
-          error: `SSE endpoint returned HTTP ${statusCode}`,
-          ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
-        }, startedAt, secretRefs)
-        return false
-      }
-      const contentType = response.headers.get("content-type") ?? ""
-      if (!contentType.toLowerCase().startsWith("text/event-stream")) {
-        await response.body?.cancel()
-        this.completeSseNode(node, {
-          status: "error", statusCode, headers: responseHeaders, duration: Date.now() - startTime, method: "GET", url,
-          response: { statusCode, headers: responseHeaders, body: { events: [], eventCount: 0 } },
-          error: `Expected text/event-stream response, received ${contentType || "no Content-Type"}`,
-          ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
-        }, startedAt, secretRefs)
-        return false
-      }
-
-      this.sseListeners.set(node.nodeId, abortController)
-      let task: Promise<void>
-      task = this.consumeSseListener({
-        node, nodes, edges, cancelSignal, response, statusCode, responseHeaders, url, startedAt,
-        secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders,
-      }).finally(() => {
-        this.sseListeners.delete(node.nodeId)
-        this.sseTasks.delete(task)
-      })
-      this.sseTasks.add(task)
-      return true
-    } catch (error) {
-      this.completeSseNode(node, {
-        status: "error",
-        error: error instanceof SafeUrlError ? error.message : (describeNetworkError(error, url) ?? String(error)),
-        method: "GET", url,
-        duration: Date.now() - startTime,
-        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
-      }, startedAt, secretRefs)
-      return false
-    }
-  }
-
-  // fallow-ignore-next-line complexity -- success, an incomplete stream, and cancellation errors are the terminal states of the same listener task; extracting them would split its result ownership.
-  private async consumeSseListener(input: {
-    readonly node: WorkflowNode
-    readonly nodes: Map<string, WorkflowNode>
-    readonly edges: readonly WorkflowEdge[]
-    readonly cancelSignal: AbortSignal | undefined
-    readonly response: import("undici").Response
-    readonly statusCode: number
-    readonly responseHeaders: Record<string, string>
-    readonly url: string
-    readonly startedAt: string
-    readonly secretRefs: readonly string[]
-    readonly startTime: number
-    readonly maxEvents: number
-    readonly eventType: string | undefined
-    readonly finishConditions: readonly SseFinishCondition[]
-    readonly extractors: Record<string, string> | undefined
-    readonly unresolvedPlaceholders: readonly string[]
-  }): Promise<void> {
-    const { node, response, statusCode, responseHeaders, url, startedAt, secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders } = input
-    try {
-      await this.prepareRules(finishConditions)
-      const collected = await collectSseEvents(response, {
-        maxEvents,
+    const eventType = config["eventType"] as string | undefined
+    return {
+      adapter: new SseAdapter({
+        http: this.deps.http, url, headers, signal, sslVerify, timeoutMs: timeout * 1000,
+        followRedirects: followRedirects && auth?.type !== "awsSigV4",
+        cookieJar: this.cookieJar,
         ...(eventType === undefined ? {} : { eventType }),
-        ...(finishConditions.length === 0 ? {} : { finishWhen: (event: SseEvent) => this.sseEventMatches(event, finishConditions) }),
-      })
-      const body = {
-        events: collected.events,
-        eventCount: collected.eventCount,
-        termination: collected.termination,
-        ...(collected.retryMs === undefined ? {} : { retryMs: collected.retryMs }),
-      }
-      const result: NodeResult = collected.termination === "stream-ended"
-        ? {
-            status: "error", statusCode, headers: responseHeaders, body, duration: Date.now() - startTime, method: "GET", url,
-            response: { statusCode, headers: responseHeaders, body },
-            error: `SSE stream ended after ${collected.eventCount}/${maxEvents} captured matching event(s)`,
-            ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
-          }
-        : {
-            status: "success", statusCode, headers: responseHeaders, body, duration: Date.now() - startTime, method: "GET", url,
-            response: { statusCode, headers: responseHeaders, body },
-            ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
-          }
-      const completed = this.completeSseNode(node, result, startedAt, secretRefs, extractors)
-      if (completed.status === "success") {
-        await this.traverseSseCompleteEdges(node, input.nodes, input.edges, input.cancelSignal)
-      }
-    } catch (error) {
-      this.completeSseNode(node, {
-        status: "error",
-        error: error instanceof SafeUrlError ? error.message : (describeNetworkError(error, url) ?? String(error)),
-        method: "GET", url,
-        duration: Date.now() - startTime,
-        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
-      }, startedAt, secretRefs, extractors)
+      }),
+      request: { method: "GET", url },
+      maxMessages: (config["maxEvents"] as number | undefined) ?? 1,
+      finishConditions: (config["finishConditions"] as readonly StreamFinishCondition[] | undefined) ?? [],
+      extractors: config["extractors"] as Record<string, string> | undefined,
+      unresolvedPlaceholders: collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams)]),
     }
   }
 
-  private completeSseNode(
+  /**
+   * The connection a WebSocket node opens. Auth becomes handshake headers (or a
+   * query parameter for an API key); the dispatcher carries the network
+   * settings, looked up under the http(s) form of the URL so host-scoped client
+   * certificates match.
+   */
+  private async prepareWebsocketStream(node: WorkflowNode, signal: AbortSignal): Promise<PreparedStream> {
+    const config = node.config ?? {}
+    const timeout = (config["timeout"] as number | undefined) ?? 30
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    let url = (config["url"] as string | undefined) ?? ""
+    if (!url) throw new StreamHandshakeError("URL is required for WebSocket stream")
+
+    url = this.substituteVariables(url, { allowSecrets: false })
+    const headers = this.normalizeKeyValueField(config["headers"] as KeyValueRows)
+    const queryParams = this.normalizeKeyValueField(config["queryParams"] as KeyValueRows)
+    try {
+      await this.applyAuthConfig(auth, headers, queryParams, {
+        signal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
+      })
+      if (auth?.type === "digest" || auth?.type === "awsSigV4") {
+        throw new AuthError(`${auth.type === "digest" ? "Digest" : "AWS Signature V4"} auth: not supported on WebSocket nodes`)
+      }
+      url = appendQueryParams(url, queryParams)
+      this.deps.http.validateWebSocketUrl(url)
+    } catch (error) {
+      if (error instanceof AuthError || error instanceof SafeUrlError) {
+        throw new StreamHandshakeError(error.message, { method: "GET", url })
+      }
+      throw error
+    }
+    const outbound: WebsocketMessageToSend[] = ((config["messages"] as readonly WebsocketOutboundConfig[] | undefined) ?? []).map((message) => ({
+      data: this.substituteVariables(message.data),
+      type: message.type ?? "text",
+      ...(message.delayMs === undefined ? {} : { delayMs: message.delayMs }),
+    }))
+    const dispatcher = this.deps.http.dispatcherFor(url.replace(/^ws/i, "http"), sslVerify)
+    const subprotocols = (config["subprotocols"] as readonly string[] | undefined) ?? []
+    return {
+      adapter: new WebsocketAdapter({
+        url, headers, signal, timeoutMs: timeout * 1000, dispatcher, subprotocols, messages: outbound,
+      }),
+      request: { method: "GET", url },
+      maxMessages: (config["maxMessages"] as number | undefined) ?? 1,
+      finishConditions: (config["finishConditions"] as readonly StreamFinishCondition[] | undefined) ?? [],
+      extractors: config["extractors"] as Record<string, string> | undefined,
+      unresolvedPlaceholders: collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams), ...outbound.map((message) => message.data)]),
+    }
+  }
+
+  /**
+   * A gRPC server-streaming node. The request is resolved exactly as a unary
+   * call's is; the adapter then opens the call and yields its decoded
+   * responses, and the final status and trailers land on the result.
+   */
+  private async prepareGrpcStream(node: WorkflowNode, signal: AbortSignal): Promise<PreparedStream> {
+    const prepared = await this.prepareGrpcCall(node, signal)
+    if ("failure" in prepared) {
+      const failure = prepared.failure
+      throw new StreamHandshakeError(failure.error ?? "gRPC call could not be prepared", {
+        method: "GRPC",
+        url: String(failure["target"] ?? ""),
+        ...(failure.statusCode === undefined ? {} : { statusCode: failure.statusCode }),
+        ...(failure.headers === undefined ? {} : { headers: failure.headers }),
+        ...(failure.body === undefined ? {} : { body: failure.body }),
+      })
+    }
+    const { call, extractors, expectedStatus } = prepared
+    const config = node.config ?? {}
+    return {
+      adapter: new GrpcStreamAdapter({
+        connection: call.connection,
+        source: call.source,
+        service: call.service,
+        method: call.method,
+        message: call.message,
+        metadata: call.metadata,
+        deadlineMs: call.deadlineMs,
+        signal,
+        ...(expectedStatus === undefined ? {} : { expectedStatus }),
+      }),
+      request: { method: "GRPC", url: call.target, target: call.target, rpc: call.rpc },
+      // A server stream naturally ends, so its default capture is the whole
+      // call (bounded by the 1 MiB capture limit), not SSE's one-event probe.
+      maxMessages: (config["maxMessages"] as number | undefined) ?? 1000,
+      finishConditions: (config["finishConditions"] as readonly StreamFinishCondition[] | undefined) ?? [],
+      extractors,
+      unresolvedPlaceholders: call.unresolvedPlaceholders,
+    }
+  }
+
+  private completeStreamNode(
     node: WorkflowNode,
     result: NodeResult,
     startedAt: string,
@@ -1501,13 +1916,13 @@ export class WorkflowExecutor {
     extractors?: Record<string, string>,
   ): NodeResult {
     if (this.cancelSignal?.aborted && result.status !== "success") {
-      return this.recordCancelledNode(node.nodeId, { ...result, type: "sse", startedAt, secretRefs })
+      return this.recordCancelledNode(node.nodeId, { ...result, type: node.type, startedAt, secretRefs })
     }
     const withExtractors = extractors
       ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
       : result
     const failed = withExtractors.status === "error" || withExtractors.status === "client_error" || withExtractors.status === "server_error"
-    const completed: NodeResult = { ...withExtractors, type: "sse", startedAt, completedAt: this.deps.clock.isoNow(), secretRefs }
+    const completed: NodeResult = { ...withExtractors, type: node.type, startedAt, completedAt: this.deps.clock.isoNow(), secretRefs }
     this.results.set(node.nodeId, completed)
     this.updateNodeStatus(node.nodeId, failed ? "failed" : "passed", completed)
     if (failed) {
@@ -1518,26 +1933,38 @@ export class WorkflowExecutor {
     return completed
   }
 
-  private sseEventMatches(event: SseEvent, conditions: readonly SseFinishCondition[]): boolean {
-    let parsedData: unknown = event.data
-    try {
-      parsedData = JSON.parse(event.data) as unknown
-    } catch {
-      // Non-JSON SSE data is still matchable as the raw `data` string.
+  /**
+   * The one finish-rule evaluator for every stream node. Every path resolves
+   * through `resolveExtractorPath` (dot paths and `$` JSONPath alike) against
+   * the normalized message, whose text `data` is parsed as JSON when it can be.
+   */
+  private streamMessageMatches(message: StreamMessage, conditions: readonly StreamFinishCondition[]): boolean {
+    let data: unknown = message["data"]
+    if (typeof data === "string" && message["type"] !== "binary") {
+      try {
+        data = JSON.parse(data) as unknown
+      } catch {
+        // Non-JSON data is still matchable as the raw string.
+      }
     }
-    const value = { event: event.event, ...(event.id === undefined ? {} : { id: event.id }), data: parsedData }
+    const value = { ...message, data }
     return conditions.every((condition) => {
       const expected = this.resolveAssertionExpected(toAssertionOperator(condition.operator), condition.expectedValue)
       if (expected.state === "unresolved-template") return false
       try {
-        return this.compareValues(this.getNestedValue(value, condition.path), condition.operator, expected.value)
+        // A query path is rooted at the whole message; a dot path reads off the
+        // same value. Both go through the shared resolver's grammar.
+        const actual = isQueryPath(condition.path)
+          ? this.resolveQueryPathValue(value, condition.path)
+          : this.getNestedValue(value, condition.path)
+        return this.compareValues(actual, condition.operator, expected.value)
       } catch {
         return false
       }
     })
   }
 
-  private async traverseSseCompleteEdges(
+  private async traverseStreamCompleteEdges(
     node: WorkflowNode,
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
@@ -1556,13 +1983,13 @@ export class WorkflowExecutor {
     await Promise.allSettled(tasks)
   }
 
-  private abortSseListeners(): void {
-    for (const controller of this.sseListeners.values()) controller.abort()
+  private abortStreamListeners(): void {
+    for (const controller of this.streamListeners.values()) controller.abort()
   }
 
-  private async waitForSseTasks(): Promise<void> {
-    while (this.sseTasks.size > 0) {
-      await Promise.allSettled([...this.sseTasks])
+  private async waitForStreamTasks(): Promise<void> {
+    while (this.streamTasks.size > 0) {
+      await Promise.allSettled([...this.streamTasks])
     }
   }
 
@@ -1636,7 +2063,7 @@ export class WorkflowExecutor {
         continue
       }
 
-      const evaluation = this.evaluateAssertion(index, assertion, () => this.resolveAssertionResponseSource(node.nodeId, edges))
+      const evaluation = this.evaluateAssertion(index, assertion, () => this.resolveAssertionResponseSource(node.nodeId, edges), node.nodeId)
       evaluations.push(evaluation)
       if (evaluation.outcome === "fail" && failureMode === "first") stopped = true
     }
@@ -1669,8 +2096,10 @@ export class WorkflowExecutor {
       readonly expected?: unknown
       readonly expectedValue?: unknown
       readonly source?: string
+      readonly ignorePaths?: readonly string[] | undefined
     },
     resolveSource: () => AssertionResponseSource,
+    nodeId: string,
   ): AssertionEvaluation {
     const source = toAssertionSource(assertion.source)
     const path = assertion.path ?? assertion.field ?? ""
@@ -1719,7 +2148,7 @@ export class WorkflowExecutor {
     }
 
     const evaluated = { ...base, sourceNodeId, actualState: actual === undefined ? "missing" : "present", actualType: jsonValueType(actual) } as const
-    return this.compareAssertion(evaluated, actual, expected.value)
+    return this.compareAssertion(evaluated, actual, expected.value, nodeId, assertion.ignorePaths)
   }
 
   /** The verdict on `actual` once it was read; `evaluated` is everything else the evaluation reports. */
@@ -1727,8 +2156,11 @@ export class WorkflowExecutor {
     evaluated: Omit<AssertionEvaluation, "outcome" | "reasonCode" | "detail" | "schemaErrors">,
     actual: unknown,
     expected: unknown,
+    nodeId: string,
+    ignorePaths?: readonly string[],
   ): AssertionEvaluation {
     const operator = evaluated.operator
+    if (operator === "matchesSnapshot") return this.compareSnapshotBaseline(evaluated, actual, nodeId, evaluated.ruleIndex, ignorePaths ?? [])
     try {
       const violations = operator === "matchesSchema" ? this.schemaCheck(actual, expected) : null
       const passed = violations ? violations.length === 0 : this.compareValues(actual, operator, expected)
@@ -1754,9 +2186,66 @@ export class WorkflowExecutor {
     }
   }
 
+  /**
+   * The `matchesSnapshot` verdict: compare the response with its baseline, or
+   * record one when the rule has none yet or the run asked to update them. A
+   * missing store is a failure, not a silent pass — a rule that cannot compare
+   * has not checked anything.
+   */
+  private compareSnapshotBaseline(
+    evaluated: Omit<AssertionEvaluation, "outcome" | "reasonCode" | "detail" | "schemaErrors">,
+    actual: unknown,
+    nodeId: string,
+    ruleIndex: number,
+    ignorePaths: readonly string[],
+  ): AssertionEvaluation {
+    const store = this.deps.snapshots
+    const workflowId = this.deps.workflowId
+    if (store === undefined || workflowId === undefined) {
+      return { ...evaluated, outcome: "fail", reasonCode: "comparison-error", detail: "Snapshot storage is unavailable for this run" }
+    }
+    const value = snapshotValue(actual)
+    const baseline = store.read(workflowId, nodeId, ruleIndex)
+    if (baseline === undefined || this.deps.updateSnapshots === true) {
+      store.write(workflowId, nodeId, ruleIndex, value, this.deps.clock.isoNow())
+      return {
+        ...evaluated,
+        outcome: "pass",
+        reasonCode: "passed",
+        detail: baseline === undefined ? "Snapshot recorded" : "Snapshot updated",
+      }
+    }
+    let comparison
+    try {
+      comparison = compareSnapshot(baseline.value, value, ignorePaths)
+    } catch (error) {
+      return { ...evaluated, outcome: "fail", reasonCode: "comparison-error", detail: error instanceof Error ? error.message.slice(0, 300) : "Invalid ignore path" }
+    }
+    if (comparison.equal) {
+      return { ...evaluated, outcome: "pass", reasonCode: "passed", detail: "Snapshot matched" }
+    }
+    const first = comparison.differences[0]
+    return {
+      ...evaluated,
+      outcome: "fail",
+      reasonCode: "comparison-failed",
+      detail: `Snapshot differs in ${comparison.differenceCount} place${comparison.differenceCount === 1 ? "" : "s"}${first === undefined ? "" : ` (first: ${first.path})`}`,
+      schemaErrors: comparison.differences.map((difference) => ({ path: difference.path, message: describeSnapshotDifference(difference) })).slice(0, MAX_SCHEMA_VIOLATIONS),
+    }
+  }
+
   /** The value a rule on a response `source` reads from `result`. */
   private readAssertionActual(source: AssertionSource, path: string, result: NodeResult): unknown {
-    if (source === "prev") return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+    if (source === "prev") {
+      // A `$`-prefixed path is JSONPath rooted at the node result; a dot path
+      // strips the optional `response.` prefix and reads the rest off the
+      // result directly. Both address the same value.
+      if (isQueryPath(path)) {
+        const resolution = resolveExtractorPath(result, path)
+        return resolution.failureReason === null ? resolution.value : undefined
+      }
+      return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+    }
     if (source === "headers") return this.getResponseHeader(result, path)
     if (source === "cookies") return this.getResponseCookie(result, path)
     return result.statusCode
@@ -1845,7 +2334,7 @@ export class WorkflowExecutor {
       if (visited.has(nodeId)) continue
       visited.add(nodeId)
       const node = this.workflowNodes.get(nodeId)
-      if (node?.type === "http-request" || node?.type === "sse") {
+      if (isResponseNodeType(node?.type)) {
         sourceIds.add(nodeId)
         continue
       }
@@ -1859,7 +2348,7 @@ export class WorkflowExecutor {
     }
     const nodeId = [...sourceIds][0]!
     const result = this.results.get(nodeId)
-    return result?.type === "http-request" || result?.type === "sse"
+    return result !== undefined && isResponseNodeType(result.type)
       ? { state: "resolved", nodeId, result }
       : { state: "source-unavailable" }
   }
@@ -2049,11 +2538,7 @@ export class WorkflowExecutor {
    * walks its own top-level results array.
    */
   private async executeCallWorkflow(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
-    const config = (node.config ?? {}) as {
-      readonly targetWorkflowId?: string | null
-      readonly inputMapping?: Record<string, string>
-      readonly outputMapping?: Record<string, string>
-    }
+    const config = (node.config ?? {}) as WorkflowCallConfig
     const targetWorkflowId = config.targetWorkflowId
     if (!targetWorkflowId) {
       return { status: "error", error: "Call Workflow node has no target workflow configured" }
@@ -2069,19 +2554,192 @@ export class WorkflowExecutor {
       return { status: "error", error: `Called workflow ${targetWorkflowId} not found` }
     }
 
-    // The child executor shares `this.deps` (same run, same environment/secrets
-    // scope) — it can already resolve {{env.*}} and {{secrets.*}} on its own.
-    // inputMapping only needs to carry the caller's *workflow* variables
-    // ({{variables.*}}) across, since each executor instance has its own
-    // isolated `workflowVariables` map. Secrets are disallowed here so a
-    // secret value is never downgraded into a plain child variable when the
-    // child can already reach it directly and more safely via {{secrets.*}}.
     const inputMapping = config.inputMapping ?? {}
-    const inputVariables: Record<string, unknown> = {}
-    for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
-      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
+    const outputMapping = config.outputMapping ?? {}
+
+    return config.forEach
+      ? this.executeForEach(targetWorkflowId, target, inputMapping, outputMapping, config.forEach, cancelSignal)
+      : this.executeSingleCall(targetWorkflowId, target, inputMapping, outputMapping, cancelSignal)
+  }
+
+  /**
+   * Run the target once, mapping inputs in and outputs back out. This is the
+   * pre-for-each path: one child run, one summary. `forEach` calls reuse the
+   * same per-iteration mechanics via `runChildIteration`.
+   */
+  private async executeSingleCall(
+    targetWorkflowId: string,
+    target: ResolvedSubWorkflow,
+    inputMapping: Record<string, string>,
+    outputMapping: Record<string, string>,
+    cancelSignal?: AbortSignal,
+  ): Promise<NodeResult> {
+    const inputVariables = this.resolveInputVariables(inputMapping)
+    const { output, runId } = await this.runChildIteration(targetWorkflowId, target, inputVariables, cancelSignal)
+    const childOutput = output
+
+    for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
+      if (subVarName in childOutput.extractedVariables) {
+        this.workflowVariables[callerVarName] = childOutput.extractedVariables[subVarName]
+      }
     }
 
+    const targetLabel = target.name ?? targetWorkflowId
+    return {
+      status: childOutput.status === "passed" ? "success" : "error",
+      message:
+        childOutput.status === "passed"
+          ? `Sub-workflow ${targetLabel} completed`
+          : `Sub-workflow ${targetLabel} failed in ${childOutput.failedNodes.length} node(s)`,
+      subWorkflow: {
+        workflowId: targetWorkflowId,
+        ...(runId ? { runId } : {}),
+        status: childOutput.status,
+        nodeCount: target.nodes.length,
+        failedNodeCount: childOutput.failedNodes.length,
+        outputVariableNames: Object.keys(outputMapping),
+      },
+    }
+  }
+
+  /**
+   * Run the target once per item in `forEach.items`, bounded by the iteration
+   * cap and `concurrency`, and collect each output variable into an array in
+   * item order.
+   *
+   * The node passes only when every iteration passes. With `stopOnFailure`
+   * (the default) it stops starting new iterations at the first failure;
+   * otherwise it runs every item and the summary reports how many failed. Each
+   * iteration is its own sub-run of the target, recorded via `deps.subRun`, so
+   * the callee's History holds one entry per item.
+   */
+  private async executeForEach(
+    targetWorkflowId: string,
+    target: ResolvedSubWorkflow,
+    inputMapping: Record<string, string>,
+    outputMapping: Record<string, string>,
+    forEach: WorkflowCallForEachConfig,
+    cancelSignal?: AbortSignal,
+  ): Promise<NodeResult> {
+    const items = this.resolveItems(forEach.items)
+    if (items === null) {
+      return { status: "error", error: "For-each items did not resolve to an array" }
+    }
+    if (!forEach.itemVariable?.trim()) {
+      return { status: "error", error: "For-each item variable is required" }
+    }
+    const capped = items.slice(0, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS)
+    const concurrency = Math.min(
+      Math.max(Math.trunc(forEach.concurrency ?? 1), 1),
+      WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY,
+    )
+    const stopOnFailure = forEach.stopOnFailure ?? true
+
+    // The input mapping is resolved once in the caller's context: it does not
+    // depend on the item, which arrives through the item/index variables.
+    const baseInput = this.resolveInputVariables(inputMapping)
+
+    const outcomes: ForEachIterationOutcome[] = []
+    let cancelled = false
+    let stopRequested = false
+    let nextIndex = 0
+
+    const worker = async (): Promise<void> => {
+      while (!stopRequested && !cancelled && !cancelSignal?.aborted) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= capped.length) return
+
+        const inputVariables = { ...baseInput }
+        if (forEach.itemVariable) inputVariables[forEach.itemVariable] = capped[index]
+        if (forEach.indexVariable) inputVariables[forEach.indexVariable] = index
+
+        const { output, runId } = await this.runChildIteration(targetWorkflowId, target, inputVariables, cancelSignal)
+        const outcome: ForEachIterationOutcome = {
+          index,
+          status: output.status,
+          output,
+          ...(runId ? { runId } : {}),
+        }
+        outcomes[index] = outcome
+        if (outcome.status === "cancelled") {
+          cancelled = true
+          stopRequested = true
+        } else if (outcome.status === "failed" && stopOnFailure) {
+          stopRequested = true
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, capped.length) }, () => worker()),
+    )
+
+    // Collect output variables into arrays in item order; a slot is `null`
+    // where an iteration did not run (early stop/cancel) or did not produce
+    // the variable.
+    for (const callerVarName of Object.keys(outputMapping)) {
+      const collected: unknown[] = []
+      for (let i = 0; i < capped.length; i++) {
+        const outcome = outcomes[i]
+        const value = outcome?.output?.extractedVariables[outputMapping[callerVarName]!]
+        collected.push(value === undefined ? null : value)
+      }
+      this.workflowVariables[callerVarName] = collected
+    }
+
+    const iterations = outcomes.filter((o): o is ForEachIterationOutcome => o !== undefined)
+    const failedCount = iterations.filter((o) => o.status === "failed").length
+    const ranCount = iterations.length
+    const allPassed = failedCount === 0 && ranCount === capped.length
+
+    const targetLabel = target.name ?? targetWorkflowId
+    const summary = (): NonNullable<NodeResult["subWorkflow"]> => ({
+      workflowId: targetWorkflowId,
+      status: cancelled ? "cancelled" : allPassed ? "passed" : "failed",
+      nodeCount: target.nodes.length,
+      failedNodeCount: 0,
+      outputVariableNames: Object.keys(outputMapping),
+      forEach: {
+        itemCount: capped.length,
+        ranCount,
+        failedCount,
+        iterations: iterations.map((o) => ({
+          index: o.index,
+          ...(o.runId ? { runId: o.runId } : {}),
+          status: o.status,
+        })),
+      },
+    })
+
+    if (cancelled) {
+      return { status: "cancelled", message: `Sub-workflow ${targetLabel} cancelled`, subWorkflow: summary() }
+    }
+    if (allPassed) {
+      return {
+        status: "success",
+        message: `Sub-workflow ${targetLabel} completed ${ranCount} iteration(s)`,
+        subWorkflow: summary(),
+      }
+    }
+    const firstFailed = iterations.find((o) => o.status === "failed")
+    const message = stopOnFailure
+      ? `Sub-workflow ${targetLabel} failed in iteration ${(firstFailed?.index ?? 0) + 1}`
+      : `Sub-workflow ${targetLabel}: ${failedCount} of ${ranCount} iteration(s) failed`
+    return { status: "error", message, subWorkflow: summary() }
+  }
+
+  /**
+   * Run the target once as a child, returning its output and the child run id.
+   * Never rejects: an unexpected throw is folded into a `failed` outcome, and
+   * the child run row is always finished.
+   */
+  private async runChildIteration(
+    targetWorkflowId: string,
+    target: ResolvedSubWorkflow,
+    inputVariables: Record<string, unknown>,
+    cancelSignal?: AbortSignal,
+  ): Promise<{ output: ExecutorOutput; runId?: string }> {
     const sub = this.deps.subRun?.begin(targetWorkflowId)
     const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
     childExecutor.callDepth = this.callDepth + 1
@@ -2098,36 +2756,126 @@ export class WorkflowExecutor {
           ...(cancelSignal ? { cancelSignal } : {}),
         },
       )
+    } catch (error) {
+      // `executeWorkflow` only rethrows non-StopBranch errors; treat them as a
+      // failed child so the node's summary counts them rather than bubbling a
+      // half-finished run to the caller.
+      output = this.syntheticFailureOutput(error)
     } finally {
       // Runs on the throw path too, or a cancelled/erroring sub-execution
       // leaves its run row stuck in `running` until the next startup reconcile.
       if (sub) this.deps.subRun?.finish(sub.runId, output)
     }
-    const childOutput = output
+    return { output: output ?? this.syntheticFailureOutput(undefined), ...(sub ? { runId: sub.runId } : {}) }
+  }
 
-    const outputMapping = config.outputMapping ?? {}
-    for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
-      if (subVarName in childOutput.extractedVariables) {
-        this.workflowVariables[callerVarName] = childOutput.extractedVariables[subVarName]
+  /** An `ExecutorOutput` standing in for a child that threw before producing one. */
+  private syntheticFailureOutput(error: unknown): ExecutorOutput {
+    return {
+      status: "failed",
+      startedAt: this.deps.clock.isoNow(),
+      nodeStatuses: {},
+      extractedVariables: {},
+      outputs: {},
+      results: [],
+      failedNodes: [],
+      failureMessage: error instanceof Error ? error.message : String(error),
+    }
+  }
+
+  /**
+   * Resolve an input mapping in the caller's context. Secrets are disallowed
+   * here so a secret value is never downgraded into a plain child variable
+   * when the child can already reach it directly and more safely via
+   * {{secrets.*}}.
+   */
+  private resolveInputVariables(inputMapping: Record<string, string>): Record<string, unknown> {
+    const inputVariables: Record<string, unknown> = {}
+    for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
+      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
+    }
+    return inputVariables
+  }
+
+  /**
+   * Resolve `forEach.items`: a single `{{...}}` placeholder whose value is an
+   * array, or a JSON array literal. Returns `null` when neither yields an
+   * array.
+   */
+  private resolveItems(expr: string | undefined): readonly unknown[] | null {
+    if (!expr) return null
+    const trimmed = expr.trim()
+    if (trimmed.startsWith("$")) {
+      // JSONPath rooted at `{ variables, env, data, <nodeId>: result }`, the
+      // same names the placeholders use: `$.variables.ids`, `$.fetch.response.body.items`.
+      const root: Record<string, unknown> = {
+        ...Object.fromEntries(this.results),
+        variables: this.workflowVariables,
+        env: this.environmentVariables,
+        data: this.deps.data ?? {},
+      }
+      const resolution = resolveExtractorPath(root, trimmed)
+      return resolution.failureReason === null && Array.isArray(resolution.value) ? resolution.value : null
+    }
+    const single = /^\{\{([^}]+)\}\}$/.exec(trimmed)
+    if (single) {
+      const value = this.resolvePlaceholderValue(single[1]!.trim())
+      return Array.isArray(value) ? value : null
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  /** The raw (un-stringified) value a `{{...}}` path resolves to, or undefined. */
+  private resolvePlaceholderValue(varPath: string): unknown {
+    const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
+    if (scope) return this.readScopedValue(scope[1]!, scope[2]!)
+    const firstPart = varPath.split(".")[0]!
+    const nodeResult = this.results.get(firstPart)
+    return nodeResult ? this.readRawPath(nodeResult, varPath.split(".").slice(1)) : undefined
+  }
+
+  /** Walk a scope map (`env`, `variables`, `data`) by dotted path, returning the raw value. */
+  private readScopedValue(scopeName: string, path: string): unknown {
+    const name = path.split(".")[0]!
+    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
+      throw new Error(`${RERUN_REFUSED} {{variables.${name}}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
+    }
+    let value: unknown =
+      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
+    for (const part of path.split(".")) {
+      if (typeof value !== "object" || value === null) return undefined
+      value = (value as Record<string, unknown>)[part]
+    }
+    return value
+  }
+
+  /** Walk an object/array by dotted path, returning the raw value (not stringified). */
+  private readRawPath(value: unknown, pathParts: readonly string[]): unknown {
+    let current: unknown = value
+    for (const part of pathParts) {
+      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
+      if (arrayMatch) {
+        const key = arrayMatch[1]!
+        const index = Number.parseInt(arrayMatch[2]!, 10)
+        if (typeof current === "object" && current !== null && key in current) {
+          current = (current as Record<string, unknown>)[key]
+          if (Array.isArray(current) && index >= 0 && index < current.length) current = current[index]
+          else return undefined
+        } else {
+          return undefined
+        }
+      } else if (typeof current === "object" && current !== null) {
+        current = (current as Record<string, unknown>)[part]
+      } else {
+        return undefined
       }
     }
-
-    const targetLabel = target.name ?? targetWorkflowId
-    return {
-      status: childOutput.status === "passed" ? "success" : "error",
-      message:
-        childOutput.status === "passed"
-          ? `Sub-workflow ${targetLabel} completed`
-          : `Sub-workflow ${targetLabel} failed in ${childOutput.failedNodes.length} node(s)`,
-      subWorkflow: {
-        workflowId: targetWorkflowId,
-        ...(sub ? { runId: sub.runId } : {}),
-        status: childOutput.status,
-        nodeCount: target.nodes.length,
-        failedNodeCount: childOutput.failedNodes.length,
-        outputVariableNames: Object.keys(outputMapping),
-      },
-    }
+    return current
   }
 
   /**
@@ -2179,7 +2927,7 @@ export class WorkflowExecutor {
       if (edge.target !== nodeId) continue
       const dataNodeId = this.findDataProducingAncestor(edge.source, edges)
       const result = this.results.get(dataNodeId)
-      if (result && (result.type === "http-request" || result.type === "sse")) branches.push([dataNodeId, result])
+      if (result && isResponseNodeType(result.type)) branches.push([dataNodeId, result])
     }
     return branches
   }
@@ -2190,7 +2938,7 @@ export class WorkflowExecutor {
       if (visited.has(id)) return id
       visited.add(id)
       const result = this.results.get(id)
-      if (result && (result.type === "http-request" || result.type === "sse")) return id
+      if (result && isResponseNodeType(result.type)) return id
       const incoming = edges.filter((e) => e.target === id)
       if (incoming.length === 0) return id
       if (incoming.length === 1) return visit(incoming[0]!.source)
@@ -2367,6 +3115,12 @@ export class WorkflowExecutor {
 
   private resolveExtractorValue(obj: unknown, path: string): ExtractorResolution {
     return resolveExtractorPath(obj, path)
+  }
+
+  /** Resolves a query path (JSONPath or XPath) against `data`, reading `undefined` when it fails. */
+  private resolveQueryPathValue(data: unknown, path: string): unknown {
+    const resolution = resolveExtractorPath(data, path)
+    return resolution.failureReason === null ? resolution.value : undefined
   }
 
   private getNestedValue(obj: unknown, path: string): unknown {
@@ -2703,6 +3457,65 @@ export class WorkflowExecutor {
     return JSON.stringify({ query, ...(variables === undefined ? {} : { variables }), ...(operationName === undefined ? {} : { operationName }) })
   }
 
+  /**
+   * A SOAP request: the envelope as XML, with the Content-Type the version
+   * prescribes. SOAP 1.1 sends `text/xml` plus a `SOAPAction` header; SOAP 1.2
+   * sends `application/soap+xml` with the action in the Content-Type parameter.
+   * An explicit Content-Type or SOAPAction header on the node wins.
+   */
+  private buildSoapRequest(soap: SoapBody | undefined, headers: Record<string, string>): string {
+    const envelope = this.substituteVariables(soap?.envelope ?? "").trim()
+    if (envelope === "") throw new Error("SOAP envelope is required")
+    const version = soap?.version ?? "1.1"
+    const action = this.substituteVariables(soap?.action ?? "").trim()
+    const hasHeader = (name: string): boolean => Object.keys(headers).some((key) => key.toLowerCase() === name)
+    if (!hasHeader("content-type")) {
+      headers["Content-Type"] = version === "1.2"
+        ? `application/soap+xml; charset=utf-8${action === "" ? "" : `; action="${action.replace(/"/g, "")}"`}`
+        : "text/xml; charset=utf-8"
+    }
+    if (version === "1.1" && !hasHeader("soapaction") && action !== "") {
+      headers["SOAPAction"] = `"${action.replace(/"/g, "")}"`
+    }
+    return envelope
+  }
+
+  /**
+   * A JSON-RPC 2.0 request, POSTed as application/json: `{jsonrpc:"2.0",
+   * method, params?, id?}`. The params are a JSON template (object or array)
+   * substituted JSON-aware, the same as a JSON body. A notification omits the
+   * `id`; every other request carries an id that increases per request within
+   * the run.
+   */
+  private buildJsonrpcRequest(jsonrpc: JsonrpcBody | undefined, headers: Record<string, string>): string {
+    const method = this.substituteVariables(jsonrpc?.method ?? "")
+    if (method.trim() === "") {
+      throw new Error("JSON-RPC method is required")
+    }
+    const paramsText = this.substituteVariables(jsonrpc?.params ?? "", { json: true })
+    let params: unknown
+    if (paramsText.trim() !== "") {
+      try {
+        params = JSON.parse(paramsText)
+      } catch {
+        throw new Error("JSON-RPC params are not valid JSON")
+      }
+      if (params === null || typeof params !== "object") {
+        throw new Error("JSON-RPC params must be a JSON object or array")
+      }
+    }
+    const id = jsonrpc?.notification === true ? undefined : ++this.rpcId
+    if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = "application/json"
+    }
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      method,
+      ...(params === undefined ? {} : { params }),
+      ...(id === undefined ? {} : { id }),
+    })
+  }
+
   /** Resolve a file upload's bytes per its `type` — base64-decoded, read from disk, or a resolved variable. */
   private async readFileUploadContent(upload: { readonly type: string; readonly value: string }): Promise<Buffer> {
     switch (upload.type) {
@@ -2793,7 +3606,7 @@ export class WorkflowExecutor {
     const outputs: Record<string, unknown> = {}
     for (const [nodeId, result] of this.results.entries()) {
       if (this.seededNodeIds.has(nodeId)) continue
-      if (result.type === "http-request" || result.type === "sse") {
+      if (isResponseNodeType(result.type)) {
         outputs[nodeId] = { status: result.statusCode, body: result.body }
       } else if (result.type === "assertion") {
         outputs[nodeId] = { passed: result.assertionOutcome === "pass", message: result.message }
@@ -2865,6 +3678,15 @@ type RunResultDiagnostics = Partial<
   Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow" | "scripts">
 >
 
+function copySubWorkflow(sub: NonNullable<NodeResult["subWorkflow"]>): NonNullable<RunResult["subWorkflow"]> {
+  const { forEach, ...rest } = sub
+  return {
+    ...rest,
+    outputVariableNames: [...sub.outputVariableNames],
+    ...(forEach ? { forEach: { ...forEach, iterations: forEach.iterations.map((iteration) => ({ ...iteration })) } } : {}),
+  }
+}
+
 function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
   return {
     ...(result.secretRefs && result.secretRefs.length > 0 ? { secretRefs: [...result.secretRefs] } : {}),
@@ -2875,9 +3697,7 @@ function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
     ...(result.scripts
       ? { scripts: result.scripts.map((script) => ({ ...script, logs: [...script.logs], tests: script.tests.map((test) => ({ ...test })) })) }
       : {}),
-    ...(result.subWorkflow
-      ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
-      : {}),
+    ...(result.subWorkflow ? { subWorkflow: copySubWorkflow(result.subWorkflow) } : {}),
   }
 }
 
@@ -2905,6 +3725,18 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
 /** The `responseSchemas` key that applies to `status`: exact ("201"), then its class ("2XX"), then "default". */
 export function responseSchemaKey(schemas: Readonly<Record<string, unknown>>, status: number): string | undefined {
   return [String(status), `${Math.floor(status / 100)}XX`, "default"].find((key) => schemas[key] !== undefined)
+}
+
+/**
+ * The contract mode an HTTP node runs under: the run override (`--contract`)
+ * wins, then the node's own `contract`, then `fail` when it carries OpenAPI
+ * metadata and `off` otherwise.
+ */
+export function effectiveContract(config: Readonly<Record<string, unknown>> | undefined, override: ContractMode | undefined): ContractMode {
+  if (override !== undefined) return override
+  const configured = config?.["contract"]
+  if (configured === "off" || configured === "warn" || configured === "fail") return configured
+  return config?.["openapiMeta"] !== undefined ? "fail" : "off"
 }
 
 function toAssertionSource(value: string | undefined): AssertionSource {
@@ -2936,6 +3768,7 @@ function toAssertionOperator(value: string): AssertionOperator {
     case "notMatches":
     case "type":
     case "matchesSchema":
+    case "matchesSnapshot":
       return value
     case "equals":
     default:

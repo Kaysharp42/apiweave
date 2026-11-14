@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { Code2, Copy, FileText, Repeat, Timer } from "lucide-react";
 import { Badge } from "../atoms/Badge";
+import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import { ResponseInspector } from "../molecules/ResponseInspector";
@@ -20,6 +21,10 @@ import type { ScriptOutcome } from "@shared/types/ScriptOutcome";
 import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation";
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo";
 import type { BadgeProps, HttpRequestOutputPanelProps } from "../../types";
+import WorkflowContext from "../../contexts/WorkflowContext";
+import useSidebarStore from "../../stores/SidebarStore";
+import { apiweave } from "../../utils/apiweaveClient";
+import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath";
 
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined || !Number.isFinite(bytes)) return "Size unknown";
@@ -86,6 +91,30 @@ export function HttpRequestOutputPanel({
     : [];
 
   // Set only on a node with responseSchemas: where the body broke the schema for its status.
+  const workflow = useContext(WorkflowContext);
+  const workflowId = workflow?.workflowId;
+  const workspaceId = useSidebarStore((state: { activeWorkspaceId: string | null }) => state.activeWorkspaceId);
+  const [acceptedRules, setAcceptedRules] = useState<readonly number[]>([]);
+  const snapshotRules = useMemo(
+    () => (Array.isArray(outputRecord?.assertions) ? (outputRecord.assertions as AssertionEvaluation[]) : []).filter(
+      (rule) => rule.operator === "matchesSnapshot",
+    ),
+    [outputRecord],
+  );
+  const acceptSnapshot = async (rule: AssertionEvaluation): Promise<void> => {
+    if (!workflowId || !workspaceId) return;
+    const resolution = isQueryPath(rule.path)
+      ? resolveExtractorPath(output, rule.path)
+      : { value: nestedValue(output, rule.path.replace(/^response\./, "")) };
+    await apiweave.runs.acceptSnapshot({
+      workspaceId,
+      workflowId,
+      nodeId: node.id,
+      ruleIndex: rule.ruleIndex,
+      value: resolution.value ?? null,
+    });
+    setAcceptedRules((current) => [...current, rule.ruleIndex]);
+  };
   const schemaErrors = Array.isArray(outputRecord?.assertions)
     ? (outputRecord!.assertions as readonly AssertionEvaluation[]).flatMap(
         (rule) => rule.schemaErrors ?? [],
@@ -209,9 +238,27 @@ export function HttpRequestOutputPanel({
             <span className="font-semibold">Error:</span> {errorText}
           </div>
         )}
+        {snapshotRules.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {snapshotRules.map((rule) => (
+              <Button
+                key={rule.ruleIndex}
+                variant="secondary"
+                size="xs"
+                onClick={() => {
+                  void acceptSnapshot(rule);
+                }}
+              >
+                {acceptedRules.includes(rule.ruleIndex)
+                  ? "Snapshot accepted"
+                  : `Accept snapshot #${rule.ruleIndex + 1}`}
+              </Button>
+            ))}
+          </div>
+        )}
         {schemaErrors.length > 0 && (
           <ul
-            aria-label="Schema violations"
+            aria-label={snapshotRules.length > 0 && snapshotRules.some((rule) => rule.outcome === "fail") ? "Snapshot differences" : "Schema violations"}
             className="mb-3 max-h-48 space-y-0.5 overflow-y-auto rounded-xs border border-border bg-surface-raised p-3 font-mono text-xs dark:border-border-dark dark:bg-surface-dark-raised"
           >
             {schemaErrors.map((violation, index) => (
@@ -241,4 +288,14 @@ export function HttpRequestOutputPanel({
       </div>
     </div>
   );
+}
+
+/** Reads a dot path off the node result, mirroring the runner's `response.` prefix strip. */
+function nestedValue(value: unknown, path: string): unknown {
+  let current: unknown = value;
+  for (const part of path.split(".")) {
+    if (typeof current !== "object" || current === null) return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
 }

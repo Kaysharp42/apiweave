@@ -10,6 +10,7 @@ export function CanvasToolbarRunMenu({
   resumeOptions,
   isResumeLoading,
   onRerunFailed,
+  onLoad,
   onRunFromFailedNode,
 }: CanvasToolbarRunMenuProps) {
   return (
@@ -45,6 +46,7 @@ export function CanvasToolbarRunMenu({
               resumeOptions={resumeOptions}
               isResumeLoading={isResumeLoading}
               onRerunFailed={onRerunFailed}
+              onLoad={onLoad}
               onRunFromFailedNode={onRunFromFailedNode}
             />
           </MenuItems>

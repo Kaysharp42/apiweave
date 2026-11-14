@@ -436,6 +436,17 @@ export class RunRepository {
     return "side"
   }
 
+  /**
+   * Drop one run's per-node results and side-table bodies, leaving the run row
+   * itself (status, timings, failed nodes) intact. Load mode calls this on each
+   * finished iteration so a load run of thousands of iterations retains only
+   * aggregate statistics plus the first failure per node, not every response.
+   */
+  public clearNodeResults(runId: string): void {
+    this.store.delete("DELETE FROM run_node_results WHERE run_id = ?", [runId])
+    this.store.delete("DELETE FROM run_responses WHERE run_id = ?", [runId])
+  }
+
   public getNodeBody(runId: string, nodeId: string): Buffer | undefined {
     const row = this.store.get<{ body: Buffer } & SqliteRow>(
       "SELECT body FROM run_responses WHERE run_id = ? AND node_id = ?",

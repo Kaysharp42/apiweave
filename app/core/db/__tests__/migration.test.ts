@@ -43,6 +43,7 @@ describe("database migrations", () => {
         "run_responses",
         "runs",
         "secrets_metadata",
+        "snapshots",
         "workflow_revisions",
         "workflows",
         "workspace_git",
@@ -317,6 +318,8 @@ describe("database migrations", () => {
           workspace_git: [],
           workspace_merge: [],
           workspace_merge_pick: [],
+          // Snapshot baselines start empty: the fixture predates the table.
+          snapshots: [],
         })
       } finally {
         upgraded.close()
@@ -387,7 +390,10 @@ describe("database migrations", () => {
         "workspace_git",
         "workspace_merge",
         "workspace_merge_pick",
+        "snapshots",
       ]
+      // `snapshots` has no foreign key to workspaces on purpose: it is keyed by
+      // workflow, which cascades from the workspace already.
       expect(new Set([...cascaded, "workspaces", "agent_local_paths", "app_settings"])).toEqual(CONTENT_TABLES)
       const { upgraded, before } = upgradeCloudFixture()
       try {

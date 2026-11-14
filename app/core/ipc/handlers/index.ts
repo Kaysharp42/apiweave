@@ -11,6 +11,8 @@ import { registerProjectHandlers } from "./projects"
 import { registerImportHandlers } from "./imports"
 import { registerAssertionHandlers } from "./assertions"
 import { registerGuideHandlers } from "./guides"
+import { registerGrpcHandlers } from "./grpc"
+import { GrpcDiscoveryService } from "../../services/grpc_discovery_service"
 
 export type { HandlerDeps } from "./common"
 
@@ -28,6 +30,7 @@ export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void 
   registerWorkflowHandlers(router, deps)
   registerAssertionHandlers(router, deps)
   registerGuideHandlers(router)
+  registerGrpcHandlers(router, deps.grpcDiscovery ?? new GrpcDiscoveryService())
   registerEnvironmentHandlers(router, deps)
   registerNodePresetHandlers(router, deps)
   registerRunHandlers(router, deps)

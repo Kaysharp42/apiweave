@@ -15,6 +15,9 @@ import {
 import type { EvidenceSection } from "../../services/run_evidence"
 import { buildReport } from "../../runner/reporters"
 import { MAX_ITERATION_ROWS } from "@shared/iteration-data/iterationData"
+import { LoadRunSchema } from "@shared/zod-schemas"
+import { MAX_LOAD_ITERATIONS } from "../../runner/load"
+import { parseThreshold } from "../../runner/thresholds"
 
 const ws = z.string().min(1)
 
@@ -42,6 +45,23 @@ const createIterationsInput = z
     rows: z.array(z.record(z.string(), JsonValueSchema)).min(1).max(MAX_ITERATION_ROWS),
   })
   .strict()
+
+const createLoadInput = z
+  .object({
+    workspaceId: ws,
+    workflowId: z.string().min(1),
+    selectedEnvironmentId: z.string().nullable().optional(),
+    /** Data rows, reused in order when there are fewer than `iterations`; omitted is one empty row. */
+    rows: z.array(z.record(z.string(), JsonValueSchema)).min(1).max(MAX_ITERATION_ROWS).optional(),
+    iterations: z.number().int().min(1).max(MAX_LOAD_ITERATIONS),
+    concurrency: z.number().int().min(1).max(1000),
+    durationMs: z.number().int().min(1).optional(),
+    rampUpMs: z.number().int().min(1).optional(),
+    thresholds: z.array(z.string().min(1)).max(20).optional(),
+  })
+  .strict()
+
+const loadGroupInput = z.object({ workspaceId: ws, groupId: z.string().min(1) }).strict()
 
 const runIdInput = z.object({ workspaceId: ws, runId: z.string().min(1) }).strict()
 
@@ -72,7 +92,7 @@ const nodeResultInput = z.object({
   nodeId: z.string().min(1).optional().describe("One node to inspect. Prefer nodeIds for up to 50 nodes in one call."),
   nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes to inspect, in the order to return. Combined with nodeId at most 50."),
   sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). Omitted sections are named, never silently absent."),
-  path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) selecting within the RESPONSE body. A miss reports path-missing or type-mismatch distinctly."),
+  path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) or RFC 9535 JSONPath ($.response.body.items[?@.id==3].name) selecting within the RESPONSE body. A miss reports path-missing, type-mismatch or invalid-path distinctly."),
   maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per body in bytes (default 2048)."),
   start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
   end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
@@ -117,6 +137,42 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     handle: ({ workspaceId, ...input }) => runs.createIterations(workspaceId, input),
   })
 
+  // Renderer only (not on the MCP whitelist): a load run, the workflow in
+  // parallel. Returns iteration 1's run; its `iteration.groupId` reads the
+  // finished aggregate through `loadResult` and `loadReport`.
+  router.register("runs", "createLoad", {
+    input: createLoadInput,
+    output: RunSchema,
+    handle: async ({ workspaceId, workflowId, rows, thresholds, ...input }) => {
+      let parsed: ReturnType<typeof parseThreshold>[]
+      try {
+        parsed = (thresholds ?? []).map(parseThreshold)
+      } catch (error) {
+        throw new ValidationError(error instanceof Error ? error.message : String(error))
+      }
+      const workflow = await deps.workflows.get(workspaceId, workflowId)
+      const nodeInfo = new Map(workflow.nodes.map((node) => [node.nodeId, { label: node.label || node.nodeId, type: node.type }]))
+      return runs.createLoad(workspaceId, { ...input, workflowId, rows: rows ?? [{}], thresholds: parsed, nodeInfo })
+    },
+  })
+
+  router.register("runs", "loadResult", {
+    input: loadGroupInput,
+    output: LoadRunSchema.nullable(),
+    handle: (i) => runs.getLoadRun(i.workspaceId, i.groupId),
+  })
+
+  router.register("runs", "loadReport", {
+    input: loadGroupInput.extend({ format: z.enum(["junit", "html"]) }).strict(),
+    output: z.string(),
+    handle: async ({ workspaceId, groupId, format }) => {
+      const loadRun = await runs.getLoadRun(workspaceId, groupId)
+      if (loadRun === null) throw new ValidationError("This load run has not finished, or is no longer kept.")
+      const workflow = await ifFound(deps.workflows.get(workspaceId, loadRun.workflowId))
+      return buildReport(format, { kind: "load", title: workflow?.name ?? loadRun.workflowId, loadRun })
+    },
+  })
+
   router.register("runs", "wait", {
     input: waitInput,
     output: RunSchema,
@@ -150,6 +206,26 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
         ...(start !== undefined ? { start } : {}),
         ...(end !== undefined ? { end } : {}),
       })
+    },
+  })
+
+  router.register("runs", "acceptSnapshot", {
+    input: z
+      .object({
+        workspaceId: ws,
+        workflowId: z.string().min(1),
+        nodeId: z.string().min(1),
+        ruleIndex: z.number().int().min(0).max(1000),
+        value: JsonValueSchema,
+      })
+      .strict(),
+    output: z.object({ accepted: z.boolean(), updatedAt: z.string() }).strict(),
+    handle: async (i) => {
+      if (deps.snapshots === undefined) throw new ValidationError("Snapshot storage is unavailable")
+      await deps.workflows.get(i.workspaceId, i.workflowId)
+      const updatedAt = new Date().toISOString()
+      deps.snapshots.write(i.workflowId, i.nodeId, i.ruleIndex, i.value, updatedAt)
+      return { accepted: true, updatedAt }
     },
   })
 

@@ -6,4 +6,6 @@ export interface AssertionItem {
   path: string;
   operator: AssertionOperator;
   expectedValue: string;
+  /** Only for "matchesSnapshot": JSONPath expressions whose values are ignored when comparing. */
+  ignorePaths?: string[];
 }

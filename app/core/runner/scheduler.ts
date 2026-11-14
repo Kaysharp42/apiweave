@@ -11,8 +11,10 @@ import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
+import type { ContractMode } from "@shared/types/ContractMode"
 import type { AgentRunApprovalCreate, AgentRunApprovalLookup } from "../repositories/AgentRunApprovalRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
+import type { SnapshotStore } from "./snapshots"
 import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
@@ -110,6 +112,12 @@ export interface SchedulerDeps {
   readonly agentRunApprovals?: AgentRunApprovalStore
   /** OAuth 2.0 tokens kept across runs (the app session, a CLI process). Absent: each run fetches its own. */
   readonly oauthTokens?: OAuthTokenCache
+  /** Overrides every node's `contract` setting for the run (the CLI's `--contract` flag). */
+  readonly contract?: ContractMode
+  /** Snapshot baselines for the `matchesSnapshot` operator (the workspace database). */
+  readonly snapshots?: SnapshotStore
+  /** Records every snapshot baseline again instead of comparing (the CLI's `--update-snapshots`). */
+  readonly updateSnapshots?: boolean
   /**
    * Writes a secret back into the scope it resolved from — a refreshed OAuth
    * token set replacing the one it was refreshed from. Absent: never written.
@@ -164,8 +172,19 @@ export class RunScheduler {
   /** runId → callers of {@link whenFinished} still waiting on it. */
   private readonly finishWaiters = new Map<string, ((status: RunTerminalStatus) => void)[]>()
   private draining = false
+  private cap: number
 
-  public constructor(private readonly deps: SchedulerDeps) {}
+  public constructor(private readonly deps: SchedulerDeps) {
+    this.cap = deps.concurrencyCap ?? DEFAULT_CONCURRENCY_CAP
+  }
+
+  /** Raise the cap so a load run's iterations really run at once. Never lowered. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
+  public ensureConcurrency(count: number): void {
+    if (count <= this.cap) return
+    this.cap = count
+    void this.drain()
+  }
 
   public getActiveCount(): number {
     return this.activeRuns.size
@@ -220,6 +239,18 @@ export class RunScheduler {
     this.queue.push(run.runId)
     void this.drain()
     return run.runId
+  }
+
+  /** A finished run's per-node results, for a load run to fold before clearing them. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
+  public resultsOf(runId: string): readonly RunResult[] {
+    return this.deps.runs.getById(runId)?.results ?? []
+  }
+
+  /** Drop a finished iteration's per-node results and bodies: load-mode retention. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
+  public clearIterationResults(runId: string): void {
+    this.deps.runs.clearNodeResults(runId)
   }
 
   public cancel(runId: string): boolean {
@@ -294,7 +325,7 @@ export class RunScheduler {
     if (this.draining) return
     this.draining = true
     try {
-      const cap = this.deps.concurrencyCap ?? DEFAULT_CONCURRENCY_CAP
+      const cap = this.cap
       while (this.queue.length > 0 && this.activeRuns.size < cap) {
         const runId = this.queue.shift()!
         void this.executeRun(runId)
@@ -408,6 +439,10 @@ export class RunScheduler {
         ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         ...(data ? { data } : {}),
+        ...(this.deps.contract !== undefined ? { contract: this.deps.contract } : {}),
+        workflowId: run.workflowId,
+        ...(this.deps.snapshots !== undefined ? { snapshots: this.deps.snapshots } : {}),
+        ...(this.deps.updateSnapshots === true ? { updateSnapshots: true } : {}),
         oauthTokens: this.deps.oauthTokens ?? new Map(),
         maskValue,
         ...(saveSecret
@@ -441,7 +476,12 @@ export class RunScheduler {
               runId: child.runId,
               // Spreading `executorDeps` carries `subRun` itself down, so a
               // sub-workflow that calls a sub-workflow is recorded too.
-              deps: { ...executorDeps, emitProgress: (event) => this.handleProgress(child.runId, mask(event)) },
+              deps: {
+                ...executorDeps,
+                // The child run's baselines belong to the workflow it runs, not the caller's.
+                workflowId,
+                emitProgress: (event) => this.handleProgress(child.runId, mask(event)),
+              },
             }
           },
           finish: (childRunId, childOutput) => {
@@ -785,7 +825,8 @@ export function requestDestinations(
   const urls = nodes.flatMap((node) => {
     // An OAuth 2.0 node also sends its client secret or token to the token endpoint.
     const oauth2 = (node.config?.["auth"] as { oauth2?: { tokenUrl?: unknown } } | undefined)?.oauth2
-    return [node.config?.["url"], oauth2?.tokenUrl]
+    // A gRPC node's `target` is a bare host:port: it stands as written, like a URL that does not parse.
+    return [node.config?.["url"], node.config?.["target"], oauth2?.tokenUrl]
   })
   for (const url of urls) {
     if (typeof url !== "string" || url.length === 0) continue

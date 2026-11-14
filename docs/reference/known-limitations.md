@@ -146,15 +146,32 @@ platform can self-install.
 Private certificate authorities, the operating system certificate store and
 client certificates (mTLS) are supported and configured in the same settings
 page or through the CLI flags.
+- **Snapshot baselines do not travel in `.aweproject` exports.** The app keeps
+  them in its local database; the CLI keeps them in `.apiweave-snapshots.json`,
+  which is meant to be committed beside the workflows it runs.
+- **gRPC calls are not proxied.** The gRPC node uses the CA, client certificate
+  and TLS verification settings, but connects directly: the proxy does not apply
+  to it.
+- **gRPC is unary or server streaming.** A client-streaming or bidirectional
+  method is refused, and a server stream is a bounded probe: it captures at most
+  1 MiB of decoded responses and closes on the finish rules, the response limit,
+  the deadline or the server ending the stream.
 
 ## Execution
 
 - **Workflows have no loops.** A connection that leads back to an earlier node
   is refused on the canvas, and a graph that contains a cycle fails before any
   request. To poll an async API, use the HTTP node's **Retry** rules instead of
-  a loop.
+  a loop. To repeat a step over a list, use **For each** on a Call Workflow
+  node; it runs the target once per item, at most 1000 items (further items are
+  not run) and at most 16 at once, and the nesting limit of 8 still applies.
 - **A Delay runs once.** It pauses the run for a fixed time and continues; a
   workflow cannot loop back through it.
+- **WebSocket and SSE nodes are bounded probes.** They collect up to 100
+  messages (1 MiB) and close; there is no long-lived or interactive session. A
+  WebSocket node sends no cookies from the run's cookie jar, does not read the
+  upgrade response's headers, and does not support Digest or AWS Signature V4
+  auth.
 - **There is no local scheduling.** Runs start from the app, from a local MCP
   client, or from `apiweave run` in your own CI. APIWeave does not run a
   workflow on a timer on your machine in 1.0.

@@ -1,4 +1,6 @@
 export { default as HTTPRequestNode } from "./HTTPRequestNode";
+export { default as WebsocketNode } from "./WebsocketNode";
+export { default as GrpcNode } from "./GrpcNode";
 export { default as AssertionNode } from "./AssertionNode";
 export { default as DelayNode } from "./DelayNode";
 export { default as MergeNode } from "./MergeNode";

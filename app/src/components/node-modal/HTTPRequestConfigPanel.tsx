@@ -60,6 +60,8 @@ import { DigestAuthFields } from "./DigestAuthFields";
 import { JwtAuthFields } from "./JwtAuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
 import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
+import { JsonrpcBodyEditor } from "./JsonrpcBodyEditor";
+import { SoapBodyEditor } from "./SoapBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
 import type {
   AuthConfig,
@@ -73,6 +75,7 @@ import type {
   SelectOption,
   UrlEncodedEntry,
 } from "../../types";
+import type { ContractMode } from "@shared/types/ContractMode";
 
 const AUTH_OPTIONS: SelectOption[] = [
   { label: "None", value: "none" },
@@ -255,6 +258,8 @@ const BODY_TYPES: SelectOption[] = [
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" },
   { label: "Binary", value: "binary" },
   { label: "GraphQL", value: "graphql" },
+  { label: "JSON-RPC", value: "jsonrpc" },
+  { label: "SOAP", value: "soap" },
 ];
 
 function JsonBodyEditor({
@@ -445,10 +450,18 @@ function ExtractorRow({
               {previewValue(resolution.value, EXTRACTOR_PREVIEW_LIMIT)}
             </span>
           ) : (
-            <span className="text-status-warning">
-              {resolution.failureReason === "path-missing"
-                ? "Not found in the last response"
-                : "The last response had a different shape at this path"}
+            <span
+              className={
+                resolution.failureReason === "invalid-path"
+                  ? "text-status-error"
+                  : "text-status-warning"
+              }
+            >
+              {resolution.failureReason === "invalid-path"
+                ? "Invalid path expression"
+                : resolution.failureReason === "path-missing"
+                  ? "Not found in the last response"
+                  : "The last response had a different shape at this path"}
             </span>
           )}
         </p>
@@ -459,10 +472,51 @@ function ExtractorRow({
 
 const DEFAULT_RETRY: NodeModalHttpRetryConfig = { maxAttempts: 5, intervalMs: 2000 };
 
+const CONTRACT_OPTIONS: SelectOption[] = [
+  { label: "Default (fail for imported endpoints)", value: "default" },
+  { label: "Off", value: "off" },
+  { label: "Warn", value: "warn" },
+  { label: "Fail", value: "fail" },
+];
+
+/**
+ * The contract check mode: how strictly a response must match the
+ * `responseSchemas` the spec attached. "Default" is the node-level default
+ * (fail for OpenAPI-imported endpoints, off otherwise).
+ */
+function ContractSettings({
+  contract,
+  onChange,
+}: {
+  contract: ContractMode | undefined;
+  onChange: (contract: ContractMode | undefined) => void;
+}) {
+  return (
+    <Card title="Contract check" icon={ShieldCheckCardIcon}>
+      <p className="mb-3 text-xs text-text-secondary dark:text-text-secondary-dark">
+        Validate each response against the schema for its status (the exact
+        code, then its class such as 2XX, then default). A status the spec does
+        not declare is itself a violation. Warn records violations without
+        failing the request.
+      </p>
+      <FormField label="Mode">
+        <ButtonSelect
+          options={CONTRACT_OPTIONS}
+          value={contract ?? "default"}
+          onChange={(next) =>
+            onChange(next === "default" ? undefined : (next as ContractMode))
+          }
+          buttonClass={SELECT_BUTTON_CLASS}
+        />
+      </FormField>
+    </Card>
+  );
+}
+
 /**
  * The response body schemas OpenAPI import attached, by status. They are
- * checked on every run; a status can be dropped here, and a schema edited in
- * the workflow's JSON.
+ * checked when the node's contract mode is on; a status can be dropped here,
+ * and a schema edited in the workflow's JSON.
  */
 function ResponseSchemaSettings({
   schemas,
@@ -482,9 +536,9 @@ function ResponseSchemaSettings({
     <Card title="Response schemas" icon={ShieldCheckCardIcon}>
       <p className="mb-3 text-xs text-text-secondary dark:text-text-secondary-dark">
         The response body must match the JSON Schema for its status code (the
-        exact code, then its class such as 2XX, then default), or the request
-        fails and lists where the body differs. A status not listed is not
-        checked.
+        exact code, then its class such as 2XX, then default). Whether a
+        mismatch fails the request is set by the Contract check mode; a status
+        not listed is itself a violation when the contract is on.
       </p>
       <ul className="space-y-2">
         {keys.map((key) => (
@@ -893,6 +947,24 @@ export function HTTPRequestConfigPanel({
           />
         )}
 
+        {draftConfig.bodyType === "jsonrpc" && (
+          <JsonrpcBodyEditor
+            jsonrpc={draftConfig.jsonrpc}
+            isDarkMode={isDarkMode}
+            allowRpcError={draftConfig.allowRpcError ?? false}
+            onChange={(jsonrpc) => updateConfig({ jsonrpc })}
+            onAllowRpcErrorChange={(allowRpcError) => updateConfig({ allowRpcError })}
+          />
+        )}
+
+        {draftConfig.bodyType === "soap" && (
+          <SoapBodyEditor
+            soap={draftConfig.soap}
+            isDarkMode={isDarkMode}
+            onChange={(soap) => updateConfig({ soap })}
+          />
+        )}
+
         {draftConfig.bodyType === "raw" && (
           <FormField label="Raw body">
             <TextArea
@@ -1016,6 +1088,11 @@ export function HTTPRequestConfigPanel({
       <RetrySettings
         retry={draftConfig.retry}
         onChange={(retry) => updateConfig({ retry })}
+      />
+
+      <ContractSettings
+        contract={draftConfig.contract}
+        onChange={(contract) => updateConfig({ contract })}
       />
 
       {draftConfig.responseSchemas &&

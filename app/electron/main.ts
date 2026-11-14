@@ -20,6 +20,7 @@ import {
   RunRepository,
   ProjectRunRepository,
   SecretRepository,
+  SnapshotRepository,
   WorkflowRepository,
   WorkspaceGitRepository,
   WorkspaceRepository,
@@ -47,6 +48,7 @@ import {
   ImportService,
   OAuthService,
   NetworkSettingsService,
+  GrpcDiscoveryService,
 } from "../core/services"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
@@ -534,6 +536,7 @@ if (!hasSingleInstanceLock) {
     const environments = new EnvironmentRepository(database.kvStore, noteWorkspaceWrite)
     const collections = new CollectionRepository(database.kvStore, noteWorkspaceWrite)
     const nodePresets = new NodePresetRepository(database.kvStore)
+    const snapshots = new SnapshotRepository(database.kvStore)
     const agents = new AgentRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
     const appSettings = new AppSettingsRepository(database.kvStore)
@@ -619,6 +622,7 @@ if (!hasSingleInstanceLock) {
       // One OAuth 2.0 token cache for the app session: client-credentials
       // tokens are reused across runs until they near expiry.
       oauthTokens: new Map(),
+      snapshots,
       saveSecret: async (name, value, scope) => {
         await secretService.storePlaintext(scope.workspaceId, { ...scope, name, value, label: "OAuth 2.0 token" })
       },
@@ -711,6 +715,7 @@ if (!hasSingleInstanceLock) {
       environments: new EnvironmentService(environments, scopeResolver, workflows, secretStore),
       nodePresets: new NodePresetService(nodePresets, scopeResolver),
       runs: runService,
+      snapshots,
       secrets: secretService,
       projects: new ProjectExportService(
         collections,
@@ -721,6 +726,7 @@ if (!hasSingleInstanceLock) {
         () => clock.isoNow(),
       ),
       imports: new ImportService(workflows, environments, collections, scopeResolver, http),
+      grpcDiscovery: new GrpcDiscoveryService(http),
       projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, scopeResolver),
     }
     registerAllHandlers(ipcRouter, deps)

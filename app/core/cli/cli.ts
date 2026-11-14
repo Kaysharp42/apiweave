@@ -3,6 +3,8 @@ import path from "node:path"
 import { parseArgs } from "node:util"
 import type { RequestInit, Response } from "undici"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { ContractMode } from "@shared/types/ContractMode"
+import { FileSnapshotStore } from "../runner/snapshot_file"
 import type { Environment } from "@shared/types/Environment"
 import type { Workflow } from "@shared/types/Workflow"
 import { nameSlug } from "@shared/workspace-repo/format"
@@ -32,6 +34,9 @@ import { RunScheduler } from "../runner/scheduler"
 import { ProjectRunner, planProjectRun } from "../runner/project_runner"
 import { buildConsoleReport, buildReport, type ReportInput, type SingleReportInput } from "../runner/reporters"
 import { MAX_ITERATION_DATA_BYTES, parseIterationData, type IterationRow } from "@shared/iteration-data/iterationData"
+import { formatThreshold, parseThreshold, type Threshold } from "../runner/thresholds"
+import { MAX_LOAD_ITERATIONS, buildLoadRun, startLoadRun } from "../runner/load"
+import { generateId } from "../id"
 import { createSecretMasker } from "../runner/secret_masker"
 import { CryptoRandomProvider, WallClockProvider } from "../runner/harness/providers"
 
@@ -96,8 +101,22 @@ Options:
   -d, --iteration-data <file>     Run once per row of a CSV or JSON array file;
                                   each row's values are {{data.<column>}}
   -n, --iteration-count <n>       Run n times (with --iteration-data: its first n rows)
+  -c, --concurrency <n>           Load mode: run n iterations at once and report
+                                  per-node latency percentiles and throughput.
+                                  Needs --workflow (or a single-workflow file) and
+                                  --iteration-count, --iteration-data or --duration
+      --duration <time>           Load mode: stop starting iterations after this
+                                  long (30s, 500ms, 2m; a bare number is seconds)
+      --ramp-up <time>            Load mode: grow from 1 to --concurrency over this long
+      --threshold <expr>          Load mode: fail (exit 1) when breached, e.g.
+                                  p95<500, errors<1%, throughput>20 (repeatable;
+                                  metrics: min mean p50 p90 p95 p99 max errors throughput)
       --bail                      Stop at the first failed workflow, iteration or project
       --timeout-request <ms>      Timeout for every request, overriding each node's
+      --snapshots <file>          Snapshot baselines file (default: .apiweave-snapshots.json)
+      --update-snapshots          Record every snapshot baseline again instead of comparing
+      --contract <off|warn|fail>  Override every node's contract check (default: each node's
+                                  own setting, fail for OpenAPI-imported nodes)
   -k, --insecure                  Do not verify TLS certificates
       --proxy <url>               Send requests through this proxy (default: the
                                   HTTPS_PROXY or HTTP_PROXY variable; NO_PROXY applies)
@@ -153,8 +172,16 @@ interface CliOptions {
   readonly htmlPath: string
   readonly iterationData: string | undefined
   readonly iterationCount: number | undefined
+  readonly concurrency: number | undefined
+  readonly durationMs: number | undefined
+  readonly rampUpMs: number | undefined
+  readonly thresholds: readonly Threshold[]
   readonly bail: boolean
   readonly timeoutMs: number | undefined
+  readonly contract: ContractMode | undefined
+  /** Where snapshot baselines are read and written. */
+  readonly snapshotsPath: string
+  readonly updateSnapshots: boolean
   readonly insecure: boolean
   readonly proxy: string | undefined
   readonly caCerts: readonly string[]
@@ -180,8 +207,15 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       "reporter-html-export": { type: "string" },
       "iteration-data": { type: "string", short: "d" },
       "iteration-count": { type: "string", short: "n" },
+      concurrency: { type: "string", short: "c" },
+      duration: { type: "string" },
+      "ramp-up": { type: "string" },
+      threshold: { type: "string", multiple: true },
       bail: { type: "boolean" },
       "timeout-request": { type: "string" },
+      contract: { type: "string" },
+      snapshots: { type: "string" },
+      "update-snapshots": { type: "boolean" },
       insecure: { type: "boolean", short: "k" },
       proxy: { type: "string" },
       "ca-cert": { type: "string", multiple: true },
@@ -195,6 +229,21 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
   const reporters = parseReporters(values.reporter, values["reporter-junit-export"], values["reporter-html-export"])
   const timeoutMs = positiveInteger(values["timeout-request"], "--timeout-request must be a positive whole number of milliseconds")
   const iterationCount = positiveInteger(values["iteration-count"], "--iteration-count must be a positive whole number")
+  const contract = parseContract(values.contract)
+  const snapshotsPath = path.resolve(cwd, values.snapshots ?? ".apiweave-snapshots.json")
+  const concurrency = positiveInteger(values.concurrency, "--concurrency must be a positive whole number")
+  const durationMs = parseDuration(values.duration, "--duration")
+  const rampUpMs = parseDuration(values["ramp-up"], "--ramp-up")
+  const thresholds = (values.threshold ?? []).map((expression) => {
+    try {
+      return parseThreshold(expression)
+    } catch (error) {
+      throw new UsageError(`--threshold: ${errorMessage(error)}`)
+    }
+  })
+  if (concurrency === undefined && (durationMs !== undefined || rampUpMs !== undefined || thresholds.length > 0)) {
+    throw new UsageError("--duration, --ramp-up and --threshold belong to load mode: add --concurrency <n>")
+  }
   const resolve = (target: string | undefined): string | undefined => (target === undefined ? undefined : path.resolve(cwd, target))
   return {
     file: path.resolve(cwd, file),
@@ -210,8 +259,15 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     htmlPath: path.resolve(cwd, values["reporter-html-export"] ?? "apiweave-report.html"),
     iterationData: resolve(values["iteration-data"]),
     iterationCount,
+    concurrency,
+    durationMs,
+    rampUpMs,
+    thresholds,
     bail: values.bail === true,
     timeoutMs,
+    contract,
+    snapshotsPath,
+    updateSnapshots: values["update-snapshots"] === true,
     insecure: values.insecure === true,
     proxy: values.proxy,
     caCerts: (values["ca-cert"] ?? []).map((file) => path.resolve(cwd, file)),
@@ -240,11 +296,26 @@ function parseReporters(list: string | undefined, junitExport: string | undefine
   return reporters
 }
 
+/** `30s`, `500ms`, `2m`; a bare number is seconds. Whole milliseconds, at least 1. */
+function parseDuration(raw: string | undefined, flag: string): number | undefined {
+  if (raw === undefined) return undefined
+  const match = /^(\d+(?:\.\d+)?)(ms|s|m)?$/.exec(raw.trim())
+  const ms = match === null ? 0 : Math.round(Number(match[1]) * (match[2] === "ms" ? 1 : match[2] === "m" ? 60_000 : 1000))
+  if (ms < 1) throw new UsageError(`${flag} must be a positive time such as 30s, 500ms or 2m`)
+  return ms
+}
+
 function positiveInteger(raw: string | undefined, message: string): number | undefined {
   if (raw === undefined) return undefined
   const value = Number(raw)
   if (!Number.isInteger(value) || value <= 0) throw new UsageError(message)
   return value
+}
+
+function parseContract(raw: string | undefined): ContractMode | undefined {
+  if (raw === undefined) return undefined
+  if (raw === "off" || raw === "warn" || raw === "fail") return raw
+  throw new UsageError(`--contract must be one of off, warn or fail, got '${raw}'`)
 }
 
 /**
@@ -392,6 +463,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     )
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
+    const snapshots = new FileSnapshotStore(options.snapshotsPath)
     const runScheduler = new RunScheduler({
       runs: repos.runs,
       workflows: repos.workflows,
@@ -402,6 +474,9 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       rng,
       // One OAuth 2.0 token cache per invocation: iterations reuse a client-credentials token.
       oauthTokens: new Map(),
+      ...(options.contract !== undefined ? { contract: options.contract } : {}),
+      snapshots,
+      ...(options.updateSnapshots ? { updateSnapshots: true } : {}),
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }
@@ -410,6 +485,15 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     scheduler = runScheduler
     const runTarget = (target: CliTarget, data?: IterationRow): Promise<SingleReportInput> =>
       runOnce(runScheduler, target, workspaceId, environmentId, repos, data)
+    if (options.concurrency !== undefined) {
+      const target = targets[0]!
+      if (imported.title !== undefined || targets.length !== 1 || target.kind !== "workflow") {
+        throw new UsageError("load mode runs one workflow: pick it with --workflow <name|id>")
+      }
+      const input = await runLoad(runScheduler, options, target.workflowId, workspaceId, environmentId, repos, dataRows(options))
+      writeReports(mask(input), options, io)
+      return input.loadRun.status === "completed" ? EXIT_PASSED : EXIT_FAILED
+    }
     const { input, passed } = imported.title === undefined
       ? await runIterations((data) => runTarget(targets[0]!, data), rows, options.bail)
       : await runProjects(imported.title, targets, runTarget, options.bail)
@@ -425,6 +509,45 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     await http?.close()
     database.close()
   }
+}
+
+/** The data rows a load run cycles through: all of `--iteration-data` (never cut to `--iteration-count`), else one empty row. */
+function dataRows(options: CliOptions): IterationRow[] {
+  return readIterationRows({ ...options, iterationCount: undefined }) ?? [{}]
+}
+
+/** One load run of the workflow, as a report input. The thresholds decide the status. */
+async function runLoad(
+  scheduler: RunScheduler,
+  options: CliOptions,
+  workflowId: string,
+  workspaceId: string,
+  environmentId: string | undefined,
+  { workflows }: CliRepositories,
+  rows: readonly IterationRow[],
+): Promise<Extract<ReportInput, { kind: "load" }>> {
+  const concurrency = options.concurrency!
+  const iterations = options.iterationCount ?? (options.iterationData === undefined ? undefined : rows.length) ?? (options.durationMs === undefined ? undefined : MAX_LOAD_ITERATIONS)
+  if (iterations === undefined) throw new UsageError("load mode needs --iteration-count, --iteration-data or --duration to know how long to run")
+  const workflow = workflows.getById(workflowId)!
+  const nodeInfo = new Map(workflow.nodes.map((node) => [node.nodeId, { label: node.label || node.nodeId, type: node.type }]))
+  const startedAt = new Date().toISOString()
+  const handle = startLoadRun(
+    scheduler,
+    { workspaceId, workflowId, ...(environmentId === undefined ? {} : { selectedEnvironmentId: environmentId }) },
+    rows,
+    { iterations, concurrency, ...(options.durationMs === undefined ? {} : { durationMs: options.durationMs }), ...(options.rampUpMs === undefined ? {} : { rampUpMs: options.rampUpMs }) },
+    options.thresholds,
+    nodeInfo,
+  )
+  const result = await handle.done
+  const settings = {
+    concurrency,
+    durationMs: options.durationMs ?? null,
+    rampUpMs: options.rampUpMs ?? null,
+    thresholds: options.thresholds.map((threshold) => formatThreshold(threshold)),
+  }
+  return { kind: "load", title: workflow.name, loadRun: buildLoadRun({ workspaceId, workflowId, loadRunId: generateId() }, settings, startedAt, result) }
 }
 
 /** The workspace the run imports into. A repository keeps its own id: the importer refuses a snapshot for any other. */

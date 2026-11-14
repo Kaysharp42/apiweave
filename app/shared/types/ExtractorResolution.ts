@@ -1,5 +1,5 @@
 /** Why an extractor path failed to resolve against a node result. */
-export type ExtractorFailureReason = "path-missing" | "type-mismatch"
+export type ExtractorFailureReason = "path-missing" | "type-mismatch" | "invalid-path"
 
 /**
  * The outcome of walking an extractor path over a node result. `value` is only

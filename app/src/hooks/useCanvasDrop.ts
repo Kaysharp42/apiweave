@@ -49,6 +49,32 @@ function getDefaultConfig(type: string): NodeConfig {
         finishConditions: [],
         extractors: {},
       };
+    case "websocket":
+      return {
+        url: "",
+        queryParams: [],
+        headers: [],
+        subprotocols: [],
+        messages: [],
+        timeout: 30,
+        maxMessages: 1,
+        finishConditions: [],
+        sslVerify: true,
+      };
+    case "grpc":
+      return {
+        callType: "unary",
+        target: "",
+        tls: false,
+        sslVerify: true,
+        service: "",
+        method: "",
+        message: "{}",
+        metadata: [],
+        deadline: 30,
+        schemaSource: "reflection",
+        extractors: {},
+      };
     case "assertion":
       return { assertions: [] };
     case "delay":

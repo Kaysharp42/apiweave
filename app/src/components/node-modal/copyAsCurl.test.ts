@@ -33,6 +33,22 @@ describe("copyAsCurl — GraphQL", () => {
   });
 });
 
+describe("copyAsCurl — JSON-RPC", () => {
+  const jsonrpc = { method: "subtract", params: "[{{variables.a}}, {{variables.b}}]" };
+
+  it("posts {jsonrpc, method, params, id} as JSON with a JSON Content-Type", () => {
+    const curl = buildCurlCommand(baseConfig({ method: "POST", bodyType: "jsonrpc", jsonrpc }));
+    expect(curl).toContain("Content-Type: application/json");
+    expect(curl).toContain(`{"jsonrpc": "2.0", "method": "subtract", "params": [{{variables.a}}, {{variables.b}}], "id": 1}`);
+  });
+
+  it("omits the id for a notification", () => {
+    const curl = buildCurlCommand(baseConfig({ method: "POST", bodyType: "jsonrpc", jsonrpc: { method: "log", params: '["hi"]', notification: true } }));
+    expect(curl).toContain(`{"jsonrpc": "2.0", "method": "log", "params": ["hi"]}`);
+    expect(curl).not.toContain('"id"');
+  });
+});
+
 describe("copyAsCurl — Basic auth header", () => {
   it("base64-encodes username:password (RFC 7617), not the raw pair", () => {
     const config = baseConfig({

@@ -301,3 +301,71 @@ describe("ImportService — OpenAPI", () => {
     expect(result.stats.totalEndpoints).toBe(1)
   })
 })
+
+describe("ImportService — workflow identity across imports", () => {
+  const node = { nodeId: "n1", type: "http-request", label: "req", position: { x: 0, y: 0 }, config: { method: "GET", url: "https://a.com", headers: "", queryParams: "", cookies: "", timeout: 30, followRedirects: true, extractors: {} } }
+  const bundle = (name: string, workflowId?: string): WorkflowBundle => ({
+    workflow: { ...(workflowId === undefined ? {} : { workflowId }), name, nodes: [node], edges: [], variables: {} },
+    environments: [],
+    secretReferences: [],
+    metadata: { exportedAt: "", workflowCount: 1, environmentCount: 0, secretReferenceCount: 0 },
+  })
+
+  /** A new database and service: what the CLI builds on every invocation. */
+  function freshService(): { service: ImportService; workspaceId: string; close: () => void } {
+    const database = initDatabase({ databasePath: ":memory:" })
+    const spaces = new WorkspaceRepository(database.kvStore)
+    const envs = new EnvironmentRepository(database.kvStore)
+    const resolver = new ScopeResolver({
+      workspaceExists: (id) => spaces.getById(id) !== undefined,
+      environmentExists: (id) => envs.getById(id) !== undefined,
+    })
+    return {
+      service: new ImportService(new WorkflowRepository(database.kvStore), envs, new CollectionRepository(database.kvStore), resolver),
+      workspaceId: spaces.create({ name: "fresh", slug: "fresh" }).workspaceId,
+      close: () => database.close(),
+    }
+  }
+
+  it("gives an id-less bundle the same id in every fresh database", async () => {
+    const first = freshService()
+    const second = freshService()
+    const a = await first.service.importWorkflow(first.workspaceId, bundle("Health"), false, false)
+    const b = await second.service.importWorkflow(second.workspaceId, bundle("Health"), false, false)
+    first.close()
+    second.close()
+    expect(a.workflowId).toBe(b.workflowId)
+    expect(a.workflowId).toMatch(/^[0-9A-Z]{26}$/)
+  })
+
+  it("gives bundles with different names different ids", async () => {
+    const a = await service.importWorkflow(wsId, bundle("One"), false, false)
+    const b = await service.importWorkflow(wsId, bundle("Two"), false, false)
+    expect(a.workflowId).not.toBe(b.workflowId)
+  })
+
+  it("keeps a declared id when it is free", async () => {
+    const result = await service.importWorkflow(wsId, bundle("Declared", "wf_declared"), false, false)
+    expect(result.workflowId).toBe("wf_declared")
+  })
+
+  it("mints a different id when the declared or derived id is already taken", async () => {
+    const declared = await service.importWorkflow(wsId, bundle("Declared", "wf_taken"), false, false)
+    const again = await service.importWorkflow(wsId, bundle("Declared", "wf_taken"), false, false)
+    expect(declared.workflowId).toBe("wf_taken")
+    expect(again.workflowId).not.toBe("wf_taken")
+    expect(workflows.getById(again.workflowId)).toBeDefined()
+
+    const derived = await service.importWorkflow(wsId, bundle("Derived"), false, false)
+    const derivedAgain = await service.importWorkflow(wsId, bundle("Derived"), false, false)
+    expect(derivedAgain.workflowId).not.toBe(derived.workflowId)
+  })
+
+  it("does not reuse an id that another workspace holds", async () => {
+    const other = workspaces.create({ name: "other", slug: "other" }).workspaceId
+    const first = await service.importWorkflow(other, bundle("Shared", "wf_shared"), false, false)
+    const second = await service.importWorkflow(wsId, bundle("Shared", "wf_shared"), false, false)
+    expect(first.workflowId).toBe("wf_shared")
+    expect(second.workflowId).not.toBe("wf_shared")
+  })
+})

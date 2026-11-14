@@ -1,8 +1,11 @@
 import { z } from "zod"
 import { AuthConfigSchema } from "./AuthConfigSchema"
+import { ContractModeSchema } from "./ContractModeSchema"
 import { FileUploadSchema } from "./FileUploadSchema"
 import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { GraphqlBodySchema } from "./GraphqlBodySchema"
+import { JsonrpcBodySchema } from "./JsonrpcBodySchema"
+import { SoapBodySchema } from "./SoapBodySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
 import { HttpRetryConfigSchema } from "./HttpRetryConfigSchema"
 import { HttpScriptsConfigSchema } from "./HttpScriptsConfigSchema"
@@ -41,12 +44,23 @@ export const HTTPNodeDataSchema = z
       .optional()
       .describe('Request body as a STRING, not an object — JSON bodies are the serialized text, e.g. "{\\"name\\": \\"Rex\\"}". Placeholders are substituted inside it. Set bodyType to "json" alongside it.'),
     bodyType: z
-      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary", "graphql"])
+      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary", "graphql", "jsonrpc", "soap"])
       .optional()
-      .describe('How to encode the body and which Content-Type to send. "graphql" sends `graphql` instead of `body`.'),
+      .describe('How to encode the body and which Content-Type to send. "graphql" sends `graphql` instead of `body`, "jsonrpc" sends `jsonrpc`, and "soap" sends `soap`.'),
     graphql: GraphqlBodySchema.optional().describe(
       'The GraphQL request when bodyType is "graphql": POSTed as application/json {query, variables, operationName}, or sent as query parameters when the method is GET. A response with an `errors` array still returns 200; assert `response.body.errors` notExists to fail on it.',
     ),
+    jsonrpc: JsonrpcBodySchema.optional().describe(
+      'The JSON-RPC 2.0 request when bodyType is "jsonrpc": POSTed as application/json {"jsonrpc":"2.0","method","params","id"} with an id that increases per request within the run. Notifications omit the id. A response with an `error` member fails the node unless `allowRpcError` is true.',
+    ),
+    soap: SoapBodySchema.optional().describe(
+      'The SOAP request when bodyType is "soap": version, action and the complete envelope as XML text. A SOAP Fault in the response fails the node unless the response status is the expectedStatus; read it with `response.fault.code` and `response.fault.reason`, or read the body with XPath (`xpath[...]:...`).',
+    ),
+    allowRpcError: z
+      .boolean()
+      .optional()
+      .describe('When true, a JSON-RPC response whose body carries an `error` member does not fail the node; assert `response.body.error.code` and `response.body.error.message` to check it instead.'),
+
     timeout: z.number().int().positive().optional().describe("Request timeout in seconds."),
     followRedirects: z.boolean().optional(),
     sslVerify: z.boolean().optional(),
@@ -75,7 +89,10 @@ export const HTTPNodeDataSchema = z
       .record(z.string().regex(RESPONSE_SCHEMA_KEY), JsonValueSchema)
       .optional()
       .describe(
-        'JSON Schemas the response body must match, keyed by status code: "200", a range like "2XX", or "default". The most specific key for the actual status applies; a status with no key is not checked. A mismatch fails the node and lists where the body differs. Filled from the spec on OpenAPI import.',
+        'JSON Schemas the response body must match, keyed by status code: "200", a range like "2XX", or "default". The most specific key for the actual status applies. Filled from the spec on OpenAPI import; whether a mismatch fails the node is set by `contract`.',
+      ),
+    contract: ContractModeSchema.optional().describe(
+      'How strictly the response must match `responseSchemas`: "off" skips the check, "warn" records violations without failing the node, "fail" records them and fails it. A status `responseSchemas` does not declare is itself a violation. Defaults to "fail" when the node has `openapiMeta`, "off" otherwise.',
       ),
     openapiMeta: OpenApiNodeMetaSchema.optional().describe("Set by OpenAPI import: which operation this request came from, used to flag drift when the spec is refreshed."),
     fileUploads: z.array(FileUploadSchema).optional(),

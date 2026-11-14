@@ -40,6 +40,7 @@ const ASSERTION_OPERATORS = [
   { value: "notMatches", label: "Does Not Match regex" },
   { value: "type", label: "Is of type" },
   { value: "matchesSchema", label: "Matches JSON Schema" },
+  { value: "matchesSnapshot", label: "Matches Snapshot" },
 ] as const;
 
 /** What to type for each operator's expected value. */
