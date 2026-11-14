@@ -42,6 +42,16 @@ function firstLine(error: unknown): string {
 }
 
 /**
+ * Load playwright-core exactly as a run does and name the browser type it
+ * provides. The packaged app's smoke test calls it: a dependency left out of
+ * app.asar only shows once packaged.
+ */
+export async function loadBrowserDriver(): Promise<string> {
+  const { chromium } = await import("playwright-core")
+  return chromium.name()
+}
+
+/**
  * One run's browser: launched by the first step that needs it, shared by every
  * `browser` node of the run (Call Workflow children included), and closed by
  * the executor that created it. Steps run one at a time on its single page,

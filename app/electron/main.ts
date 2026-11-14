@@ -92,6 +92,7 @@ import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
 import { runSmokeTest, SMOKE_TEST_SWITCH } from "./smoke_test"
+import { loadBrowserDriver } from "../core/runner/browser/session"
 import {
   AGENT_RUN_APPROVAL_BUTTONS,
   AGENT_RUN_APPROVAL_TIMEOUT_MS,
@@ -1250,6 +1251,7 @@ if (!hasSingleInstanceLock) {
               rows: 24,
               sessionIdPattern: null,
             }),
+          loadBrowserDriver,
         },
         (message) => bootstrapLog.info(message),
       ).then((code) => {

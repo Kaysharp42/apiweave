@@ -8,7 +8,8 @@
  * Reaching this at all means the database opened and migrated and the keyfile
  * loaded: both run, and throw, before the window is created. What is left is
  * the window loading app://local/ and the PTY host forking and loading node-pty
- * far enough to start a process.
+ * far enough to start a process, and playwright-core loading from the package
+ * the way a browser step loads it (no browser is launched: runners may have none).
  *
  * Without the switch nothing here runs, so it costs a normal launch nothing.
  */
@@ -19,6 +20,8 @@ export interface SmokeTestChecks {
   readonly windowLoaded: Promise<boolean>
   /** Starts a throwaway PTY through the PTY host and resolves its pid. */
   readonly spawnPty: () => Promise<number>
+  /** Loads the browser driver browser steps use and resolves the browser type it provides. */
+  readonly loadBrowserDriver: () => Promise<string>
 }
 
 /** The process exit code: 0 when every check passed within `timeoutMs`. */
@@ -35,6 +38,7 @@ export async function runSmokeTest(
     if (!(await checks.windowLoaded)) throw new Error("the window did not load app://local/")
     log("window loaded app://local/")
     log(`PTY host started pid ${await checks.spawnPty()}`)
+    log(`browser driver loaded (${await checks.loadBrowserDriver()})`)
   }
   try {
     await Promise.race([pass(), timeout])
