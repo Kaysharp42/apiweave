@@ -14,6 +14,7 @@ import type {
 import type { SecretMetadataStore } from "../secrets/scoped_secret_resolver"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
+import { importedWorkflowId } from "./import_identity"
 import type { ScopeResolver } from "./scope_resolver"
 import { exportWorkflow } from "./workspace_repo_format"
 import {
@@ -264,8 +265,10 @@ export class ProjectExportService {
       for (const workflow of bundle.workflows ?? []) {
         const oldEnvId = workflow.selectedEnvironmentId
         const mappedEnvId = oldEnvId ? envMapping.get(oldEnvId) : undefined
+        const importedId = importedWorkflowId(this.workflows, workflow.workflowId, workflow.name)
         const create: WorkflowCreate = {
           workspaceId: targetWorkspaceId,
+          ...(importedId !== undefined ? { workflowId: importedId } : {}),
           name: workflow.name,
           description: workflow.description ?? null,
           nodes: workflow.nodes.map((node) => WorkflowNodeSchema.parse(node)),

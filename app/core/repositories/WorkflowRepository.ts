@@ -21,7 +21,7 @@ import {
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
 import { WorkflowRevisionRepository, type WorkflowWriteSource } from "./WorkflowRevisionRepository"
 
-/** `workflowId` is minted when absent; a workspace repository import passes the file's own id. */
+/** `workflowId` is minted when absent; an import passes the id it keeps or derives from the file, so a file keeps one identity across imports. */
 export type WorkflowCreate = Pick<Workflow, "workspaceId" | "name"> &
   Partial<
     Pick<

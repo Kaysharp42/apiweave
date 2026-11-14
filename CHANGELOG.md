@@ -115,6 +115,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   SSE behaves as before. The `SseFinishCondition` type is renamed
   `StreamFinishCondition`.
 
+### Fixed
+
+- **Snapshot baselines survive across CLI runs for every file.** The CLI
+  imports its file into a fresh database each run, and an export without a
+  `workflowId` got a random one, so `matchesSnapshot` never found its baseline
+  and re-recorded. A workflow import now gives the same file the same id every
+  time: the declared id when no workflow holds it, otherwise an id derived from
+  the workflow's name. A project bundle's workflows keep their declared ids the
+  same way, and an id already held (in any workspace) still gets a fresh one.
+
 ## [1.0.0] — 2026-11-10
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported

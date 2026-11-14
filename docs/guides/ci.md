@@ -93,7 +93,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--bail` | Stop a project run at its first failed workflow, whatever its row says, a repository run at the first project that did not complete, and a data-driven run at its first failed iteration. |
 | `--timeout-request <ms>` | Timeout for every request, replacing each node's own timeout. |
 | `--contract <off\|warn\|fail>` | Override every node's contract check against its `responseSchemas` (default: each node's own setting, `fail` for OpenAPI-imported nodes). |
-| `--snapshots <file>` | Where `matchesSnapshot` baselines live (default `.apiweave-snapshots.json`). Commit it so CI compares against the accepted responses. |
+| `--snapshots <file>` | Where `matchesSnapshot` baselines live (default `.apiweave-snapshots.json`). Commit it so CI compares against the accepted responses. Baselines are keyed by workflow id, and the CLI gives a file the same id on every run (the declared `workflowId`, or one derived from the workflow's name when the file has none), so renaming an id-less workflow orphans its baselines. |
 | `--update-snapshots` | Record every snapshot baseline again instead of comparing. Use it when a response change is intended, then commit the updated file. |
 | `-k, --insecure` | Do not verify TLS certificates (self-signed test servers). |
 | `--proxy <url>` | Send every request through this proxy. Default: the `HTTPS_PROXY` (or `HTTP_PROXY`) variable. See [Network](#network-proxy-and-certificates). |

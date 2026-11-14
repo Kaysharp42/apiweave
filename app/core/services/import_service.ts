@@ -14,6 +14,7 @@ import type {
 } from "../repositories"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
+import { importedWorkflowId } from "./import_identity"
 import type { ScopeResolver } from "./scope_resolver"
 import { parseWsdlSpec, type WsdlImportOptions } from "./wsdl_parsers"
 import {
@@ -287,15 +288,15 @@ export class ImportService {
       : ((bundle.workflow.variables ?? {}) as Record<string, JsonValue>)
 
     // Everything that can reject the bundle runs before the first write.
-    // An export's id is kept when this workspace does not already hold it, so
-    // importing the same bundle again (the CLI does, every run) keeps the
-    // identity snapshot baselines and other by-id records are keyed on.
-    const declaredId = bundle.workflow.workflowId
-    const keepId = declaredId !== undefined && declaredId !== "" && this.workflows.getByIdInWorkspace(declaredId, targetWorkspaceId) === undefined
+    // The same bundle gets the same id on every import (see importedWorkflowId):
+    // the CLI imports into a fresh database each run, and snapshot baselines
+    // and other by-id records are keyed on the workflow id.
+    const name = bundle.workflow.name || "Imported Workflow"
+    const importedId = importedWorkflowId(this.workflows, bundle.workflow.workflowId, name)
     const create: WorkflowCreate = {
       workspaceId: targetWorkspaceId,
-      ...(keepId ? { workflowId: declaredId } : {}),
-      name: bundle.workflow.name || "Imported Workflow",
+      ...(importedId !== undefined ? { workflowId: importedId } : {}),
+      name,
       description: bundle.workflow.description ?? null,
       // A workflow export carries none of its Call Workflow targets: a target
       // stays only if it exists in this workspace, and is cleared otherwise.
