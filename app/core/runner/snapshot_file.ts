@@ -41,11 +41,6 @@ export class FileSnapshotStore implements SnapshotStore {
     this.save(state)
   }
 
-  /** The number of baselines the file holds, for a run's summary. */
-  public count(): number {
-    return Object.values(this.load().workflows).flatMap((workflow) => Object.values(workflow)).flatMap((node) => Object.keys(node)).length
-  }
-
   private load(): FileShape {
     if (this.state !== undefined) return this.state
     this.state = readFile(this.filePath)

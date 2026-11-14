@@ -179,6 +179,7 @@ export class RunScheduler {
   }
 
   /** Raise the cap so a load run's iterations really run at once. Never lowered. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
   public ensureConcurrency(count: number): void {
     if (count <= this.cap) return
     this.cap = count
@@ -241,11 +242,13 @@ export class RunScheduler {
   }
 
   /** A finished run's per-node results, for a load run to fold before clearing them. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
   public resultsOf(runId: string): readonly RunResult[] {
     return this.deps.runs.getById(runId)?.results ?? []
   }
 
   /** Drop a finished iteration's per-node results and bodies: load-mode retention. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
   public clearIterationResults(runId: string): void {
     this.deps.runs.clearNodeResults(runId)
   }
