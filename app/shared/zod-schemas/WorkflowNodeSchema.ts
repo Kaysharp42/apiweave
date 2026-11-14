@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AssertionNodeDataSchema } from "./AssertionNodeDataSchema"
+import { BrowserNodeDataSchema } from "./BrowserNodeDataSchema"
 import { DelayNodeDataSchema } from "./DelayNodeDataSchema"
 import { EndNodeDataSchema } from "./EndNodeDataSchema"
 import { GroupNodeDataSchema } from "./GroupNodeDataSchema"
@@ -78,6 +79,15 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     .strict()
     .describe(
       'Calls one unary gRPC method. The schema comes from server reflection or inline .proto files. One input, one output. The result has response.body (the decoded message), response.status (the gRPC code name, e.g. "OK"), response.statusCode, response.statusMessage, response.headers and response.trailers. Any non-OK status fails the node unless it is the configured expectedStatus.',
+    ),
+  baseNode
+    .extend({
+      type: z.literal("browser"),
+      config: BrowserNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe(
+      "One step in a web page, run in a real browser (Chrome or Edge). One input, one output. All browser nodes in a run share one page, in order: they must form a single chain (no parallel browser branches). The first one is usually a navigate.",
     ),
   baseNode
     .extend({

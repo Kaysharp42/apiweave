@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { ZodError } from "zod"
+import { z, ZodError } from "zod"
+import { BrowserNodeDataSchema } from "../zod-schemas/BrowserNodeDataSchema"
 import { WorkflowNodeSchema } from "../zod-schemas/WorkflowNodeSchema"
 import { WorkflowSchema } from "../zod-schemas/WorkflowSchema"
 
@@ -207,5 +208,81 @@ describe("WorkflowNodeSchema — grpc node", () => {
     expect(grpc({ callType: "unary", surprise: 1 }).success).toBe(false)
     expect(grpc({ callType: "bidirectional" }).success).toBe(false)
     expect(grpc({ deadline: 0 }).success).toBe(false)
+  })
+})
+
+describe("WorkflowNodeSchema — browser node", () => {
+  const browser = (config: unknown) => WorkflowNodeSchema.safeParse({ nodeId: "b1", type: "browser", position: { x: 0, y: 0 }, config })
+
+  it("accepts the login example from the browser steps plan", () => {
+    // The five steps in docs/plans/browser-steps-plan.md § Example.
+    const steps = [
+      { nodeId: "b1", config: { action: "navigate", url: "{{env.BASE_URL}}/login" } },
+      { nodeId: "b2", config: { action: "fill", locator: { kind: "role", role: "textbox", name: "Email" }, value: "{{env.TEST_EMAIL}}" } },
+      { nodeId: "b3", config: { action: "fill", locator: { kind: "role", role: "textbox", name: "Password" }, value: "{{secrets.TEST_PASSWORD}}" } },
+      { nodeId: "b4", config: { action: "click", locator: { kind: "role", role: "button", name: "Sign in" } } },
+      { nodeId: "b5", config: { action: "expect-text", locator: { kind: "role", role: "heading", name: "Dashboard" }, text: "Dashboard", match: "contains" } },
+    ]
+    for (const step of steps) {
+      expect(
+        WorkflowNodeSchema.safeParse({ ...step, type: "browser", position: { x: 0, y: 0 } }).success,
+        step.nodeId,
+      ).toBe(true)
+    }
+  })
+
+  it("accepts a locator nested two levels inside a frame, with hasText and nth", () => {
+    expect(browser({
+      action: "click",
+      button: "left",
+      clickCount: 2,
+      modifiers: ["Control", "Shift"],
+      dialog: "accept",
+      locator: {
+        kind: "role",
+        role: "button",
+        name: "Delete",
+        exact: true,
+        frame: "iframe[title='embedded']",
+        hasText: "Row B",
+        nth: -1,
+        within: {
+          kind: "css",
+          value: "table.orders",
+          nth: 0,
+          within: { kind: "testId", value: "orders-panel" },
+        },
+      },
+    }).success).toBe(true)
+    expect(browser({ action: "extract", from: "attribute", attribute: "href", locator: { kind: "css", value: "a.next" }, variable: "next_url" }).success).toBe(true)
+    expect(browser({ action: "expect-url", url: "{{env.BASE_URL}}/dashboard", match: "matches" }).success).toBe(true)
+    expect(browser({ action: "press", key: "Control+A" }).success).toBe(true)
+  })
+
+  it("rejects an unknown action", () => {
+    expect(browser({ action: "drag", locator: { kind: "css", value: "#row" } }).success).toBe(false)
+  })
+
+  it("rejects an unknown locator kind and an extra field on a member", () => {
+    expect(browser({ action: "click", locator: { kind: "xpath", value: "//button" } }).success).toBe(false)
+    expect(browser({ action: "click", locator: { kind: "css", value: "#save", surprise: 1 } }).success).toBe(false)
+    expect(browser({ action: "hover", locator: { kind: "css", value: "#save" }, surprise: 1 }).success).toBe(false)
+  })
+
+  it("rejects an extract that lacks what its from requires", () => {
+    expect(browser({ action: "extract", from: "attribute", locator: { kind: "css", value: "a" }, variable: "href" }).success).toBe(false)
+    expect(browser({ action: "extract", from: "text", variable: "heading" }).success).toBe(false)
+    expect(browser({ action: "extract", from: "url", variable: "url" }).success).toBe(true)
+    expect(browser({ action: "extract", from: "title", variable: "title" }).success).toBe(true)
+  })
+
+  it("rejects a click without a locator", () => {
+    expect(browser({ action: "click" }).success).toBe(false)
+  })
+
+  it("converts to the draft-7 JSON Schema that workflows.nodeSchema publishes", () => {
+    const jsonSchema = z.toJSONSchema(BrowserNodeDataSchema, { target: "draft-7", io: "input" })
+    expect(Array.isArray(jsonSchema["oneOf"])).toBe(true)
+    expect(jsonSchema["description"]).toContain("single ordered chain")
   })
 })

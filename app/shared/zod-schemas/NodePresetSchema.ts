@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AssertionNodeDataSchema } from "./AssertionNodeDataSchema"
+import { BrowserNodeDataSchema } from "./BrowserNodeDataSchema"
 import { DelayNodeDataSchema } from "./DelayNodeDataSchema"
 import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { JsonValueSchema } from "./JsonValueSchema"
@@ -42,6 +43,7 @@ const CONFIG_SCHEMA_BY_NODE_TYPE = {
   sse: SseNodeDataSchema,
   websocket: WebsocketNodeDataSchema,
   grpc: GrpcNodeDataSchema,
+  browser: BrowserNodeDataSchema,
   assertion: AssertionNodeDataSchema,
   delay: DelayNodeDataSchema,
   merge: MergeNodeDataSchema,

@@ -11,6 +11,7 @@ export const WorkflowNodeTypeSchema = z.enum([
   "sse",
   "websocket",
   "grpc",
+  "browser",
   "assertion",
   "delay",
   "merge",
