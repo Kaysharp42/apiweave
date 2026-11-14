@@ -5,7 +5,7 @@
 | Phase | Branch | State |
 | --- | --- | --- |
 | 0: Spike — packaging, CLI, recorder payloads, toolbar | `Kaysharp42/playwright-automation` | **Done** (findings below) |
-| 1: `browser` node, runner, evidence | `feat/browser-node` | Not started |
+| 1: `browser` node, runner, evidence | `Kaysharp42/playwright-automation` | **Done** (notes below) |
 | 2: Agents author and repair browser steps over MCP | `feat/browser-agents` | Not started |
 | 3: Recorder — record steps into nodes | `feat/browser-recorder` | Not started |
 | 4: Checks, extracts and dialogs while recording | `feat/browser-recorder-checks` | Not started |
@@ -325,6 +325,16 @@ Steps written by hand in the panel or JSON editor. Since node schemas reach agen
 - CLI: `apiweave run` on an exported fixture workflow with `--browser msedge` exits 0, and 1 after the fixture text changes.
 
 **Docs:** `docs/features/browser-steps.md` (new), `workflows-and-nodes.md`, `known-limitations.md`, the MCP guide (`core/mcp/guide.ts`), `CHANGELOG.md` under Unreleased.
+
+**As built (differences from the text above):**
+- Browser errors are fixed `Browser step: …` messages built from the action and the locator as written; `safeErrorClass` keeps that prefix. Expected/found values, Playwright's `detail`, the page URL (query and fragment redacted) and the ARIA snapshot live in the result's `browser` member, which the run's masker scrubs like a response body.
+- `{{secrets.*}}` is accepted only in a fill's value. An unresolved placeholder fails the step instead of being typed.
+- In an agent run limited to approved hosts, `navigate` and typing a secret are refused on any other host (`SafeHttp.assertHostAllowed`).
+- A step that opens a popup closes it and fails.
+- The rerun rule also treats a Call Workflow node whose target has browser steps as part of the chain. Load runs ask the scheduler (`hasBrowserSteps`) so called workflows count.
+- `runs_getNodeResult` does not return the `browser` member yet: that is Phase 2. The network settings (proxy, CAs, client certificates) do not apply to browser steps yet.
+- esbuild's Node bundles turn lazy `import()` into `require` (`supported: { "dynamic-import": false }`); the packaged smoke test loads `playwright-core` (`loadBrowserDriver`).
+- A `navigate` shows as `PAGE /path` in the workspace map.
 
 **Done when:** the example workflow, plus one HTTP node, runs green against a fixture page from the desktop app (headless and with **Show the browser** on) and from the CLI; it fails with a screenshot and a masked ARIA snapshot when the heading text changes; and a packaged Windows build (`npm run build`, `scripts/smoke-packaged.mjs`) runs it.
 
