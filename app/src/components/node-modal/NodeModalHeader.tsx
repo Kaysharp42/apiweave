@@ -27,6 +27,8 @@ export function NodeModalHeader({
         ? "WebSocket"
       : nodeType === "grpc"
         ? "gRPC Call"
+      : nodeType === "browser"
+        ? "Browser step"
       : nodeType === "assertion"
         ? "Assertion"
         : nodeType === "delay"

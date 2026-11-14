@@ -133,7 +133,7 @@ Every node has:
 | Field      | Type   | Required | Description |
 |-----------|--------|----------|-------------|
 | nodeId    | string | yes | Unique ID. Convention: \`{type}_{unix_timestamp_ms}\` e.g. \`httpRequest_1738900000000\` |
-| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`sse\`, \`websocket\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
+| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`sse\`, \`websocket\`, \`grpc\`, \`browser\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
 | label     | string | no  | Display name shown on the canvas |
 | position  | object | yes | \`{ "x": number, "y": number }\` — canvas coordinates |
 | config    | object | yes | Node-type-specific configuration (see below) |
@@ -275,6 +275,36 @@ when it closes. \`url\` must be \`ws://\` or \`wss://\`. Each message is
 
 The result body has \`messages\`, \`messageCount\`, \`termination\`, \`closeCode\`
 and \`closeReason\`. Each message is \`{ "type": "text" | "binary", "data" }\`.
+
+### Browser Step Node (\`type: "browser"\`)
+One step in a web page, run by a real browser. Every browser node in a run
+shares one page, in order: they form a single chain with no parallel browser
+branches, and the first one is usually a \`navigate\`. \`action\` picks the step:
+\`navigate\`, \`click\`, \`fill\`, \`press\`, \`check\`, \`uncheck\`, \`select\`, \`hover\`,
+\`expect-visible\`, \`expect-text\`, \`expect-value\`, \`expect-url\` or \`extract\`.
+A \`locator\` names the element (\`{ "kind": "role", "role": "button", "name": "Save" }\`;
+other kinds are \`label\`, \`placeholder\`, \`text\`, \`testId\`, \`alt\`, \`title\`, \`css\`).
+Only \`fill\` accepts \`{{secrets.*}}\`, and a password must be \`{{secrets.NAME}}\`.
+
+\`\`\`json
+{
+  "nodeId": "browser_1738900000005",
+  "type": "browser",
+  "label": "Save the order",
+  "position": { "x": 700, "y": 600 },
+  "config": {
+    "action": "click",
+    "locator": { "kind": "role", "role": "button", "name": "Save" },
+    "timeoutMs": 10000
+  }
+}
+\`\`\`
+
+The result's \`browser\` field has the page \`url\` and \`title\` after the step,
+\`expected\`/\`actual\` for a check or an extract, and on failure \`detail\`, an
+\`ariaSnapshot\` and a \`screenshotArtifactId\`. An \`extract\` step writes the value
+it read into the variable named by \`variable\`, which later nodes read as
+\`{{variables.NAME}}\`.
 
 ### 5. Assertion Node (\`type: "assertion"\`)
 Validates API responses. Has **two output handles**: Pass (✓) and Fail (✗) for branching.

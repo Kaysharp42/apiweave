@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import type { Node, XYPosition } from "@xyflow/react";
 import type { CanvasNode, CanvasNodeTemplate } from "../types";
+import { configFromDraft, emptyDraft } from "../utils/browserStep";
 import {
   adoptIntoFrame,
   FRAME_FALLBACK_HEIGHT,
@@ -75,6 +76,8 @@ function getDefaultConfig(type: string): NodeConfig {
         schemaSource: "reflection",
         extractors: {},
       };
+    case "browser":
+      return configFromDraft(emptyDraft("navigate"));
     case "assertion":
       return { assertions: [] };
     case "delay":

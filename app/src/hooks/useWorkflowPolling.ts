@@ -118,12 +118,16 @@ function applyRunResults(
         readonly resolved: boolean;
       }[]
     | undefined,
+  runId: string,
 ): void {
   for (const result of results) {
     statuses[result.nodeId] = {
       status: result.status,
       result: {
         ...(resultFromRunResult(result) as Record<string, unknown>),
+        // The node's pane reads the run's artifacts (a browser step's failed
+        // screenshot), and only the run that produced the result knows its id.
+        runId,
         ...(resolvedSecrets && resolvedSecrets.length > 0
           ? { resolvedSecrets }
           : {}),
@@ -444,7 +448,7 @@ export default function useWorkflowPolling({
         const resolvedSecrets = run.resolvedSecrets;
         const statuses: NodeStatuses = {};
         applyRunNodeStatuses(statuses, run.nodeStatuses);
-        applyRunResults(statuses, run.results ?? [], resolvedSecrets);
+        applyRunResults(statuses, run.results ?? [], resolvedSecrets, runId);
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
       } catch {
         // ignore — the canvas keeps the streamed statuses
@@ -991,7 +995,7 @@ export default function useWorkflowPolling({
         const resolvedSecrets = fullRun.resolvedSecrets;
         const statuses: NodeStatuses = {};
         applyRunNodeStatuses(statuses, fullRun.nodeStatuses);
-        applyRunResults(statuses, fullRun.results ?? [], resolvedSecrets);
+        applyRunResults(statuses, fullRun.results ?? [], resolvedSecrets, fullRun.runId);
         // Not paced: opening a finished run is reading a record, not watching
         // it happen. Dropping the queue first stops a still-draining playback
         // from repainting over the run just loaded.

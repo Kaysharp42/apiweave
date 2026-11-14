@@ -8,6 +8,7 @@ import {
   KeyRound,
   Link2,
   ListChecks,
+  MousePointerClick,
   Radio,
   Settings,
   Waypoints,
@@ -24,6 +25,8 @@ import {
   SseConfigPanel,
   WebsocketConfigPanel,
   GrpcConfigPanel,
+  BrowserConfigPanel,
+  BrowserOutputPanel,
   HttpRequestOutputPanel,
   NodeOutputPanel,
   AssertionConfigPanel,
@@ -43,6 +46,7 @@ import type { NodeModalMergeConfig } from "../types/NodeModalMergeConfig";
 import { matchShortcut } from "../constants/keyboardShortcuts";
 import type { NodeModalWorkflowCallConfig } from "../types/NodeModalWorkflowCallConfig";
 import type {
+  BrowserOutputPanelProps,
   NodeModalAssertionConfig,
   NodeModalAssertionTabKey,
   NodeModalDelayConfig,
@@ -54,6 +58,7 @@ import type {
   NodeModalWebsocketTabKey,
   NodeModalGrpcConfig,
   NodeModalGrpcTabKey,
+  NodeModalBrowserTabKey,
   NodeModalMergeTabKey,
   NodeModalShellTab,
   SelectOption,
@@ -104,6 +109,11 @@ const WEBSOCKET_TABS: NodeModalShellTab[] = [
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
+const BROWSER_TABS: NodeModalShellTab[] = [
+  { key: "step", label: "Step", icon: MousePointerClick },
+  { key: "settings", label: "Settings", icon: Settings },
+];
+
 const GRPC_TABS: NodeModalShellTab[] = [
   { key: "endpoint", label: "Endpoint", icon: Waypoints },
   { key: "message", label: "Message", icon: FileText },
@@ -137,6 +147,7 @@ function getTypeLabel(nodeType: NodeModalNodeType): string {
   if (nodeType === "sse") return "SSE Stream";
   if (nodeType === "websocket") return "WebSocket";
   if (nodeType === "grpc") return "gRPC Call";
+  if (nodeType === "browser") return "Browser step";
   return nodeType.charAt(0).toUpperCase() + nodeType.slice(1);
 }
 
@@ -168,6 +179,8 @@ export function NodeModal({
   const [websocketActiveTab, setWebsocketActiveTab] =
     useState<NodeModalWebsocketTabKey>("endpoint");
   const [grpcActiveTab, setGrpcActiveTab] = useState<NodeModalGrpcTabKey>("endpoint");
+  const [browserActiveTab, setBrowserActiveTab] =
+    useState<NodeModalBrowserTabKey>("step");
   const [assertionActiveTab, setAssertionActiveTab] =
     useState<NodeModalAssertionTabKey>("rules");
   const [delayActiveTab, setDelayActiveTab] =
@@ -188,6 +201,7 @@ export function NodeModal({
     setSseActiveTab("endpoint");
     setWebsocketActiveTab("endpoint");
     setGrpcActiveTab("endpoint");
+    setBrowserActiveTab("step");
     setAssertionActiveTab("rules");
     setDelayActiveTab("duration");
     setMergeActiveTab("strategy");
@@ -413,6 +427,16 @@ export function NodeModal({
       );
     }
 
+    if (node.type === "browser") {
+      return (
+        <BrowserConfigPanel
+          initialConfig={node.data.config || EMPTY_CONFIG}
+          workingDataRef={workingDataRef}
+          activeTab={browserActiveTab}
+        />
+      );
+    }
+
     if (node.type === "assertion") {
       return (
         <AssertionConfigPanel
@@ -473,6 +497,14 @@ export function NodeModal({
     return null;
   };
 
+  // The canvas stores a node's result loosely; the browser pane reads its own
+  // shape, so confirm it is a record before handing it over.
+  const browserOutput: BrowserOutputPanelProps["output"] =
+    typeof node.data.executionResult === "object" &&
+    node.data.executionResult !== null
+      ? (node.data.executionResult as BrowserOutputPanelProps["output"])
+      : null;
+
   const responsePane =
     node.type === "http-request" ? (
       <HttpRequestOutputPanel
@@ -484,6 +516,12 @@ export function NodeModal({
         extractors={httpConfig.extractors ?? {}}
         onAddExtractor={addExtractor}
         onRemoveExtractor={removeExtractor}
+      />
+    ) : node.type === "browser" ? (
+      <BrowserOutputPanel
+        output={browserOutput}
+        executionStatus={node.data.executionStatus}
+        workspaceId={workspaceId}
       />
     ) : (
       <NodeOutputPanel
@@ -509,6 +547,8 @@ export function NodeModal({
         ? WEBSOCKET_TABS
       : node.type === "grpc"
         ? GRPC_TABS
+      : node.type === "browser"
+        ? BROWSER_TABS
       : node.type === "assertion"
         ? ASSERTION_TABS
         : node.type === "delay"
@@ -525,6 +565,8 @@ export function NodeModal({
         ? websocketActiveTab
       : node.type === "grpc"
         ? grpcActiveTab
+      : node.type === "browser"
+        ? browserActiveTab
       : node.type === "assertion"
         ? assertionActiveTab
         : node.type === "delay"
@@ -548,6 +590,8 @@ export function NodeModal({
         if (node.type === "websocket")
           setWebsocketActiveTab(tabKey as NodeModalWebsocketTabKey);
         if (node.type === "grpc") setGrpcActiveTab(tabKey as NodeModalGrpcTabKey);
+        if (node.type === "browser")
+          setBrowserActiveTab(tabKey as NodeModalBrowserTabKey);
         if (node.type === "assertion")
           setAssertionActiveTab(tabKey as NodeModalAssertionTabKey);
         if (node.type === "delay")

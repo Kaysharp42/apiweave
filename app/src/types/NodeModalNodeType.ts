@@ -3,6 +3,7 @@ export type NodeModalNodeType =
   | "sse"
   | "websocket"
   | "grpc"
+  | "browser"
   | "assertion"
   | "delay"
   | "merge"

@@ -24,6 +24,7 @@ export const getNodeIcon = (type: NodeModalNodeType): LucideIcon => {
     sse: Radio,
     websocket: Cable,
     grpc: Waypoints,
+    browser: Globe,
     assertion: BadgeCheck,
     delay: Timer,
     merge: GitMerge,

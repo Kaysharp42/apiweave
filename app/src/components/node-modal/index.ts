@@ -4,6 +4,8 @@ export { HTTPRequestConfigPanel } from "./HTTPRequestConfigPanel";
 export { SseConfigPanel } from "./SseConfigPanel";
 export { WebsocketConfigPanel } from "./WebsocketConfigPanel";
 export { GrpcConfigPanel } from "./GrpcConfigPanel";
+export { BrowserConfigPanel } from "./BrowserConfigPanel";
+export { BrowserOutputPanel } from "./BrowserOutputPanel";
 export { HttpRequestOutputPanel } from "./HttpRequestOutputPanel";
 export { NodeOutputPanel } from "./NodeOutputPanel";
 export { AssertionConfigPanel } from "./AssertionConfigPanel";

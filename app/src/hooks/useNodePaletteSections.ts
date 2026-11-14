@@ -15,6 +15,7 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import { useWorkspacePresets } from "./useWorkspacePresets";
 import { NODE_MODAL_TYPE_LABELS } from "../utils/nodeModalMeta";
 import { presetDragTemplate } from "../utils/nodePresets";
+import { configFromDraft, emptyDraft } from "../utils/browserStep";
 import type {
   ImportedItem,
   NodePaletteItem,
@@ -85,6 +86,43 @@ export const builtInNodePaletteSections: readonly NodePaletteSectionType[] = [
         type: "grpc",
         label: "gRPC Call",
         description: "Call a unary gRPC method",
+      },
+    ],
+  },
+  {
+    key: "browser",
+    title: "Browser",
+    icon: Globe,
+    nodes: [
+      {
+        type: "browser",
+        label: "Open a page",
+        description: "Navigate to a URL",
+        config: { action: "navigate", url: "{{env.BASE_URL}}/" },
+      },
+      {
+        type: "browser",
+        label: "Click",
+        description: "Click a button, link or element",
+        config: configFromDraft(emptyDraft("click")),
+      },
+      {
+        type: "browser",
+        label: "Type into a field",
+        description: "Fill a text field",
+        config: configFromDraft(emptyDraft("fill")),
+      },
+      {
+        type: "browser",
+        label: "Check text",
+        description: "Wait until an element shows the expected text",
+        config: configFromDraft(emptyDraft("expect-text")),
+      },
+      {
+        type: "browser",
+        label: "Save a value",
+        description: "Read text or an attribute into a variable",
+        config: configFromDraft(emptyDraft("extract")),
       },
     ],
   },
