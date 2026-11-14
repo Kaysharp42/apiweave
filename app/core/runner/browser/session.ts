@@ -1,0 +1,131 @@
+import type { Browser, Page } from "playwright-core"
+import type { BrowserChannel } from "@shared/types/BrowserChannel"
+
+/** How a run's browser is started. */
+export interface BrowserLaunchSettings {
+  /** Absent: the first of Chrome, Edge and Playwright's Chromium that starts. */
+  readonly channel?: BrowserChannel
+  /** False shows the browser window while the run drives it. */
+  readonly headless: boolean
+}
+
+/** The order an unset channel is tried in: the browsers people already have first. */
+const AUTO_CHANNELS: readonly BrowserChannel[] = ["chrome", "msedge", "chromium"]
+
+const CHANNEL_NAMES: Readonly<Record<BrowserChannel, string>> = {
+  chrome: "Google Chrome",
+  msedge: "Microsoft Edge",
+  chromium: "Playwright Chromium",
+}
+
+/** Every browser failure message starts with this, so run history can keep it (see `safeErrorClass`). */
+export const BROWSER_STEP_PREFIX = "Browser step:"
+
+/** The browser could not be started, or was closed under a step. Its message is value-free. */
+export class BrowserSessionError extends Error {
+  public constructor(message: string) {
+    super(`${BROWSER_STEP_PREFIX} ${message}`)
+    this.name = "BrowserSessionError"
+  }
+}
+
+/** Playwright's message when a channel's executable is missing, as opposed to failing to start. */
+function isMissingBrowser(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /is not found at|Executable doesn't exist|distribution '[^']+' is not found/i.test(message)
+}
+
+/** The first line of a launch error, which names the cause (a policy, a crash) and never a workflow value. */
+function firstLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return (message.split("\n").find((line) => line.trim() !== "") ?? "").trim().slice(0, 200)
+}
+
+/**
+ * One run's browser: launched by the first step that needs it, shared by every
+ * `browser` node of the run (Call Workflow children included), and closed by
+ * the executor that created it. Steps run one at a time on its single page,
+ * whatever the graph does, because two steps interleaved on one page would
+ * act on each other's state.
+ */
+export class BrowserSession {
+  private pagePromise: Promise<Page> | null = null
+  private browser: Browser | null = null
+  private closed = false
+  private queue: Promise<void> = Promise.resolve()
+
+  public constructor(private readonly settings: BrowserLaunchSettings) {}
+
+  /** Run `step` on the page once every step queued before it has finished, launching the browser first if needed. */
+  public async run<T>(step: (page: Page) => Promise<T>): Promise<T> {
+    const previous = this.queue
+    let release!: () => void
+    this.queue = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await previous
+    try {
+      return await step(await this.page())
+    } finally {
+      release()
+    }
+  }
+
+  /** The page, if a step has already launched the browser; never launches one. */
+  public async currentPage(): Promise<Page | null> {
+    if (this.pagePromise === null || this.closed) return null
+    try {
+      return await this.pagePromise
+    } catch {
+      return null
+    }
+  }
+
+  /** Close the browser. Safe to call more than once, and while a launch is in flight. */
+  public async close(): Promise<void> {
+    this.closed = true
+    const browser = this.browser
+    this.browser = null
+    if (browser !== null) await browser.close().catch(() => undefined)
+  }
+
+  private page(): Promise<Page> {
+    if (this.closed) return Promise.reject(new BrowserSessionError("the browser was closed before this step"))
+    this.pagePromise ??= this.launch()
+    return this.pagePromise
+  }
+
+  private async launch(): Promise<Page> {
+    // Loaded on the first browser step, so a run (or a CLI start) without one never pays for it.
+    const { chromium } = await import("playwright-core")
+    const channels = this.settings.channel !== undefined ? [this.settings.channel] : AUTO_CHANNELS
+    const missing: BrowserChannel[] = []
+    for (const channel of channels) {
+      let browser: Browser
+      try {
+        browser = await chromium.launch({
+          headless: this.settings.headless,
+          ...(channel === "chromium" ? {} : { channel }),
+        })
+      } catch (error) {
+        if (isMissingBrowser(error)) {
+          missing.push(channel)
+          continue
+        }
+        throw new BrowserSessionError(`${CHANNEL_NAMES[channel]} could not be started: ${firstLine(error)}`)
+      }
+      if (this.closed) {
+        await browser.close().catch(() => undefined)
+        throw new BrowserSessionError("the run ended while the browser was starting")
+      }
+      this.browser = browser
+      const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+      return context.newPage()
+    }
+    throw new BrowserSessionError(
+      this.settings.channel !== undefined
+        ? `${CHANNEL_NAMES[this.settings.channel]} was not found on this machine. Choose another browser in Settings → Browser, or pass --browser to apiweave run.`
+        : "no supported browser was found on this machine. Install Google Chrome or Microsoft Edge.",
+    )
+  }
+}

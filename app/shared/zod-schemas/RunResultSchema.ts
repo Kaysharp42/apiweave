@@ -3,6 +3,7 @@ import { JsonValueSchema } from "./JsonValueSchema"
 import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 import { TimestampSchema } from "./TimestampSchema"
 import { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
+import { BrowserStepResultSchema } from "./BrowserStepResultSchema"
 import { ExtractorOutcomeSchema } from "./ExtractorOutcomeSchema"
 import { HttpAttemptSchema } from "./HttpAttemptSchema"
 import { ScriptOutcomeSchema } from "./ScriptOutcomeSchema"
@@ -38,6 +39,8 @@ export const RunResultSchema = z
     // An http-request node's pre-request and post-response scripts, in the order they ran.
     scripts: z.array(ScriptOutcomeSchema).optional(),
     extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
+    // A browser node's step: the page after it, compared values, and on failure its evidence.
+    browser: BrowserStepResultSchema.optional(),
     // Call Workflow summary only — never the sub-workflow's own raw per-node
     // results, which would bypass the top-level redaction pass in scheduler.ts.
     subWorkflow: z

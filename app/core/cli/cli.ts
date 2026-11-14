@@ -39,6 +39,8 @@ import { MAX_LOAD_ITERATIONS, buildLoadRun, startLoadRun } from "../runner/load"
 import { generateId } from "../id"
 import { createSecretMasker } from "../runner/secret_masker"
 import { CryptoRandomProvider, WallClockProvider } from "../runner/harness/providers"
+import type { BrowserChannel } from "@shared/types/BrowserChannel"
+import { BrowserChannelSchema } from "@shared/zod-schemas/BrowserChannelSchema"
 
 /**
  * `apiweave run <file>`: the headless runner CI uses. Plain Node — no Electron,
@@ -117,6 +119,9 @@ Options:
       --update-snapshots          Record every snapshot baseline again instead of comparing
       --contract <off|warn|fail>  Override every node's contract check (default: each node's
                                   own setting, fail for OpenAPI-imported nodes)
+      --browser <name>            Browser for browser steps: chrome, msedge or chromium
+                                  (default: the first of them installed)
+      --headed                    Show the browser window while browser steps run
   -k, --insecure                  Do not verify TLS certificates
       --proxy <url>               Send requests through this proxy (default: the
                                   HTTPS_PROXY or HTTP_PROXY variable; NO_PROXY applies)
@@ -182,6 +187,9 @@ interface CliOptions {
   /** Where snapshot baselines are read and written. */
   readonly snapshotsPath: string
   readonly updateSnapshots: boolean
+  /** Absent: the first installed of Chrome, Edge and Chromium. */
+  readonly browser: BrowserChannel | undefined
+  readonly headed: boolean
   readonly insecure: boolean
   readonly proxy: string | undefined
   readonly caCerts: readonly string[]
@@ -216,6 +224,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       contract: { type: "string" },
       snapshots: { type: "string" },
       "update-snapshots": { type: "boolean" },
+      browser: { type: "string" },
+      headed: { type: "boolean" },
       insecure: { type: "boolean", short: "k" },
       proxy: { type: "string" },
       "ca-cert": { type: "string", multiple: true },
@@ -230,6 +240,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
   const timeoutMs = positiveInteger(values["timeout-request"], "--timeout-request must be a positive whole number of milliseconds")
   const iterationCount = positiveInteger(values["iteration-count"], "--iteration-count must be a positive whole number")
   const contract = parseContract(values.contract)
+  const browser = values.browser === undefined ? undefined : BrowserChannelSchema.safeParse(values.browser)
+  if (browser !== undefined && !browser.success) throw new UsageError("--browser must be chrome, msedge or chromium")
   const snapshotsPath = path.resolve(cwd, values.snapshots ?? ".apiweave-snapshots.json")
   const concurrency = positiveInteger(values.concurrency, "--concurrency must be a positive whole number")
   const durationMs = parseDuration(values.duration, "--duration")
@@ -268,6 +280,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     contract,
     snapshotsPath,
     updateSnapshots: values["update-snapshots"] === true,
+    browser: browser?.data,
+    headed: values.headed === true,
     insecure: values.insecure === true,
     proxy: values.proxy,
     caCerts: (values["ca-cert"] ?? []).map((file) => path.resolve(cwd, file)),
@@ -477,6 +491,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       ...(options.contract !== undefined ? { contract: options.contract } : {}),
       snapshots,
       ...(options.updateSnapshots ? { updateSnapshots: true } : {}),
+      browser: () => ({ headless: !options.headed, ...(options.browser !== undefined ? { channel: options.browser } : {}) }),
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }

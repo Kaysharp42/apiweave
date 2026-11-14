@@ -32,6 +32,8 @@ export interface LoadScheduler {
   clearIterationResults(runId: string): void
   /** Make room for `count` runs at once: the scheduler's cap would otherwise queue them and inflate latency. */
   ensureConcurrency(count: number): void
+  /** Whether the workflow, or any workflow it calls, has browser steps. */
+  hasBrowserSteps(workflowId: string, workspaceId: string): boolean
 }
 
 /** Most iterations one load run may launch, whatever the data or duration says. */
@@ -85,6 +87,10 @@ export function startLoadRun(
   }
   if (!Number.isInteger(options.iterations) || options.iterations < 1 || options.iterations > MAX_LOAD_ITERATIONS) {
     throw new ValidationError(`A load run needs between 1 and ${MAX_LOAD_ITERATIONS} iterations.`)
+  }
+  // Each iteration would start a real browser: a load run would measure the machine, not the service.
+  if (scheduler.hasBrowserSteps(request.workflowId, request.workspaceId)) {
+    throw new ValidationError("A load run cannot run a workflow with browser steps.")
   }
   scheduler.ensureConcurrency(options.concurrency)
   const total = options.iterations
