@@ -44,6 +44,9 @@ import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
+import type { BrowserBridge } from "@shared/types/BrowserBridge";
+import type { BrowserChannel } from "@shared/types/BrowserChannel";
+import type { BrowserSettings } from "@shared/types/BrowserSettings";
 import type { GitAccountList } from "@shared/types/GitAccountList";
 import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
@@ -163,6 +166,7 @@ declare global {
     __APIWEAVE_AGENTS__?: AgentsBridge;
     __APIWEAVE_OAUTH__?: OAuthBridge;
     __APIWEAVE_NETWORK__?: NetworkBridge;
+    __APIWEAVE_BROWSER__?: BrowserBridge;
     __APIWEAVE_GIT__?: GitBridge;
     apiweave?: typeof apiweave;
   }
@@ -182,6 +186,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_AGENTS__?: AgentsBridge;
   __APIWEAVE_OAUTH__?: OAuthBridge;
   __APIWEAVE_NETWORK__?: NetworkBridge;
+  __APIWEAVE_BROWSER__?: BrowserBridge;
   __APIWEAVE_GIT__?: GitBridge;
 };
 
@@ -1311,6 +1316,31 @@ export const network = {
   chooseFile: (): Promise<string | null> =>
     getNetworkBridge()?.chooseFile().catch(unwrapRemoteError) ??
     networkDesktopOnly(),
+} as const;
+
+function getBrowserBridge(): BrowserBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_BROWSER__ ??
+    globalApiweave.__APIWEAVE_BROWSER__
+  );
+}
+
+const browserDesktopOnly = (): Promise<never> =>
+  Promise.reject(
+    new Error("Browser settings are only available in the desktop app"),
+  );
+
+/** Settings > Browser. A sibling of `network`, off the router facade: see `BrowserBridge`. */
+export const browser = {
+  getSettings: (): Promise<BrowserSettings> =>
+    getBrowserBridge()?.getSettings().catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  setSettings: (settings: BrowserSettings): Promise<BrowserSettings> =>
+    getBrowserBridge()?.setSettings(settings).catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  listInstalled: (): Promise<readonly BrowserChannel[]> =>
+    getBrowserBridge()?.listInstalled().catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
 } as const;
 
 function getGitBridge(): GitBridge | undefined {

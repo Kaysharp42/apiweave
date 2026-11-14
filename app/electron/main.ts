@@ -49,9 +49,11 @@ import {
   ImportService,
   OAuthService,
   NetworkSettingsService,
+  BrowserSettingsService,
   GrpcDiscoveryService,
 } from "../core/services"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
+import { detectInstalledBrowsers } from "../core/runner/browser/detect"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
 import { AgentEventBroker } from "../core/agents/agent_event_broker"
@@ -70,6 +72,7 @@ import {
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
+  BROWSER_CHANNELS,
   GIT_SIGN_IN_PROMPT_CHANNEL,
   GIT_STATUS_CHANGED_CHANNEL,
   NETWORK_CHANNELS,
@@ -588,6 +591,9 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       bootstrapLog.warn(`network settings not applied: ${error instanceof Error ? error.message : String(error)}`)
     }
+    // Settings > Browser: which installed browser a run drives and whether it
+    // is visible. Read on every launch, so a change applies to the next run.
+    const browserSettings = new BrowserSettingsService(appSettings)
     const functions = new DynamicFunctions(clock, rng)
     // Single run-event broker: the scheduler publishes raw transitions; the
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
@@ -628,6 +634,12 @@ if (!hasSingleInstanceLock) {
       // A failed browser step's screenshot (migration 033) is stored by the
       // executor's evidence path and read back by `runs.getArtifact`.
       saveArtifact: (artifact) => runArtifacts.save(artifact),
+      // Settings > Browser, read at launch. The scheduler forces headless for an
+      // agent-started run, so `showBrowser` only ever affects the user's own.
+      browser: () => {
+        const settings = browserSettings.get()
+        return { headless: !settings.showBrowser, ...(settings.channel ? { channel: settings.channel } : {}) }
+      },
       saveSecret: async (name, value, scope) => {
         await secretService.storePlaintext(scope.workspaceId, { ...scope, name, value, label: "OAuth 2.0 token" })
       },
@@ -1001,6 +1013,13 @@ if (!hasSingleInstanceLock) {
         return result.canceled ? null : (result.filePaths[0] ?? null)
       }),
     )
+
+    // Settings > Browser. Off the router like network:*: which browser runs and
+    // whether a window appears on the user's screen is the user's call, never an
+    // agent's. `listInstalled` launches and closes each candidate to find out.
+    ipcMain.handle(BROWSER_CHANNELS.getSettings, requireTrustedSender(() => browserSettings.get()))
+    ipcMain.handle(BROWSER_CHANNELS.setSettings, requireTrustedSender((settings: unknown) => browserSettings.save(settings)))
+    ipcMain.handle(BROWSER_CHANNELS.listInstalled, requireTrustedSender(() => detectInstalledBrowsers()))
 
     // Version history. Off the router like network:* — see registerGitHandlers.
     const hostCli = new HostCliService()

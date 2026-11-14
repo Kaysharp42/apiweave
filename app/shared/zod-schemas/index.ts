@@ -13,6 +13,7 @@ export { AssertionValidationResultSchema } from "./AssertionValidationResultSche
 export { AssertionNodeDataSchema } from "./AssertionNodeDataSchema"
 export { BrowserAriaRoleSchema, BrowserLocatorSchema } from "./BrowserLocatorSchema"
 export { BrowserChannelSchema } from "./BrowserChannelSchema"
+export { BrowserSettingsSchema } from "./BrowserSettingsSchema"
 export { BrowserNodeDataSchema } from "./BrowserNodeDataSchema"
 export { BrowserStepResultSchema } from "./BrowserStepResultSchema"
 export { AuthConfigSchema, BearerAuthConfigSchema, BasicAuthConfigSchema, ApiKeyAuthConfigSchema, OAuth2AuthConfigSchema, AwsSigV4AuthConfigSchema, DigestAuthConfigSchema, JwtAuthConfigSchema } from "./AuthConfigSchema"

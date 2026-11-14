@@ -568,6 +568,57 @@ describe("Phase 2 — node search over safe fields only", () => {
     expect(byType.items).toEqual([])
   })
 
+  it("matches browser steps on their page, element, checked values, variable and description", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "checkout",
+      nodes: [
+        { nodeId: "open", type: "browser", position: { x: 0, y: 0 }, config: { action: "navigate", url: "{{env.BASE_URL}}/checkout?step=2" } },
+        { nodeId: "fill", type: "browser", position: { x: 100, y: 0 }, config: { action: "fill", locator: { kind: "label", value: "Email" }, value: "{{variables.email}}" } },
+        {
+          nodeId: "row",
+          type: "browser",
+          position: { x: 200, y: 0 },
+          config: {
+            action: "click",
+            locator: { kind: "role", role: "button", name: "Delete", within: { kind: "role", role: "listitem", name: "Row B" } },
+          },
+        },
+        { nodeId: "text", type: "browser", position: { x: 300, y: 0 }, config: { action: "expect-text", locator: { kind: "role", role: "heading", name: "Heading" }, text: "Welcome back" } },
+        {
+          nodeId: "grab",
+          type: "browser",
+          position: { x: 400, y: 0 },
+          config: { action: "extract", from: "text", locator: { kind: "css", value: ".total" }, variable: "orderTotal", description: "Read the cart total" },
+        },
+        { nodeId: "expect-url", type: "browser", position: { x: 500, y: 0 }, config: { action: "expect-url", url: "{{env.BASE_URL}}/thanks" } },
+      ],
+    })
+    const search = async (query: string): Promise<MatchPage> =>
+      dispatchOk<MatchPage>("workflows", "searchNodes", { workspaceId, workflowId: workflow.workflowId, query })
+
+    // A navigate is a route: matched on its path, never its query string.
+    const byPath = await search("/checkout")
+    expect(byPath.items.map((item) => item.nodeId)).toEqual(["open"])
+    expect(byPath.items[0]?.matchedOn).toContain("urlPath")
+    expect((await search("step=2")).totalMatched).toBe(0)
+
+    // The element a step acts on, searched through `within`.
+    expect((await search("email")).items[0]?.matchedOn).toEqual(expect.arrayContaining(["locator"]))
+    expect((await search("row b")).items.map((item) => item.nodeId)).toEqual(["row"])
+    expect((await search("delete")).items.map((item) => item.nodeId)).toEqual(["row"])
+
+    expect((await search("welcome back")).items[0]?.matchedOn).toContain("text")
+    expect((await search("ordertotal")).items[0]?.matchedOn).toContain("variable")
+    expect((await search("cart total")).items[0]?.matchedOn).toContain("description")
+
+    // An expected URL is not a request, and is still matched on its path.
+    const byExpectedUrl = await search("/thanks")
+    expect(byExpectedUrl.items.map((item) => item.nodeId)).toEqual(["expect-url"])
+    expect(byExpectedUrl.items[0]?.matchedOn).toContain("urlPath")
+  })
+
   it("never matches bodies, headers, auth or query values", async () => {
     const workspaceId = await seedWorkspace()
     const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {

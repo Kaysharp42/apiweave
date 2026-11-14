@@ -122,6 +122,7 @@ rejected config names its node's list index and field in the error path.
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`websocket\` | opens a bounded WebSocket, sends its messages, captures what comes back | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`grpc\` | calls one unary gRPC method | 1 in, 1 out |
+| \`browser\` | one step in a web page, in a real Chrome or Edge | 1 in, 1 out; all browser steps share one ordered chain |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |

@@ -15,6 +15,7 @@ import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import type { OAuthBridge } from "@shared/types/OAuthBridge"
 import type { NetworkBridge } from "@shared/types/NetworkBridge"
+import type { BrowserBridge } from "@shared/types/BrowserBridge"
 import type { GitBridge } from "@shared/types/GitBridge"
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
@@ -24,6 +25,7 @@ import {
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
+  BROWSER_CHANNELS,
   GIT_CHANNELS,
   GIT_SIGN_IN_PROMPT_CHANNEL,
   GIT_STATUS_CHANGED_CHANNEL,
@@ -241,6 +243,15 @@ const networkBridge: NetworkBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_NETWORK__", networkBridge)
+
+/** Settings > Browser — privileged for the same reason, and because it probes the machine. */
+const browserBridge: BrowserBridge = {
+  getSettings: invokeBridge(BROWSER_CHANNELS.getSettings),
+  setSettings: invokeBridge(BROWSER_CHANNELS.setSettings),
+  listInstalled: invokeBridge(BROWSER_CHANNELS.listInstalled),
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_BROWSER__", browserBridge)
 
 /** A workspace's version history: main runs git — a privileged world for the same reason as the network bridge. */
 const gitBridge: GitBridge = {

@@ -47,6 +47,14 @@ export function nodeEndpoint(node: WorkflowNode): { readonly method?: string; re
     // The call's identity is its service and method: they stand where an HTTP node's path does.
     return typeof service === "string" && typeof method === "string" ? { method: "RPC", urlPath: `/${service}/${method}` } : undefined
   }
+  if (node.type === "browser") {
+    // Only a navigate reaches a route; a click or a check acts on the page it
+    // is already on, so it has no endpoint. "PAGE" stands where a method does,
+    // as "RPC" does for gRPC: a page load is not an API request.
+    if (node.config?.action !== "navigate") return undefined
+    const url = node.config.url
+    return typeof url === "string" ? { method: "PAGE", urlPath: urlPathTemplate(url) } : undefined
+  }
   return undefined
 }
 
@@ -88,6 +96,9 @@ export function nodeReferences(node: WorkflowNode): NodeReference[] {
   const add: AddReference = (ref, field, role) => {
     found.set(`${ref}\u0000${field}\u0000${role}`, { ref, field, role })
   }
+  // A browser extract step writes the variable named in `variable`, which holds
+  // no `{{…}}` placeholder for the scan below to find.
+  if (node.type === "browser" && node.config?.action === "extract") add(`variables.${node.config.variable}`, "variable", "produces")
   for (const [field, value] of Object.entries(config)) collectFieldReferences(field, value, add)
   return [...found.values()]
 }

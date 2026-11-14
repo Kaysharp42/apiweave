@@ -83,6 +83,17 @@ export const NETWORK_CHANNELS = {
 } as const
 
 /**
+ * Settings > Browser. Off the router like `NETWORK_CHANNELS`: an agent must
+ * never decide whether a browser window shows up on the user's screen, and a
+ * detour that launches processes is not something the MCP bridge should reach.
+ */
+export const BROWSER_CHANNELS = {
+  getSettings: "browser:getSettings",
+  setSettings: "browser:setSettings",
+  listInstalled: "browser:listInstalled",
+} as const
+
+/**
  * A workspace's version history in git. Privileged and off the router like
  * `NETWORK_CHANNELS`, so no local agent can reach it over MCP: main runs
  * git and writes files, and whoever can call `connectRemote` decides where a

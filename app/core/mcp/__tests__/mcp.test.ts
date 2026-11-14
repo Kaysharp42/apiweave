@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
-import { AGENT_CHANNELS, GIT_CHANNELS, NETWORK_CHANNELS, OAUTH_CHANNELS } from "../../ipc/channels"
+import { AGENT_CHANNELS, BROWSER_CHANNELS, GIT_CHANNELS, NETWORK_CHANNELS, OAUTH_CHANNELS } from "../../ipc/channels"
 import { RunEventBroker } from "../../runner/run_event_broker"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import {
@@ -308,9 +308,25 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
    * world. None of them may be published as a tool, under its own name.
    */
   it("publishes no privileged channel as a tool", () => {
-    const privileged = [GIT_CHANNELS, NETWORK_CHANNELS, OAUTH_CHANNELS, AGENT_CHANNELS].flatMap((channels) => Object.values(channels))
+    const privileged = [GIT_CHANNELS, NETWORK_CHANNELS, BROWSER_CHANNELS, OAUTH_CHANNELS, AGENT_CHANNELS].flatMap((channels) => Object.values(channels))
     const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
     for (const channel of privileged) expect(published.has(channel), channel).toBe(false)
+  })
+
+  /**
+   * Settings > Browser decides which browser drives a run and whether a window
+   * appears on the user's screen — and finding out launches processes. An agent
+   * may start a run; it may never pop a window at the person using the machine.
+   * It lives off the router (BROWSER_CHANNELS, the `__APIWEAVE_BROWSER__` world).
+   */
+  it("exposes no browser settings tools — the browser choice is not on the router", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("browser")
+    }
+    const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
+    for (const channel of Object.values(BROWSER_CHANNELS)) {
+      expect(published.has(channel), channel).toBe(false)
+    }
   })
 
   /**

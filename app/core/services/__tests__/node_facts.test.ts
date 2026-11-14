@@ -29,6 +29,13 @@ describe("nodeEndpoint", () => {
     expect(nodeEndpoint(sse)).toEqual({ method: "GET", urlPath: "/events" })
     expect(nodeEndpoint(delay)).toBeUndefined()
   })
+
+  it("gives a browser navigate its page path and other browser steps nothing", () => {
+    const navigate = { nodeId: "b", type: "browser", position: { x: 0, y: 0 }, config: { action: "navigate", url: "{{env.BASE_URL}}/login?next=%2Fdash" } } as WorkflowNode
+    const click = { nodeId: "c", type: "browser", position: { x: 0, y: 0 }, config: { action: "click", locator: { kind: "role", role: "button", name: "Save" } } } as WorkflowNode
+    expect(nodeEndpoint(navigate)).toEqual({ method: "PAGE", urlPath: "/login" })
+    expect(nodeEndpoint(click)).toBeUndefined()
+  })
 })
 
 describe("nodeReferences", () => {
@@ -67,5 +74,17 @@ describe("nodeReferences", () => {
   it("accepts a namespace and one name as a filter, nothing else", () => {
     for (const ok of ["variables.token", "env.BASE_URL", "secrets.API_KEY"]) expect(REFERENCE_FILTER_RE.test(ok), ok).toBe(true)
     for (const bad of ["prev.x", "variables.a.b", "{{env.X}}", "env.", "secrets.1X"]) expect(REFERENCE_FILTER_RE.test(bad), bad).toBe(false)
+  })
+
+  it("reports a browser extract step's variable as produced", () => {
+    const node = {
+      nodeId: "grab",
+      type: "browser",
+      position: { x: 0, y: 0 },
+      config: { action: "extract", from: "text", locator: { kind: "css", value: ".total" }, variable: "orderTotal" },
+    } as WorkflowNode
+    // The name sits in `variable`, not in a `{{…}}` placeholder, so the generic
+    // scan cannot see it.
+    expect(nodeReferences(node)).toEqual([{ ref: "variables.orderTotal", field: "variable", role: "produces" }])
   })
 })
