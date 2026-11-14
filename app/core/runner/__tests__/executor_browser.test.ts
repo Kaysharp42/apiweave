@@ -35,6 +35,7 @@ const dashboardPage = (greeting: string): string => `<!doctype html><title>Dashb
 <label for="q">Query</label><input id="q" value="abc">
 <a href="/orders/42" data-id="42">Order 42</a>
 <button id="del">Delete</button><p id="status">idle</p>
+<button onclick="window.open('/login')">Help</button>
 <script>
 const user = new URLSearchParams(location.search).get('user') || 'guest'
 setTimeout(() => { document.getElementById('h').textContent = ${JSON.stringify(greeting)} + ' ' + user }, 300)
@@ -205,6 +206,17 @@ describe("browser steps in a real browser", () => {
     const stored = await run(workflowId)
 
     expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
+  })
+
+  it("fails a step that opens a new tab or window", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/dashboard` }),
+      step("help", { action: "click", locator: role("button", "Help") }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "help")?.error).toBe("Browser step: the step opened a new tab or window, which browser steps do not support yet")
   })
 
   it("fails a step with an unset placeholder instead of typing the braces", async () => {

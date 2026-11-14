@@ -398,8 +398,17 @@ async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "t
 export async function runBrowserStep(page: Page, config: BrowserNodeData, ctx: BrowserStepContext): Promise<BrowserStepOutcome> {
   disarmDialog(page)
   const timeout = config.timeoutMs ?? (config.action === "navigate" ? DEFAULT_NAVIGATE_TIMEOUT_MS : DEFAULT_STEP_TIMEOUT_MS)
+  // Steps drive one page. A step that opens another would leave the next steps
+  // acting on the wrong one, so the new page is closed and the step fails.
+  let openedPopup = false
+  const onPopup = (popup: Page): void => {
+    openedPopup = true
+    void popup.close().catch(() => undefined)
+  }
+  page.on("popup", onPopup)
   try {
     const compared = await perform(page, config, ctx, timeout)
+    if (openedPopup) throw new StepFailure("the step opened a new tab or window, which browser steps do not support yet")
     return { passed: true, result: { action: config.action, ...compared, ...(await pageFacts(page)) } }
   } catch (error) {
     const detail = detailOf(error)
@@ -413,6 +422,8 @@ export async function runBrowserStep(page: Page, config: BrowserNodeData, ctx: B
         ...(isClosed(error) ? {} : await pageFacts(page)),
       },
     }
+  } finally {
+    page.off("popup", onPopup)
   }
 }
 
