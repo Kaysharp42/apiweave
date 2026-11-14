@@ -22,6 +22,9 @@ import { MCP_GUIDES } from "./guide"
  *    and waits on each, so every iteration gets its own approval and summary.
  *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
  *    history; the user's call from the History panel, never an agent's.
+ *  - `runs.getArtifact` — a screenshot as one unbounded base64 string. Phase 2
+ *    exposes failure images to agents through a tool that caps and masks them,
+ *    never through this raw read.
  *  - `runs.listByWorkflow`, `runs.listByWorkspace`, `runs.getLatest`,
  *    `runs.getLatestFailed` (phase 6) — superseded by `runs.history`, which already
  *    filters by workspace/workflow/status with newest-first keyset pagination: the

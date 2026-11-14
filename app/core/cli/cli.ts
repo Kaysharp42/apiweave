@@ -14,6 +14,7 @@ import {
   EnvironmentRepository,
   NodePresetRepository,
   ProjectRunRepository,
+  RunArtifactRepository,
   RunRepository,
   WorkflowRepository,
   WorkspaceRepository,
@@ -400,6 +401,7 @@ interface CliRepositories {
   readonly workspaces: WorkspaceRepository
   readonly workflows: WorkflowRepository
   readonly runs: RunRepository
+  readonly runArtifacts: RunArtifactRepository
   readonly environments: EnvironmentRepository
   readonly collections: CollectionRepository
   readonly presets: NodePresetRepository
@@ -432,6 +434,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       workspaces: new WorkspaceRepository(database.kvStore),
       workflows: new WorkflowRepository(database.kvStore),
       runs: new RunRepository(database.kvStore),
+      runArtifacts: new RunArtifactRepository(database.kvStore),
       environments: new EnvironmentRepository(database.kvStore),
       collections: new CollectionRepository(database.kvStore),
       presets: new NodePresetRepository(database.kvStore),
@@ -491,6 +494,9 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       ...(options.contract !== undefined ? { contract: options.contract } : {}),
       snapshots,
       ...(options.updateSnapshots ? { updateSnapshots: true } : {}),
+      // The in-memory run's screenshot is kept for the life of this process,
+      // like the run row itself; nothing reads it back after the report.
+      saveArtifact: (artifact) => repos.runArtifacts.save(artifact),
       browser: () => ({ headless: !options.headed, ...(options.browser !== undefined ? { channel: options.browser } : {}) }),
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)

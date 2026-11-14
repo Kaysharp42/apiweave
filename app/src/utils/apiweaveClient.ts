@@ -82,6 +82,7 @@ import type { DryRunResult } from "../types/DryRunResult";
 import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
 import type { ImportResult } from "../types/ImportResult";
 import type { Run } from "../types/Run";
+import type { RunArtifact } from "@shared/types/RunArtifact";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { SecretMetadata } from "../types/SecretMetadata";
 import type { SecretPublicKey } from "../types/SecretPublicKey";
@@ -661,6 +662,13 @@ export const apiweave = {
       invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "get", { workspaceId, runId }),
+    /** A stored screenshot's bytes for the evidence tab, as base64. */
+    getArtifact: (workspaceId: string, runId: string, artifactId: string) =>
+      invoke<RunArtifact>("runs", "getArtifact", {
+        workspaceId,
+        runId,
+        artifactId,
+      }),
     listByWorkflow: (workspaceId: string, workflowId: string) =>
       invoke<ListResult<IpcRun>>("runs", "listByWorkflow", {
         workspaceId,

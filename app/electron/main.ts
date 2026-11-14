@@ -17,6 +17,7 @@ import {
   CollectionRepository,
   EnvironmentRepository,
   NodePresetRepository,
+  RunArtifactRepository,
   RunRepository,
   ProjectRunRepository,
   SecretRepository,
@@ -533,6 +534,7 @@ if (!hasSingleInstanceLock) {
     }
     const workflows = new WorkflowRepository(database.kvStore, sendWorkflowChanged)
     const runs = new RunRepository(database.kvStore)
+    const runArtifacts = new RunArtifactRepository(database.kvStore)
     const environments = new EnvironmentRepository(database.kvStore, noteWorkspaceWrite)
     const collections = new CollectionRepository(database.kvStore, noteWorkspaceWrite)
     const nodePresets = new NodePresetRepository(database.kvStore)
@@ -623,6 +625,9 @@ if (!hasSingleInstanceLock) {
       // tokens are reused across runs until they near expiry.
       oauthTokens: new Map(),
       snapshots,
+      // A failed browser step's screenshot (migration 033) is stored by the
+      // executor's evidence path and read back by `runs.getArtifact`.
+      saveArtifact: (artifact) => runArtifacts.save(artifact),
       saveSecret: async (name, value, scope) => {
         await secretService.storePlaintext(scope.workspaceId, { ...scope, name, value, label: "OAuth 2.0 token" })
       },
@@ -716,6 +721,7 @@ if (!hasSingleInstanceLock) {
       nodePresets: new NodePresetService(nodePresets, scopeResolver),
       runs: runService,
       snapshots,
+      runArtifacts,
       secrets: secretService,
       projects: new ProjectExportService(
         collections,
