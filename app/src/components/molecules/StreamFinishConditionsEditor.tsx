@@ -1,11 +1,10 @@
-import type { ReactNode } from "react";
 import { AssertionOperatorSchema } from "@shared/zod-schemas/AssertionOperatorSchema";
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { FormField } from "../molecules/FormField";
 import ButtonSelect from "../ButtonSelect";
-import type { SelectOption } from "../../types";
+import type { SelectOption, StreamFinishConditionsEditorProps } from "../../types";
 
 const OPERATOR_OPTIONS: SelectOption[] = AssertionOperatorSchema.options.map(
   (operator) => ({ label: operator, value: operator }),
@@ -14,14 +13,6 @@ const OPERATOR_OPTIONS: SelectOption[] = AssertionOperatorSchema.options.map(
 /** A new, empty finish rule: the shape every stream panel adds when the author clicks "Add finish rule". */
 export function emptyFinishCondition(): StreamFinishCondition {
   return { path: "data.status", operator: "equals", expectedValue: "" };
-}
-
-export interface StreamFinishConditionsEditorProps {
-  readonly conditions: readonly StreamFinishCondition[];
-  readonly onChange: (conditions: StreamFinishCondition[]) => void;
-  /** What a path addresses in this protocol's normalized message. */
-  readonly hint: ReactNode;
-  readonly pathPlaceholder?: string;
 }
 
 /**

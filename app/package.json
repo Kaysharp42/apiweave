@@ -98,7 +98,7 @@
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
-    "fallow": "^3.38.1",
+    "fallow": "3.42.0",
     "jsdom": "^30.1.3",
     "json-edit-react": "^2.0.5",
     "jsonc-parser": "^3.3.1",

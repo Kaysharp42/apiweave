@@ -246,6 +246,7 @@ export type { HTTPRequestConfigPanelProps } from "./HTTPRequestConfigPanelProps"
 export type { HttpScriptsEditorProps } from "./HttpScriptsEditorProps";
 export type { GraphqlBodyEditorProps } from "./GraphqlBodyEditorProps";
 export type { SoapBodyEditorProps } from "./SoapBodyEditorProps";
+export type { StreamFinishConditionsEditorProps } from "./StreamFinishConditionsEditorProps";
 export type { JsonrpcBodyEditorProps } from "./JsonrpcBodyEditorProps";
 export type { ScriptOutcomesProps } from "./ScriptOutcomesProps";
 export type { HttpRequestOutputPanelProps } from "./HttpRequestOutputPanelProps";
