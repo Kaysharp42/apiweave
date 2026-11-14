@@ -33,7 +33,7 @@ A workflow is a graph of connected nodes that you build on the canvas. Workflows
 
 A node is a single-purpose step inside a workflow. Each node type does one job: call an API, listen to a Server-Sent Events stream, assert a value, wait, merge parallel branches, run another workflow, or mark a flow boundary. You drag nodes from the palette onto the canvas and configure them in their own panel or modal.
 
-APIWeave ships eight node types: **HTTP Request**, **SSE Stream**, **Assertion**, **Delay**, **Merge**, **Call Workflow**, **Start**, and **End**. Notes and group frames annotate the canvas but do not run.
+APIWeave ships eleven node types: **HTTP Request**, **SSE Stream**, **WebSocket**, **gRPC**, **Browser step**, **Assertion**, **Delay**, **Merge**, **Call Workflow**, **Start**, and **End**. Notes and group frames annotate the canvas but do not run.
 
 ## Node Preset
 

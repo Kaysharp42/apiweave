@@ -19,6 +19,7 @@
   - [SSE Stream](#sse-stream)
   - [WebSocket](#websocket)
   - [gRPC Call](#grpc-call)
+  - [Browser](#browser)
   - [Assertion](#assertion)
   - [Delay](#delay)
   - [Merge](#merge)
@@ -364,6 +365,22 @@ A polling request for `{"status": "pending"}` → `{"status": "done"}`:
 The output body has `messages` (each `{type, data}`; binary `data` is base64), `messageCount`, `termination`, `closeCode` and `closeReason`; `response.duration` is the connection's lifetime in milliseconds. Captured frames are bounded to 1 MiB in total.
 
 **Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final result exists. Use the Complete path for a regular Assertion node that checks `response.body.messages`.
+
+### Browser
+
+**Purpose:** One step in a web page, driven in a real Chrome, Edge or Playwright Chromium on this machine. A workflow's browser steps share one page and run as a single ordered chain, so a run can sign in to a dev environment and check what the page shows, in the same graph as its HTTP nodes.
+
+| Field | What it does |
+| --- | --- |
+| `action` | One per node: `navigate`, `click`, `fill`, `press`, `select`, `check`, `uncheck`, `hover`, `expect-visible`, `expect-text`, `expect-value`, `expect-url` or `extract`. An `extract` writes a workflow variable |
+| `locator` | Which element the step acts on: a role and name, label, placeholder, text, test id, alt text, title or CSS selector, narrowed with `hasText`, `nth`, `within` and `frame` |
+| `url` | The page address for `navigate` and `expect-url`. Supports environment, variable and `prev` placeholders; `{{secrets.*}}` is refused |
+| `value` / `text` / `values` | What to type, compare or select. A fill's `value` is the only field on any browser node that accepts `{{secrets.*}}` |
+| `timeoutMs` | How long the step keeps waiting, in milliseconds (default 10 seconds, 30 for `navigate`) |
+| `dialog` | The answer to an `alert()`, `confirm()` or `prompt()` the step opens: cancelled by default, or `accept` / `dismiss` |
+| `continue on fail` | Whether a failed step lets the run continue down its outgoing edge |
+
+**Handles:** one input, one output. All browser steps of a workflow share one page, so they must form a single ordered chain; steps on parallel branches are reported as `browser_parallel_branches`. See [Browser Steps](browser-steps.md) for the actions, locators, evidence on failure and the browser setting.
 
 ### Assertion
 
