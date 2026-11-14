@@ -23,6 +23,10 @@ const APP_SETTING_PANELS: Readonly<Record<string, ComponentType>> = {
     () => import("../components/organisms/BackgroundSettingsPanel"),
     "BackgroundSettingsPanel",
   ),
+  browser: lazyNamed(
+    () => import("../components/organisms/BrowserSettingsPanel"),
+    "BrowserSettingsPanel",
+  ),
   canvas: lazyNamed(
     () => import("../components/organisms/CanvasSettingsPanel"),
     "CanvasSettingsPanel",

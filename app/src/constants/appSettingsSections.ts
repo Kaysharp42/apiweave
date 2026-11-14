@@ -1,6 +1,7 @@
 import {
   AppWindow,
   Bot,
+  Globe,
   MousePointer2,
   Network,
   Plug,
@@ -30,6 +31,12 @@ export const APP_SETTINGS_SECTIONS: Readonly<
     icon: AppWindow,
     title: "Background",
     subtitle: "Tray and start at login",
+    width: "max-w-2xl",
+  },
+  browser: {
+    icon: Globe,
+    title: "Browser",
+    subtitle: "Which browser runs browser steps, and whether it shows",
     width: "max-w-2xl",
   },
   canvas: {
