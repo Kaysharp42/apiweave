@@ -14,6 +14,7 @@ export function PromptDialog({
   defaultValue = "",
   submitLabel = "Create",
   cancelLabel = "Cancel",
+  icon: Icon = FileText,
 }: PromptDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(defaultValue);
@@ -70,7 +71,7 @@ export function PromptDialog({
             <Dialog.Panel className="w-full max-w-md rounded-xs border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
               <div className="flex items-start gap-3 border-b border-border p-5 dark:border-border-dark">
                 <div className="shrink-0 rounded-full bg-primary/10 p-1 dark:bg-primary-light/10">
-                  <FileText className="h-5 w-5 text-primary dark:text-primary-light" />
+                  <Icon className="h-5 w-5 text-primary dark:text-primary-light" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">

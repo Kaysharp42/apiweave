@@ -1,3 +1,5 @@
+import type { LucideIcon } from "lucide-react";
+
 export interface PromptDialogProps {
   open?: boolean;
   onClose: () => void;
@@ -8,4 +10,6 @@ export interface PromptDialogProps {
   defaultValue?: string;
   submitLabel?: string;
   cancelLabel?: string;
+  /** The icon beside the title. Defaults to a document, for the naming prompts this dialog mostly serves. */
+  icon?: LucideIcon;
 }
