@@ -106,36 +106,42 @@ export class BrowserSession {
   }
 
   private async launch(): Promise<Page> {
-    // Loaded on the first browser step, so a run (or a CLI start) without one never pays for it.
-    const { chromium } = await import("playwright-core")
-    const channels = this.settings.channel !== undefined ? [this.settings.channel] : AUTO_CHANNELS
-    const missing: BrowserChannel[] = []
-    for (const channel of channels) {
-      let browser: Browser
-      try {
-        browser = await chromium.launch({
-          headless: this.settings.headless,
-          ...(channel === "chromium" ? {} : { channel }),
-        })
-      } catch (error) {
-        if (isMissingBrowser(error)) {
-          missing.push(channel)
-          continue
-        }
-        throw new BrowserSessionError(`${CHANNEL_NAMES[channel]} could not be started: ${firstLine(error)}`)
-      }
-      if (this.closed) {
-        await browser.close().catch(() => undefined)
-        throw new BrowserSessionError("the run ended while the browser was starting")
-      }
-      this.browser = browser
-      const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
-      return context.newPage()
+    const browser = await launchBrowser(this.settings)
+    if (this.closed) {
+      await browser.close().catch(() => undefined)
+      throw new BrowserSessionError("the run ended while the browser was starting")
     }
-    throw new BrowserSessionError(
-      this.settings.channel !== undefined
-        ? `${CHANNEL_NAMES[this.settings.channel]} was not found on this machine. Choose another browser in Settings → Browser, or pass --browser to apiweave run.`
-        : "no supported browser was found on this machine. Install Google Chrome or Microsoft Edge.",
-    )
+    this.browser = browser
+    const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
+    return context.newPage()
   }
+}
+
+/** Every page a run or a recording opens has this size, so a recording sees the layout its run will. */
+export const PAGE_VIEWPORT = { width: 1280, height: 720 } as const
+
+/**
+ * Start the configured browser, or the first installed one when none is
+ * configured. Fresh profile; nothing is downloaded.
+ */
+export async function launchBrowser(settings: BrowserLaunchSettings): Promise<Browser> {
+  // Loaded on the first browser step, so a run (or a CLI start) without one never pays for it.
+  const { chromium } = await import("playwright-core")
+  const channels = settings.channel !== undefined ? [settings.channel] : AUTO_CHANNELS
+  for (const channel of channels) {
+    try {
+      return await chromium.launch({
+        headless: settings.headless,
+        ...(channel === "chromium" ? {} : { channel }),
+      })
+    } catch (error) {
+      if (isMissingBrowser(error)) continue
+      throw new BrowserSessionError(`${CHANNEL_NAMES[channel]} could not be started: ${firstLine(error)}`)
+    }
+  }
+  throw new BrowserSessionError(
+    settings.channel !== undefined
+      ? `${CHANNEL_NAMES[settings.channel]} was not found on this machine. Choose another browser in Settings → Browser, or pass --browser to apiweave run.`
+      : "no supported browser was found on this machine. Install Google Chrome or Microsoft Edge.",
+  )
 }
