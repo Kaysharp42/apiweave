@@ -152,7 +152,8 @@ export class BrowserRecording {
     }
     this.accepting = false
     await this.queue
-    const { steps } = this.converter.finish()
+    const { steps, warnings } = this.converter.finish()
+    for (const warning of warnings) this.listener.warning(warning)
     for (const step of steps) this.send(step)
     this.flush()
     await within((this.context as unknown as RecordingContext)._stopRecording(), 2_000, undefined)

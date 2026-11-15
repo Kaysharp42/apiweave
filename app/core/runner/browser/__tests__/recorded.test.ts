@@ -181,6 +181,25 @@ describe("RecordingConverter rules", () => {
     expect(navigate.warnings).toHaveLength(1)
   })
 
+  it("does not record a step whose locator shows a secret that holds a quote or a backslash", () => {
+    const values: RecordingValues = { env: {}, secrets: { ODD: 'pa"ss\\word1' } }
+    // A role's name and a plain CSS value: JSON escaping and the selector's own
+    // escaping both hide the secret from a check on the serialized config.
+    const selectors = ['internal:role=button[name="pa\\"ss\\\\word1"i]', 'css=div[title="pa\\"ss\\\\word1"]']
+    for (const selector of selectors) {
+      const output = converter(values).apply({ kind: "added", action: { name: "click", selector }, onMainPage: true })
+      expect(output.steps).toEqual([])
+      expect(output.warnings).toEqual(["A step was not recorded because it contained a secret value."])
+    }
+  })
+
+  it("does not give a placeholder to a held-back fill whose locator shows a secret", () => {
+    const recording = converter({ env: {}, secrets: { API_KEY: "sk-live-abcdef", ODD: 'pa"ss\\word1' } })
+    const selector = 'internal:role=textbox[name="pa\\"ss\\\\word1"i]'
+    expect(recording.apply({ kind: "added", action: { name: "fill", selector, text: "sk-live" }, onMainPage: true }).steps).toEqual([])
+    expect(recording.finish().steps).toEqual([])
+  })
+
   it("reads only the fields it uses from a raw payload", () => {
     expect(
       readRecorderAction({ name: "fill", selector: "#pw", text: "x", ref: "e5", ariaSnapshot: '- textbox "Password": x', signals: [] }),

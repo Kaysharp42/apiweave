@@ -90,6 +90,29 @@ type Converted =
   | { readonly kind: "withheld" }
   | { readonly kind: "skip"; readonly warning?: keyof typeof WARNINGS }
 
+/** What a config that has been checked comes to: it is sent, or there is a reason it is not. */
+type CheckedResult = Exclude<Converted, { readonly kind: "withheld" }>
+
+/**
+ * Every string a config holds, walked as values: `JSON.stringify` escapes `"`
+ * and `\`, so a secret holding either would not appear in the serialized form.
+ */
+function configStrings(value: unknown, into: string[] = []): string[] {
+  if (typeof value === "string") {
+    into.push(value)
+  } else if (Array.isArray(value)) {
+    for (const item of value as unknown[]) configStrings(item, into)
+  } else if (typeof value === "object" && value !== null) {
+    for (const item of Object.values(value as Record<string, unknown>)) configStrings(item, into)
+  }
+  return into
+}
+
+/** A selector with the backslash escapes it writes undone: `pa\"ss\\word1` becomes `pa"ss\word1`. */
+function unescapeSelector(selector: string): string {
+  return selector.replace(/\\(.)/gs, "$1")
+}
+
 /** One step the recording has produced. */
 interface StepState {
   readonly stepId: string
@@ -116,8 +139,9 @@ interface StepState {
  * - `openPage` and `closePage` produce no step; a second page is a popup.
  *
  * Every value goes through {@link templateFill} or {@link templateUrl} before
- * it is returned, and a step whose config would still contain a secret is
- * dropped: what this returns may be sent to the renderer as it is.
+ * it is returned, and a step whose config — or the selector it came from —
+ * would still contain a secret is dropped: what this returns may be sent to
+ * the renderer as it is.
  */
 export class RecordingConverter {
   private readonly steps: StepState[] = []
@@ -151,21 +175,29 @@ export class RecordingConverter {
 
   /**
    * End the recording: a step still held back because it ended in the start
-   * of a secret becomes a placeholder secret, so the partial value is never sent.
+   * of a secret becomes a placeholder secret, so the partial value is never
+   * sent. Its locator was never checked while it was held back, so the step is
+   * checked here too and dropped if the element's own text shows a secret.
    */
   public finish(): ConverterOutput {
     const steps: RecordedBrowserStep[] = []
+    const warnings: string[] = []
     for (const state of this.steps) {
       if (!state.withheld || state.action.selector === undefined) continue
       const locator = parseRecordedSelector(state.action.selector)
       if (locator === null) continue
-      state.unsetSecret ??= this.nextUnsetSecret("UNSET_SECRET")
       state.withheld = false
-      const config: BrowserNodeData = { action: "fill", locator, value: `{{secrets.${state.unsetSecret}}}` }
-      state.sent = JSON.stringify(config)
-      steps.push({ stepId: state.stepId, config })
+      const unsetSecret = state.unsetSecret ?? this.nextUnsetSecret("UNSET_SECRET")
+      const converted = this.checked({ action: "fill", locator, value: `{{secrets.${unsetSecret}}}` }, state.action)
+      if (converted.kind === "skip") {
+        if (converted.warning !== undefined) this.warn(converted.warning, warnings)
+        continue
+      }
+      state.unsetSecret = unsetSecret
+      state.sent = JSON.stringify(converted.config)
+      steps.push({ stepId: state.stepId, config: converted.config })
     }
-    return { steps, warnings: [] }
+    return { steps, warnings }
   }
 
   /** The step a newly added action becomes, or null when it becomes none. */
@@ -213,7 +245,7 @@ export class RecordingConverter {
     if (action.name === "navigate") {
       if (action.url === undefined) return { kind: "skip" }
       const url = templateUrl(action.url, this.values)
-      return url === null ? { kind: "skip", warning: "secretUrl" } : this.checked({ action: "navigate", url })
+      return url === null ? { kind: "skip", warning: "secretUrl" } : this.checked({ action: "navigate", url }, action)
     }
     if (action.name.startsWith("assert")) return { kind: "skip", warning: "check" }
     if (action.name === "setInputFiles") return { kind: "skip", warning: "upload" }
@@ -222,7 +254,7 @@ export class RecordingConverter {
     if (action.name === "press") {
       if (action.key === undefined) return { kind: "skip" }
       const key = [...modifierKeys(action.modifiers), action.key].join("+")
-      return this.checked({ action: "press", key, ...(locator === undefined ? {} : { locator }) })
+      return this.checked({ action: "press", key, ...(locator === undefined ? {} : { locator }) }, action)
     }
     if (locator === undefined) return { kind: "skip" }
     return this.convertOnElement(state, locator)
@@ -235,24 +267,25 @@ export class RecordingConverter {
         const modifiers = modifierKeys(action.modifiers)
         const clickCount = Math.min(action.clickCount ?? 1, 3)
         const button = action.button === "right" || action.button === "middle" ? action.button : undefined
-        return this.checked({
+        const config: BrowserNodeData = {
           action: "click",
           locator,
           ...(button === undefined ? {} : { button }),
           ...(clickCount > 1 ? { clickCount } : {}),
           ...(modifiers.length > 0 ? { modifiers } : {}),
-        })
+        }
+        return this.checked(config, action)
       }
       case "fill":
         return this.convertFill(state, locator)
       case "check":
       case "uncheck":
       case "hover":
-        return this.checked({ action: action.name, locator })
+        return this.checked({ action: action.name, locator }, action)
       case "select":
         return action.options === undefined || action.options.length === 0
           ? { kind: "skip" }
-          : this.checked({ action: "select", locator, values: [...action.options] })
+          : this.checked({ action: "select", locator, values: [...action.options] }, action)
       default:
         return { kind: "skip" }
     }
@@ -263,12 +296,20 @@ export class RecordingConverter {
     if (templated.kind === "withheld") return templated
     if (templated.kind === "unset") state.unsetSecret ??= this.nextUnsetSecret("UNSET_PASSWORD")
     const value = templated.kind === "unset" ? `{{secrets.${state.unsetSecret}}}` : templated.value
-    return this.checked({ action: "fill", locator, value })
+    return this.checked({ action: "fill", locator, value }, state.action)
   }
 
-  /** The config, if it is valid and carries no secret anywhere (a locator can show page text). */
-  private checked(config: BrowserNodeData): Converted {
-    if (containsSecret(JSON.stringify(config), this.values)) return { kind: "skip", warning: "secretStep" }
+  /**
+   * The config, if it is valid and carries no secret anywhere: a locator shows
+   * page text, and the selector it came from is checked both as written and
+   * with its escapes undone, since a `{ kind: "selector" }` locator keeps them.
+   */
+  private checked(config: BrowserNodeData, action: RecorderAction): CheckedResult {
+    const texts =
+      action.selector === undefined
+        ? configStrings(config)
+        : [...configStrings(config), action.selector, unescapeSelector(action.selector)]
+    if (texts.some((text) => containsSecret(text, this.values))) return { kind: "skip", warning: "secretStep" }
     return BrowserNodeDataSchema.safeParse(config).success ? { kind: "config", config } : { kind: "skip", warning: "element" }
   }
 
