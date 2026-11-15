@@ -1,21 +1,38 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import WorkflowContext from "../contexts/WorkflowContext";
 import WorkspaceContext from "../contexts/WorkspaceContext";
 import useEnvironmentStore, { getSelectedEnvironment } from "../stores/EnvironmentStore";
 import type { SecretNamesInScope } from "../types/SecretNamesInScope";
-import { fetchSecretNames, forgetSecretNames } from "../utils/secretNames";
+import {
+  fetchSecretNames,
+  forgetSecretNames,
+  getSecretNamesRevision,
+  subscribeSecretNames,
+} from "../utils/secretNames";
 
 /**
  * The secret names the current workflow's run can resolve: the workspace's,
  * and the selected environment's. Read through `useContext`, so a component
  * outside a workflow gets an empty list rather than an error.
+ *
+ * Every instance keeps its own copy, so all of them watch the revision of the
+ * shared list cache: when a secret is saved here, the component that saved it
+ * clears the cache and every other instance — the badge on a canvas node, the
+ * suggestions in a field — reads the new list instead of holding the old one.
  */
 export function useSecretNamesInScope(): SecretNamesInScope {
   const workflowId = useContext(WorkflowContext)?.workflowId;
   const workspaceId = useContext(WorkspaceContext)?.currentWorkspace?.workspaceId ?? null;
   const selectedEnvMap = useEnvironmentStore((state) => state.selectedEnvironmentByWorkflow);
   const [names, setNames] = useState<readonly string[] | null>(null);
-  const [version, setVersion] = useState(0);
+  const revision = useSyncExternalStore(subscribeSecretNames, getSecretNamesRevision);
 
   const environmentId = useMemo(
     () => (workflowId ? getSelectedEnvironment(workflowId) : null),
@@ -32,11 +49,12 @@ export function useSecretNamesInScope(): SecretNamesInScope {
     return () => {
       active = false;
     };
-  }, [workspaceId, environmentId, version]);
+  }, [workspaceId, environmentId, revision]);
 
+  // Clearing is the whole of it: the drop notifies every reader, this one
+  // included, so each fetches the list again rather than this instance alone.
   const refresh = useCallback(() => {
     if (workspaceId) forgetSecretNames(workspaceId);
-    setVersion((current) => current + 1);
   }, [workspaceId]);
 
   return { names, workspaceId, environmentId, refresh };
