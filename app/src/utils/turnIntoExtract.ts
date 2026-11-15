@@ -4,9 +4,6 @@ import type { CanvasNode } from "../types/CanvasNode";
 import { configFromDraft, draftFromConfig } from "./browserStep";
 import { recordedStepLabel } from "./recordedSteps";
 
-/** What `{{variables.NAME}}` accepts, as `BrowserNodeDataSchema`'s extract `variable` does. */
-export const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
 /** Steps on a form field read its value; any other element is read for its text. */
 const READS_VALUE: ReadonlySet<string> = new Set(["fill", "select", "expect-value"]);
 
