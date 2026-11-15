@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | 0: Spike — packaging, CLI, recorder payloads, toolbar | `Kaysharp42/playwright-automation` | **Done** (findings below) |
 | 1: `browser` node, runner, evidence | `Kaysharp42/playwright-automation` | **Done** (notes below) |
-| 2: Agents author and repair browser steps over MCP | `feat/browser-agents` | Not started |
+| 2: Agents author and repair browser steps over MCP | `Kaysharp42/browser-steps-phase-2` | **Done** (notes below) |
 | 3: Recorder — record steps into nodes | `feat/browser-recorder` | Not started |
 | 4: Checks, extracts and dialogs while recording | `feat/browser-recorder-checks` | Not started |
 | 5: Update one node — re-pick an element, re-record from a step | `feat/browser-node-repick` | Not started |
@@ -350,6 +350,14 @@ A connected coding agent can already *write* `browser` nodes after Phase 1, but 
 **Tests:** handler tests for `browser_inspect` (fixture server, skipped without a browser), MCP whitelist test updated, guide snapshot test, masking test on the inspect output.
 
 **Done when:** from OpenCode, `/apiweave:e2e "log in and check the dashboard heading"` against the fixture app produces a passing workflow with credentials as templates; and after the fixture's button is renamed, the agent repairs the one failing node using only MCP tools.
+
+**As built (differences from the text above):**
+- `browser_inspect` takes `{ workspaceId, workflowId, beforeNodeId?, selectedEnvironmentId?, variables?, screenshot?, maxBytes? }`. There is **no `url` mode**: adding a navigate step and inspecting after it gives the same view without a second path for templates, host checks and history.
+- It is an ordinary run through `RunScheduler` (an in-memory `inspect` request): recorded in history (as `completed` when it stopped before a node), approved by the user before it sends secrets, limited to approved hosts when it does, and masked by the run's own masker. The scheduler owns that run's browser and reads the page before closing it. It waits until two ARIA snapshots 500 ms apart agree (at most 3 s), so a click that navigates is read after the navigation. The snapshot defaults to 16 KiB (max 24 KiB). A caller that disconnects, or a run past 5 minutes, cancels the run.
+- Screenshots, stored and inspected, paint over every element whose text or field value contains a value the run masks (secrets, typed passwords, OAuth tokens), not only password fields. The values never enter the page: its text is read out and compared in Node. Main frame only.
+- `runs_getNodeResult`'s `browser` section never carries the artifact id, only `hasScreenshot`. `screenshot: true` with one `nodeId` returns the stored JPEG, and `browser_inspect` its own, as MCP image content: the bridge moves a `screenshot` field out of the JSON for tools flagged `imageResult`. `runs.getArtifact` stays off the whitelist.
+- The guide teaches inspecting **without** `beforeNodeId` to see where the workflow ends (where the next step starts); `beforeNodeId` is for checking an existing step's page while repairing it.
+- End-to-end check, from `opencode run` with DeepSeek Flash and a fixture login app: `/apiweave:e2e "log in and check the dashboard heading"` built a 5-step workflow with `{{env.TEST_EMAIL}}` and `{{secrets.TEST_PASSWORD}}` that passed; after the button was renamed to "Log in", a second session using only MCP tools went debugContext → `browser_inspect` → patched the one click node → green. It found the settle problem above, fixed in `5cea5bdb`.
 
 ## Phase 3 — Recorder
 
