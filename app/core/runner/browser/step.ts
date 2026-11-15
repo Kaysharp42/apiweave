@@ -3,6 +3,7 @@ import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
+import { within } from "./capture"
 import { buildLocator } from "./locator"
 import { pollUntil } from "./poll"
 import { BROWSER_STEP_PREFIX } from "./session"
@@ -11,10 +12,6 @@ export const DEFAULT_STEP_TIMEOUT_MS = 10_000
 export const DEFAULT_NAVIGATE_TIMEOUT_MS = 30_000
 /** Playwright's own failure text kept on the result. */
 const DETAIL_MAX_CHARS = 2_000
-/** The ARIA snapshot kept on a failed step's result. */
-export const ARIA_SNAPSHOT_MAX_CHARS = 64 * 1024
-/** A failed step's screenshot is dropped above this. */
-export const SCREENSHOT_MAX_BYTES = 1024 * 1024
 /** The longest a single read inside a polling `expect-*` waits before the next try. */
 const POLL_READ_MAX_MS = 1_000
 
@@ -374,15 +371,6 @@ function detailOf(error: unknown): string | undefined {
   return plain.length > DETAIL_MAX_CHARS ? `${plain.slice(0, DETAIL_MAX_CHARS)}…` : plain
 }
 
-/** Resolves to `fallback` if `promise` takes longer than `ms`, so evidence never hangs a failed run. */
-function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<T>((resolve) => {
-    timer = setTimeout(() => resolve(fallback), ms)
-  })
-  return Promise.race([promise.catch(() => fallback), timeout]).finally(() => clearTimeout(timer))
-}
-
 /** Where the page is after the step. */
 async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
   const url = page.url()
@@ -424,38 +412,5 @@ export async function runBrowserStep(page: Page, config: BrowserNodeData, ctx: B
     }
   } finally {
     page.off("popup", onPopup)
-  }
-}
-
-/** A failed step's evidence: the page's ARIA snapshot and a JPEG of the viewport with password fields painted over. */
-export interface FailureEvidence {
-  readonly ariaSnapshot?: string
-  readonly screenshot?: Buffer
-  readonly note?: string
-}
-
-/**
- * What the page looked like when a step failed. Best effort and bounded in
- * time: a page that is gone or stuck yields what could be taken, with a note.
- * The ARIA snapshot shows typed field values, passwords included: it must go
- * through the run's masker, which also knows every password a fill typed.
- */
-export async function captureFailureEvidence(page: Page): Promise<FailureEvidence> {
-  const notes: string[] = []
-  const snapshot = await within(page.locator("body").ariaSnapshot({ timeout: 2_000 }), 3_000, "")
-  if (snapshot === "") notes.push("The ARIA snapshot could not be taken.")
-  const screenshot = await within<Buffer | null>(
-    page.screenshot({ type: "jpeg", quality: 70, timeout: 5_000, mask: [page.locator('input[type="password" i]')] }),
-    6_000,
-    null,
-  )
-  if (screenshot === null) notes.push("The screenshot could not be taken.")
-  else if (screenshot.length > SCREENSHOT_MAX_BYTES) notes.push("The screenshot was larger than 1 MB and was not kept.")
-  return {
-    ...(snapshot !== ""
-      ? { ariaSnapshot: snapshot.length > ARIA_SNAPSHOT_MAX_CHARS ? `${snapshot.slice(0, ARIA_SNAPSHOT_MAX_CHARS)}\n… (truncated)` : snapshot }
-      : {}),
-    ...(screenshot !== null && screenshot.length <= SCREENSHOT_MAX_BYTES ? { screenshot } : {}),
-    ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
   }
 }

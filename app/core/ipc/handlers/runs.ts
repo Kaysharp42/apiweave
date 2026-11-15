@@ -13,6 +13,7 @@ import {
   RUN_WAIT_MAX_MS,
 } from "../../services/read_budgets"
 import type { EvidenceSection } from "../../services/run_evidence"
+import type { RunArtifact } from "@shared/types/RunArtifact"
 import { buildReport } from "../../runner/reporters"
 import { MAX_ITERATION_ROWS } from "@shared/iteration-data/iterationData"
 import { LoadRunSchema } from "@shared/zod-schemas"
@@ -96,9 +97,13 @@ const nodeResultInput = z.object({
   maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per text payload in bytes (default 2048): request/response bodies, a browser step's ARIA snapshot, and its expected/actual text."),
   start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
   end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
+  screenshot: z.boolean().optional().describe("Also return a failed browser step's screenshot as image content (JPEG, at most 1 MB, password fields and secret values painted over), when its browser section says hasScreenshot. One node only: pass nodeId alone."),
 }).strict().superRefine((value, context) => {
   if (value.nodeId === undefined && value.nodeIds === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "Name a node: nodeId for one, nodeIds for several." })
+  }
+  if (value.screenshot === true && (value.nodeId === undefined || value.nodeIds !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["screenshot"], message: "A screenshot is read for one node: pass nodeId alone." })
   }
   if (value.start !== undefined && value.end !== undefined && value.end <= value.start) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: "end must be greater than start." })
@@ -208,13 +213,13 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   router.register("runs", "getNodeResult", {
     input: nodeResultInput,
     output: NodeEvidencePageSchema,
-    handle: ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end }) => {
+    handle: async ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end, screenshot }) => {
       const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
       const ordered = [...new Set(merged)]
       if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
         throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
       }
-      return runs.getNodeEvidence(workspaceId, runId, {
+      const page = await runs.getNodeEvidence(workspaceId, runId, {
         nodeIds: ordered,
         ...(sections !== undefined ? { sections: sections as readonly EvidenceSection[] } : {}),
         ...(path !== undefined ? { path } : {}),
@@ -222,6 +227,8 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
         ...(start !== undefined ? { start } : {}),
         ...(end !== undefined ? { end } : {}),
       })
+      const image = screenshot === true && nodeId !== undefined ? await failureScreenshot(deps, workspaceId, runId, nodeId) : undefined
+      return image !== undefined ? { ...page, screenshot: image } : page
     },
   })
 
@@ -313,4 +320,16 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
       return buildReport(format, { kind: "run", run, workflow })
     },
   })
+}
+
+/**
+ * The screenshot a failed browser step stored, or undefined when it has none.
+ * Its size is capped where it is taken (`SCREENSHOT_MAX_BYTES`), and it was
+ * painted over there: an image cannot be masked afterwards.
+ */
+async function failureScreenshot(deps: HandlerDeps, workspaceId: string, runId: string, nodeId: string): Promise<RunArtifact | undefined> {
+  const run = await deps.runs.get(workspaceId, runId)
+  const artifactId = run.results.find((result) => result.nodeId === nodeId)?.browser?.screenshotArtifactId
+  const artifact = artifactId !== undefined ? deps.runArtifacts?.get(runId, artifactId) : undefined
+  return artifact !== undefined ? { mime: artifact.mime, base64: artifact.body.toString("base64") } : undefined
 }

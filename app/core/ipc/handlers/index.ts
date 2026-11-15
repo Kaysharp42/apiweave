@@ -6,6 +6,7 @@ import { registerWorkflowHandlers } from "./workflows"
 import { registerEnvironmentHandlers } from "./environments"
 import { registerNodePresetHandlers } from "./node-presets"
 import { registerRunHandlers } from "./runs"
+import { registerBrowserHandlers } from "./browser"
 import { registerSecretHandlers } from "./secrets"
 import { registerProjectHandlers } from "./projects"
 import { registerImportHandlers } from "./imports"
@@ -34,6 +35,7 @@ export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void 
   registerEnvironmentHandlers(router, deps)
   registerNodePresetHandlers(router, deps)
   registerRunHandlers(router, deps)
+  registerBrowserHandlers(router, deps)
   registerSecretHandlers(router, deps)
   registerProjectHandlers(router, deps)
   registerImportHandlers(router, deps)

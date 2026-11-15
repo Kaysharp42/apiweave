@@ -318,14 +318,14 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
    * appears on the user's screen — and finding out launches processes. An agent
    * may start a run; it may never pop a window at the person using the machine.
    * It lives off the router (BROWSER_CHANNELS, the `__APIWEAVE_BROWSER__` world).
+   * The one browser tool, `browser_inspect`, always runs headless.
    */
   it("exposes no browser settings tools — the browser choice is not on the router", () => {
-    for (const spec of MCP_TOOLS) {
-      expect(spec.domain).not.toBe("browser")
-    }
+    expect(MCP_TOOLS.filter((spec) => spec.domain === "browser").map(toolName)).toEqual(["browser_inspect"])
     const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
     for (const channel of Object.values(BROWSER_CHANNELS)) {
       expect(published.has(channel), channel).toBe(false)
+      expect(router.getRegistration(...(channel.split(":") as [string, string])), channel).toBeUndefined()
     }
   })
 

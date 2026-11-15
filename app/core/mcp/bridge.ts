@@ -12,6 +12,7 @@ import {
 } from "@shared/zod-schemas"
 import type { IpcRouter } from "../ipc/router"
 import { RUN_WAIT_DEFAULT_MS } from "../services/read_budgets"
+import { RunArtifactSchema } from "@shared/zod-schemas/RunArtifactSchema"
 import { projectRunToolResult } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
 import { encodeMcpResult } from "./result-encoding"
@@ -240,7 +241,7 @@ async function dispatchAsTool(
         structuredContent: response,
       }
     }
-    const data = projectResult(spec, result.data)
+    const { data, image } = withoutImage(spec, projectResult(spec, result.data))
     const text = encodeMcpResult(data)
     if (spec.domain === "workflows" && spec.action === "get" && payload["view"] === "full" && Buffer.byteLength(text) > WORKFLOW_FULL_VIEW_MAX_BYTES) {
       const error = projectMcpError(
@@ -252,7 +253,7 @@ async function dispatchAsTool(
       return { content: [{ type: "text", text: encodeMcpResult({ error }) }], isError: true }
     }
     return {
-      content: [{ type: "text", text }],
+      content: [{ type: "text", text }, ...(image !== undefined ? [{ type: "image" as const, data: image.base64, mimeType: image.mime }] : [])],
       structuredContent: { result: data },
     }
   }
@@ -261,6 +262,18 @@ async function dispatchAsTool(
     content: [{ type: "text", text: encodeMcpResult({ error }) }],
     isError: true,
   }
+}
+
+/**
+ * A tool that returns a picture (`imageResult`) carries it as a `screenshot`
+ * field; an agent gets it as MCP image content, which a model sees as an image,
+ * rather than as a base64 string it would read as text.
+ */
+function withoutImage(spec: McpToolSpec, data: unknown): { data: unknown; image?: { mime: string; base64: string } } {
+  if (spec.imageResult !== true || typeof data !== "object" || data === null || !("screenshot" in data)) return { data }
+  const { screenshot, ...rest } = data
+  const image = RunArtifactSchema.safeParse(screenshot)
+  return image.success ? { data: rest, image: image.data } : { data: rest }
 }
 
 function projectResult(spec: McpToolSpec, data: unknown): unknown {

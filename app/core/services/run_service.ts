@@ -4,7 +4,11 @@ import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
 import type { RunCreate, RunRepository, RunSummaryRow } from "../repositories"
 import { buildNodeEvidencePage, openHistoryCursor, sealHistoryCursor, type EvidenceSelection } from "./run_evidence"
-import { RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
+import { BROWSER_INSPECT_MAX_WAIT_MS, RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
+import type { BrowserInspection } from "@shared/types/BrowserInspection"
+import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
+import type { InspectedPage } from "../runner/browser/inspect"
+import { inspectionResult } from "./browser_inspection"
 import { ConflictError, NotFoundError } from "../ipc/errors"
 import { abortError } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
@@ -340,6 +344,52 @@ export class RunService {
     return this.runs.updateStatus(runId, status, error)
   }
 
+  /**
+   * `browser.inspect`: run the workflow headless up to `beforeNodeId` (all of
+   * it when absent) and return the page it left open. The run is an ordinary
+   * one — in history, and an agent's needs the user's approval to send
+   * secrets — so this waits for it to finish. A caller that goes away, or a run
+   * past {@link BROWSER_INSPECT_MAX_WAIT_MS}, cancels it: nobody would read the page.
+   */
+  async inspectBrowser(
+    workspaceId: string,
+    input: {
+      readonly workflowId: string
+      readonly beforeNodeId?: string
+      readonly selectedEnvironmentId?: string | null
+      readonly variables?: Readonly<Record<string, JsonValue>>
+      readonly screenshot: boolean
+      readonly maxBytes: number
+    },
+    options: { readonly agent?: string; readonly signal?: AbortSignal } = {},
+  ): Promise<BrowserInspection> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    const trigger = this.trigger
+    if (trigger === undefined) throw new Error("No run scheduler is available")
+    if (options.signal?.aborted === true) throw abortError("inspect cancelled")
+    let page: InspectedPage | null | undefined
+    const runId = trigger.enqueue({
+      workspaceId,
+      workflowId: input.workflowId,
+      ...(input.variables !== undefined ? { variables: input.variables } : {}),
+      ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+      ...(options.agent !== undefined ? { agent: options.agent } : {}),
+      inspect: {
+        ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
+        screenshot: input.screenshot,
+        done: (read) => {
+          page = read
+        },
+      },
+    })
+    const { status, timedOut } = await waitOrCancel(trigger, runId, options.signal)
+    return inspectionResult(await this.mustGet(workspaceId, runId), status, page, {
+      ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
+      maxBytes: input.maxBytes,
+      timedOut,
+    })
+  }
+
   /** Active broker-wait subscriptions — exposed for tests to assert no leak. */
   getActiveWaitCount(): number {
     return this.activeWaits
@@ -620,4 +670,32 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     }
     signal?.addEventListener("abort", onAbort, { once: true })
   })
+}
+
+/**
+ * Wait for a run to finish. A run past {@link BROWSER_INSPECT_MAX_WAIT_MS} is
+ * cancelled and reported as timed out; an aborted `signal` cancels it and throws.
+ */
+async function waitOrCancel(
+  trigger: RunTrigger,
+  runId: string,
+  signal: AbortSignal | undefined,
+): Promise<{ status: RunTerminalStatus; timedOut: boolean }> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
+  const stopped = new Promise<"timeout" | "aborted">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), BROWSER_INSPECT_MAX_WAIT_MS)
+    onAbort = () => resolve("aborted")
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
+  try {
+    const first = await Promise.race([trigger.whenFinished(runId), stopped])
+    if (first !== "timeout" && first !== "aborted") return { status: first, timedOut: false }
+    trigger.cancel(runId)
+    if (first === "aborted") throw abortError("inspect cancelled")
+    return { status: await trigger.whenFinished(runId), timedOut: true }
+  } finally {
+    clearTimeout(timer)
+    if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort)
+  }
 }
