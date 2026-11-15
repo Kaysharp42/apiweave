@@ -181,13 +181,15 @@ page or through the CLI flags.
   certificates of **Settings → Network** are used by HTTP nodes, not by browser
   steps, which use the machine's own network configuration.
 - **A screenshot covers only part of what the page displays.** Password fields
-  are painted over, and so is every element whose text or field value contains a
-  value the run masks — a secret, a typed password, an OAuth token — because an
-  image cannot be masked after it is taken. Other sensitive text the page renders
-  is still visible, and the covering reaches the main frame only: an element
-  inside an iframe that shows a secret is not painted over. A failed step's
-  screenshot is stored with the run and never exported; `browser_inspect` takes
-  one only when asked, and hands it to the agent without storing it.
+  are painted over, and so is every field a secret was typed into and every
+  element whose text or field value contains a value the run masks — a secret, a
+  typed password, an OAuth token — because an image cannot be masked after it is
+  taken. Other sensitive text the page renders is still visible, and the
+  value-matching reaches the main frame only: an element inside an iframe that
+  shows a secret is not painted over unless a step typed the secret into it. A
+  failed step's screenshot is stored with the run and never exported;
+  `browser_inspect` takes one only when asked, and hands it to the agent without
+  storing it.
 - **There is no recorder.** Recording steps by clicking through the page is not
   available yet. Steps are written by hand, or by an agent over MCP: an agent can
   inspect a page and read a failed step's browser evidence, but there is no

@@ -4,6 +4,7 @@ import { generateId } from "../id"
 import { getMapped, queryMapped } from "./helpers"
 
 interface RunArtifactBodyRow extends SqliteRow {
+  readonly run_id: string
   readonly mime: string
   readonly body: Buffer
 }
@@ -27,6 +28,13 @@ export interface RunArtifactSummary {
   readonly createdAt: string
 }
 
+/** One artifact's bytes, with the run that owns them. */
+export interface RunArtifactBody {
+  readonly runId: string
+  readonly mime: string
+  readonly body: Buffer
+}
+
 /**
  * A run's stored evidence files (migration 033): a failed browser step's
  * screenshot. Bodies are only ever read by id, so listing a run never loads an
@@ -44,13 +52,18 @@ export class RunArtifactRepository {
     return id
   }
 
-  /** Bytes bound to their run as well as their id, so one run's id never reads another's artifact. */
-  public get(runId: string, artifactId: string): { readonly mime: string; readonly body: Buffer } | undefined {
-    return getMapped<RunArtifactBodyRow, { readonly mime: string; readonly body: Buffer }>(
+  /**
+   * Bytes by their own id, with the run that owns them. A rerun copies a
+   * failed step's result verbatim, so the pane holds a screenshot id from an
+   * earlier run; the owning `runId` travels back with the bytes so the caller
+   * can still check the artifact against the workspace it was asked for.
+   */
+  public get(artifactId: string): RunArtifactBody | undefined {
+    return getMapped<RunArtifactBodyRow, RunArtifactBody>(
       this.store,
-      "SELECT mime, body FROM run_artifacts WHERE run_id = ? AND id = ?",
-      [runId, artifactId],
-      (row) => ({ mime: row.mime, body: row.body }),
+      "SELECT run_id, mime, body FROM run_artifacts WHERE id = ?",
+      [artifactId],
+      (row) => ({ runId: row.run_id, mime: row.mime, body: row.body }),
     )
   }
 

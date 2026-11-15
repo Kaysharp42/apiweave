@@ -1,4 +1,4 @@
-import type { Page } from "playwright-core"
+import type { Locator, Page } from "playwright-core"
 import { MIN_MASKED_SECRET_LENGTH } from "../secret_masker"
 
 /** The ARIA snapshot kept on a failed step's result. */
@@ -55,10 +55,45 @@ export async function capturePage(
   }
 }
 
-/** A JPEG of the viewport, password fields and elements showing a sensitive value painted over. Null when the page will not paint over what it must. */
+/**
+ * The locators a fill typed a secret into, per page. The run's masker scrubs
+ * the stored result but cannot reach the pixels, so a screenshot paints these
+ * over — whatever the value's length, which matching by value cannot. Each is
+ * re-resolved at screenshot time, which is what we want: a field that is gone
+ * needs no paint, and one that is still there may hold the value.
+ */
+const secretFields = new WeakMap<Page, Locator[]>()
+
+export function rememberSecretField(page: Page, element: Locator): void {
+  const known = secretFields.get(page)
+  if (known === undefined) secretFields.set(page, [element])
+  else known.push(element)
+}
+
+/**
+ * The remembered secret fields that still match, for the screenshot's `mask`.
+ * Playwright masks with `strict: false`, so a locator that matches nothing is
+ * skipped rather than failing; a locator whose frame is gone cannot be
+ * resolved at all, and is dropped here so neither costs the run its screenshot.
+ */
+async function secretFieldMasks(page: Page): Promise<Locator[]> {
+  const remembered = secretFields.get(page) ?? []
+  const present = await Promise.all(
+    remembered.map(async (element) => {
+      try {
+        return (await element.count()) > 0 ? [element] : []
+      } catch {
+        return []
+      }
+    }),
+  )
+  return present.flat()
+}
+
+/** A JPEG of the viewport, password fields, fields a secret was typed into and elements showing a sensitive value painted over. Null when the page will not paint over what it must. */
 async function maskedScreenshot(page: Page, sensitiveValues: readonly string[]): Promise<Buffer | null> {
   const values = sensitiveValues.filter((value) => value.length >= MIN_MASKED_SECRET_LENGTH)
-  const mask = [page.locator('input[type="password" i]')]
+  const mask = [page.locator('input[type="password" i]'), ...(await within(secretFieldMasks(page), 2_000, []))]
   try {
     if (values.length > 0) {
       const marked = await markSensitive(page, values)

@@ -3,7 +3,7 @@ import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
-import { within } from "./capture"
+import { rememberSecretField, within } from "./capture"
 import { buildLocator } from "./locator"
 import { pollUntil } from "./poll"
 import { BROWSER_STEP_PREFIX } from "./session"
@@ -45,8 +45,25 @@ class StepFailure extends Error {
   }
 }
 
-const UNRESOLVED_RE = /\{\{\s*(?:env\.|variables\.|data\.|prev\b|secrets\.)[^}]*\}\}/
+/**
+ * Any `{{...}}` a resolution left in place. The executor leaves one it cannot
+ * fill whatever its namespace, so a direct node reference or an unknown
+ * function call reaches here as literally as `{{env.X}}` does.
+ */
+const UNRESOLVED_RE = /\{\{[^{}]+\}\}/
 const SECRET_RE = /\{\{\s*secrets\./
+
+/**
+ * The error for a placeholder still in `value`, or undefined when none is. It
+ * names the placeholder only when the step's own text contains it: a resolved
+ * value that itself carries braces — a secret's own text, say — must not have
+ * part of itself quoted back in an error.
+ */
+export function unresolvedPlaceholderFailure(value: string, source: string): string | undefined {
+  const left = UNRESOLVED_RE.exec(value)?.[0]
+  if (left === undefined) return undefined
+  return source.includes(left) ? `${left} is not set` : "a placeholder could not be resolved"
+}
 
 /**
  * A config value with its placeholders filled. A placeholder left unresolved
@@ -64,8 +81,8 @@ function resolveValue(ctx: BrowserStepContext, text: string, allowSecrets: boole
     // The executor's own refusals (a rerun reading a value masked in its source run) name placeholders, never values.
     throw new StepFailure(error instanceof Error ? error.message.replace(/^Error: /, "") : String(error))
   }
-  const left = UNRESOLVED_RE.exec(value)
-  if (left !== null) throw new StepFailure(`${left[0]} is not set`)
+  const unresolved = unresolvedPlaceholderFailure(value, text)
+  if (unresolved !== undefined) throw new StepFailure(unresolved)
   return value
 }
 
@@ -129,6 +146,20 @@ function requireHost(ctx: BrowserStepContext, host: string, what: string): void 
     ctx.assertHostAllowed(host)
   } catch {
     throw new StepFailure(`${what} ${host || "this page"} was refused: this run may only reach the hosts approved for it`)
+  }
+}
+
+/**
+ * The host of the frame that actually owns `element`. A locator with `frame`
+ * can reach into an iframe from another host than the page around it, so the
+ * page's host alone does not say where a value goes.
+ */
+async function ownerHost(element: Locator, timeout: number): Promise<string> {
+  const handle = await element.elementHandle({ timeout })
+  try {
+    return hostOf((await handle.ownerFrame())?.url() ?? "")
+  } finally {
+    await handle.dispose().catch(() => undefined)
   }
 }
 
@@ -225,11 +256,19 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
     case "fill": {
       const value = resolveValue(ctx, config.value, true)
       const element = locate(config.locator)
-      if (SECRET_RE.test(config.value)) requireHost(ctx, hostOf(page.url()), "typing a secret into")
+      const secret = SECRET_RE.test(config.value)
+      if (secret) {
+        requireHost(ctx, hostOf(page.url()), "typing a secret into")
+        requireHost(ctx, await ownerHost(element, timeout), "typing a secret into")
+      }
       const type = await element.getAttribute("type", { timeout })
+      const password = type?.toLowerCase() === "password"
       // A password typed as a literal never reaches the masker through the
-      // run's secrets, and the page's ARIA snapshot shows field values.
-      if (type?.toLowerCase() === "password" && value !== "") ctx.maskValue(value)
+      // run's secrets, and the page's ARIA snapshot shows field values. The
+      // screenshot cannot be masked by the masker at all, so both kinds of
+      // field are remembered for it.
+      if (value !== "" && (secret || password)) rememberSecretField(page, element)
+      if (password && value !== "") ctx.maskValue(value)
       await element.fill(value, { timeout })
       return {}
     }

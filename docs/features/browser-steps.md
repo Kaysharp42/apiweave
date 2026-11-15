@@ -162,7 +162,7 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 | `{{secrets.*}}` | The local secret store. **Only in a fill's value** | `{{secrets.TEST_PASSWORD}}` |
 
 - **A secret anywhere else fails the step** before the page is touched: `{{secrets.*}} is only allowed in a fill step's value`. A page address, a locator or an expected text cannot reference one.
-- **An unresolved placeholder fails the step** instead of being typed or navigated to: `{{env.TEST_EMAIL}} is not set`.
+- **An unresolved placeholder fails the step** instead of being typed or navigated to, whatever its namespace — an environment variable, a workflow variable, `{{prev.*}}`, a direct node reference such as `{{order.response.body.id}}`, or a function the run does not know: `{{env.TEST_EMAIL}} is not set`.
 - **A password belongs in a secret.** A literal typed into a password field is masked in the run's stored results anyway, and password boxes are painted over in screenshots, but a literal in the node travels in `.aweproject` exports and git.
 - **`extract` is how a page value reaches the rest of the workflow.** `Save a value` writes `{{variables.<variable>}}`, which a later HTTP node, assertion or `expect-text` reads like any other variable. It also counts as that variable's producer, so the graph check does not report it missing.
 
@@ -175,7 +175,7 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 - **One browser per run.** The first browser step launches it, every later browser step of the run uses its page, and the run closes it at the end, whether the run passed, failed or was cancelled. A workflow with no browser steps never starts one.
 - **One step at a time.** Steps run in graph order on one page, so each acts on what the earlier ones left behind. Two steps cannot run at the same time (see [Graph Rules](#graph-rules)).
 - **A fresh, empty profile.** The browser starts with no cookies and no signed-in account: your own profile, logins and extensions are never touched, so each run starts signed out.
-- **Call Workflow shares the page.** A sub-workflow's browser steps run on the caller's page, so a login sub-workflow leaves the caller signed in. A **For each** with a `concurrency` above 1 refuses a target that has browser steps, because its iterations would fight over one page; `concurrency: 1` shares the page like any other call.
+- **Call Workflow shares the page.** A sub-workflow's browser steps run on the caller's page, so a login sub-workflow leaves the caller signed in. A call therefore belongs to the browser chain: two calls with browser steps must not sit on parallel branches (see [Graph Rules](#graph-rules)). A **For each** with a `concurrency` above 1 refuses a target that has browser steps, because its iterations would fight over one page; `concurrency: 1` shares the page like any other call.
 - **The browser's cookies are its own.** The run's HTTP nodes keep using the run's cookie jar, not the browser's. Signing in on the page does not sign in an HTTP node, and signing in through an HTTP node does not sign in the page — carry a value across with `extract` when a request needs it.
 - **Each run and each data-driven iteration gets its own browser**, launched fresh, so no two of them share a signed-in state.
 - **A rerun reaches back to the first browser step.** A page cannot be restored from an earlier run, so rerunning from a node that leads to a browser step replays the chain from its first step, while everything before it keeps the earlier run's results.
@@ -183,17 +183,21 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 
 ## Graph Rules
 
-Browser steps share one page, so they must form **one ordered chain**: any two browser steps in a workflow are connected by a path. HTTP, assertion, delay and merge nodes may branch around them freely; the browser steps themselves cannot.
+Browser steps share one page, so they must form **one ordered chain**: any two browser steps in a workflow are connected by a path. HTTP, assertion, delay and merge nodes may branch around them freely; the browser steps themselves cannot. A **Call Workflow** node whose target has browser steps, directly or through further calls, drives the same page, so it is part of the chain too: two such calls on parallel branches, or one beside a browser step, are the same error.
 
 The graph check reports three things. An agent sees them from `workflow_diagnose`, and from the `diagnosis` member of every graph write.
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
-| `browser_parallel_branches` | error | Two browser steps are on parallel branches, so neither reaches the other. Connect them into one chain |
+| `browser_parallel_branches` | error | Two page-driving nodes are on parallel branches, so neither reaches the other. Connect them into one chain. Counts `browser` steps and Call Workflow nodes whose target has browser steps |
 | `browser_chain_starts_without_navigate` | warning | The first browser step is not **Open a page**, so it runs on a blank page. Add a navigate step, or ignore it when a Call Workflow before it opens the page |
 | `browser_selector_fallback` | notice | A step finds its element with a raw recorder `selector`, which breaks easily. Replace it with a role, label or test id locator |
 
 Steps on the **pass** and **fail** sides of one assertion are allowed. A run takes one side of the assertion, so those steps never run together; the check knows the difference between that and a genuine parallel branch.
+
+The runner refuses the same graph before any node runs, with a value-free error starting with `Browser step:`, so a run cannot interleave two calls on one page just because the graph was edited over MCP or in the JSON editor.
+
+The `diagnosis` member of every graph write can see the called workflows, so it also reports a Call Workflow node beside another page-driving node. A diagnosis run from the canvas cannot read other workflows, so it compares `browser` steps only; the runner still refuses the graph when it starts.
 
 ## When a Step Fails
 
@@ -205,10 +209,10 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 | Page address and title | Where the page was after the step. The address keeps its path; its query string and fragment are replaced with `<REDACTED>`, because they can carry tokens |
 | Playwright's message | Playwright's own account of the failure: which element matched, which action it waited on |
 | Page structure | The page's ARIA (accessibility) tree, capped at 64 KB — what the page offered to a locator, role by role |
-| Screenshot | A JPEG of the viewport, with password fields and every element showing a masked value painted over |
+| Screenshot | A JPEG of the viewport, with password fields, every field a secret was typed into and every element showing a masked value painted over |
 | Note | Present when part of the evidence could not be captured, for example when the page was gone before the screenshot |
 
-**Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over, and with every element that shows a masked value painted over too, because an image cannot be masked after it is taken.
+**Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over, every field a fill typed a secret into — an API key box, say — and every element that shows a masked value painted over too, because an image cannot be masked after it is taken.
 
 **The screenshot is stored with the run**, shown in the step's result pane, deleted when the run is deleted, and never part of an export, a JUnit report or an HTML report. It is taken only on failure, is at most 1 MB, and is dropped with a note when it is larger.
 
@@ -235,7 +239,7 @@ Agent runs are always headless, and a run that sends secrets is confined to the 
 
 If the chosen browser is missing, the step fails with a message naming it: `Microsoft Edge was not found on this machine. Choose another browser in Settings → Browser, or pass --browser to apiweave run.`
 
-**Agent runs.** A run an agent starts over MCP is always headless, whatever this setting says, so no window opens on your screen. Such a run is also confined to the hosts you approved for it: a `navigate` step to another host, or a secret typed into a page on another host, fails with `… was refused: this run may only reach the hosts approved for it`.
+**Agent runs.** A run an agent starts over MCP is always headless, whatever this setting says, so no window opens on your screen. Such a run is also confined to the hosts you approved for it: a `navigate` step to another host, or a secret typed into a page — or into an iframe — on another host, fails with `… was refused: this run may only reach the hosts approved for it`.
 
 ## On the CLI
 
@@ -270,10 +274,11 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 - **If a step fails with `no supported browser was found on this machine`**, install Google Chrome or Microsoft Edge, or run `npx playwright install chromium`, then pick it in **Settings > Browser**.
 - **If a step fails with `… was not found on this machine`**, the chosen browser is not installed. Choose another one, **Automatic**, or pass `--browser` on the CLI.
 - **If a step fails with `matches N elements; add hasText, nth or within to pick one`**, the locator is not specific enough. Add the visible text with `hasText`, pick one with `nth`, or scope it to a parent with `within`.
-- **If a step fails with `{{env.X}} is not set`**, the run's environment has no such variable. Select the right environment in the toolbar, or add the key.
+- **If a step fails with `{{…}} is not set`**, that placeholder could not be resolved: the run's environment or the workflow has no such variable, the node a direct reference names has not run yet, or the function is unknown. Check the spelling and the namespace it reads from.
 - **If a step fails with `{{secrets.*}} is only allowed in a fill step's value`**, the secret is in a URL, a locator or a check. Move the value into a fill, or read the page's value with an `extract` step instead.
 - **If a click times out because another element covers it**, a banner, a cookie notice or a modal is on top. Add the step that dismisses it before the click.
-- **If `browser_parallel_branches` appears**, two browser steps are on branches that never meet. Join them into one chain.
+- **If `browser_parallel_branches` appears**, two things that act on the page — browser steps, or calls into workflows with browser steps — are on branches that never meet. Join them into one chain.
+- **If a run is refused with `Browser step: these nodes drive the run's page but are on parallel branches`**, the graph check found the same thing at run time: chain the named nodes one after another.
 - **If `browser_chain_starts_without_navigate` appears**, the first browser step acts on a blank page. Add **Open a page** at the start of the chain.
 - **If a load run is refused with `A load run cannot run a workflow with browser steps`**, run the workflow normally or from the CLI; load runs are for HTTP timing.
 - **If a For each node fails with `a for-each with concurrency above 1 cannot call a workflow with browser steps`**, set its concurrency to 1, or move the browser steps out of the target.

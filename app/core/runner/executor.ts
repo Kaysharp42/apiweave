@@ -53,7 +53,7 @@ import { findSoapFault } from "@shared/extractors/xmlDocument"
 import type { SoapBody } from "@shared/types/SoapBody"
 import type { SoapFault } from "@shared/types/SoapFault"
 import { compareSnapshot, describeSnapshotDifference, snapshotValue, type SnapshotStore } from "./snapshots"
-import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
+import { findCycles, successorMap, browserParallelNodeIds } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
 import type { Page } from "playwright-core"
@@ -695,6 +695,28 @@ export class WorkflowExecutor {
       return this.buildOutput(caseName, startedAt, seed, "failed")
     }
 
+    // Browser steps of a run share one page (a Call Workflow child included),
+    // so they must form one ordered chain. Two of them on parallel branches
+    // would interleave — A navigates, B navigates, A fills on B's page — and
+    // the run's outcome would depend on timing. Refuse before any node runs;
+    // the analyzer reports the same graph as `browser_parallel_branches`.
+    if (workflow.nodes.some((node) => node.type === "browser" || node.type === "workflow")) {
+      const parallelNodeIds = browserParallelNodeIds(workflow.nodes, edges, (node) => this.drivesBrowser(node))
+      if (parallelNodeIds.length > 0) {
+        const names = parallelNodeIds.map((id) => nodes.get(id)?.label || id)
+        const message =
+          `${BROWSER_STEP_PREFIX} these nodes drive the run's page but are on parallel branches, ` +
+          `so their steps would interleave: ${names.join(", ")}; chain them one after another`
+        this.hasFailures = true
+        this.firstErrorMessage = message
+        for (const id of parallelNodeIds) {
+          this.failedNodes.add(id)
+          this.updateNodeStatus(id, "failed", { status: "error", error: message })
+        }
+        return this.buildOutput(caseName, startedAt, seed, "failed")
+      }
+    }
+
     let entryNodeIds: string[] = []
     if (options.startNodeIds && options.startNodeIds.length > 0) {
       entryNodeIds = options.startNodeIds.filter((id) => nodes.has(id))
@@ -1242,18 +1264,33 @@ export class WorkflowExecutor {
     }
   }
 
-  /** Whether `target`, or any workflow it calls, has a `browser` node. */
-  private reachesBrowserNodes(target: ResolvedSubWorkflow): boolean {
-    const seen = new Set<ResolvedSubWorkflow>()
-    const pending = [target]
-    for (let workflow = pending.pop(); workflow !== undefined; workflow = pending.pop()) {
-      if (seen.has(workflow)) continue
-      seen.add(workflow)
+  /** Whether `node` acts on the run's page: a browser step, or a call into a workflow that has one. */
+  private drivesBrowser(node: WorkflowNode): boolean {
+    if (node.type === "browser") return true
+    const targetId = node.type === "workflow" ? node.config?.["targetWorkflowId"] : undefined
+    return typeof targetId === "string" && this.workflowReachesBrowser(targetId)
+  }
+
+  /**
+   * Whether `workflowId`, or any workflow it calls, has a `browser` node.
+   *
+   * Visited workflows are tracked by *id*, not by the object `resolveWorkflow`
+   * returns: a resolver may hand back a fresh snapshot per call, and a call
+   * cycle (which a target edited after the caller was saved can introduce)
+   * would then be walked for ever.
+   */
+  private workflowReachesBrowser(workflowId: string): boolean {
+    const seen = new Set<string>()
+    const pending = [workflowId]
+    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      const workflow = this.deps.resolveWorkflow?.(id)
+      if (workflow === undefined) continue
       for (const node of workflow.nodes) {
         if (node.type === "browser") return true
         const calledId = node.type === "workflow" ? node.config?.["targetWorkflowId"] : undefined
-        const called = typeof calledId === "string" ? this.deps.resolveWorkflow?.(calledId) : undefined
-        if (called !== undefined) pending.push(called)
+        if (typeof calledId === "string") pending.push(calledId)
       }
     }
     return false
@@ -2786,7 +2823,7 @@ export class WorkflowExecutor {
     )
     const stopOnFailure = forEach.stopOnFailure ?? true
     // Iterations share the run's one page, so concurrent ones would drive it at once.
-    if (concurrency > 1 && this.reachesBrowserNodes(target)) {
+    if (concurrency > 1 && this.workflowReachesBrowser(targetWorkflowId)) {
       return {
         status: "error",
         error: `${BROWSER_STEP_PREFIX} a for-each with concurrency above 1 cannot call a workflow with browser steps; set concurrency to 1`,

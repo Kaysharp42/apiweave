@@ -17,4 +17,12 @@ export interface WorkflowGraphInput {
   readonly nodes: readonly WorkflowNode[]
   readonly edges: readonly WorkflowEdge[]
   readonly variables?: Readonly<Record<string, JsonValue>> | undefined
+  /**
+   * The ids of workflows whose graph, transitively, contains a `browser` step.
+   * A Call Workflow node targeting one drives the run's page like a browser
+   * step does, so the parallelism rule must count it as part of the chain.
+   * Absent when the caller cannot read other workflows (the canvas gate); the
+   * analyzer then compares `browser` nodes only.
+   */
+  readonly browserStepWorkflowIds?: readonly string[] | undefined
 }

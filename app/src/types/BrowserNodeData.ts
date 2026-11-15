@@ -9,8 +9,6 @@ export interface BrowserNodeData {
     duration?: number;
     error?: string | null;
     browser?: BrowserStepResult;
-    /** The run the result came from; reads the step's screenshot. */
-    runId?: string;
   };
   config?: Record<string, unknown>;
 }

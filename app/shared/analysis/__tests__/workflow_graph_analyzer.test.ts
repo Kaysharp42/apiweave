@@ -856,6 +856,9 @@ describe("browser steps", () => {
     })
   }
   const diagnose = (workflow: Workflow) => analyzeWorkflowGraph(workflow).diagnostics
+  /** The same check, with the Call Workflow targets the caller could read that have browser steps. */
+  const diagnoseWithCalls = (workflow: Workflow, browserStepWorkflowIds: readonly string[]) =>
+    analyzeWorkflowGraph({ ...workflow, browserStepWorkflowIds }).diagnostics
 
   it("accepts one ordered chain that opens a page first", () => {
     const workflow = browserWorkflow(
@@ -889,6 +892,59 @@ describe("browser steps", () => {
       [["start", "api"], ["api", "check"], ["check", "on", "pass"], ["check", "off", "fail"], ["on", "end"], ["off", "end"]],
     )
     expect(diagnose(workflow).map((item) => item.code)).not.toContain("browser_parallel_branches")
+  })
+
+  // A Call Workflow node into a workflow with browser steps drives the same
+  // page as a browser step, so the chain rule covers it too. The target ids a
+  // caller can read are named by `browserStepWorkflowIds`.
+  it("rejects two called workflows with browser steps on parallel branches", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "login-a", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "login-b", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+      ],
+      [["start", "login-a"], ["start", "login-b"], ["login-a", "end"], ["login-b", "end"]],
+    )
+    const parallel = diagnoseWithCalls(workflow, ["login-flow"]).find((item) => item.code === "browser_parallel_branches")
+    expect(parallel).toMatchObject({ severity: "error", nodeIds: ["login-a", "login-b"] })
+  })
+
+  it("rejects a called workflow with browser steps parallel to a browser step", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "open", type: "browser", config: nav },
+      ],
+      [["start", "login"], ["start", "open"], ["login", "end"], ["open", "end"]],
+    )
+    expect(diagnoseWithCalls(workflow, ["login-flow"]).find((item) => item.code === "browser_parallel_branches")).toMatchObject({
+      severity: "error",
+      nodeIds: ["login", "open"],
+    })
+  })
+
+  it("allows a called workflow and a browser step on the pass and fail sides of one assertion", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/flag" } },
+        { nodeId: "check", type: "assertion", config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] } },
+        { nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "open", type: "browser", config: nav },
+      ],
+      [["start", "api"], ["api", "check"], ["check", "login", "pass"], ["check", "open", "fail"], ["login", "end"], ["open", "end"]],
+    )
+    expect(diagnoseWithCalls(workflow, ["login-flow"]).map((item) => item.code)).not.toContain("browser_parallel_branches")
+  })
+
+  it("ignores a call into a workflow without browser steps", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "report", type: "workflow", config: { targetWorkflowId: "report-flow" } },
+      ],
+      [["start", "login"], ["start", "report"], ["login", "end"], ["report", "end"]],
+    )
+    expect(diagnoseWithCalls(workflow, ["login-flow"]).map((item) => item.code)).not.toContain("browser_parallel_branches")
   })
 
   it("warns when the chain does not open a page first, unless a called workflow may have", () => {

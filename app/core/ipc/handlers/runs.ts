@@ -197,15 +197,20 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   // Failure evidence a `browser` node stored (a screenshot). Read-only, and
   // deliberately not on the MCP whitelist: an agent gets images through a tool
   // that caps and masks them, never raw bytes as one unbounded string.
+  //
+  // Keyed by the artifact, not by a run: a rerun copies a failed step's result
+  // from the source run unchanged, so its screenshot still belongs to that
+  // earlier run while the canvas shows the new one.
   router.register("runs", "getArtifact", {
-    input: z.object({ workspaceId: ws, runId: z.string().min(1), artifactId: z.string().min(1) }).strict(),
+    input: z.object({ workspaceId: ws, artifactId: z.string().min(1) }).strict(),
     output: RunArtifactSchema,
-    handle: async ({ workspaceId, runId, artifactId }) => {
-      // Same authorization as `runs.get`: a run outside this workspace is not_found.
-      await runs.get(workspaceId, runId)
+    handle: async ({ workspaceId, artifactId }) => {
       if (deps.runArtifacts === undefined) throw new ValidationError("Run artifact storage is unavailable")
-      const artifact = deps.runArtifacts.get(runId, artifactId)
+      const artifact = deps.runArtifacts.get(artifactId)
       if (artifact === undefined) throw new NotFoundError(`artifact ${artifactId} not found`)
+      // Same authorization as `runs.get`: an artifact whose run lives outside
+      // this workspace is not_found.
+      await runs.get(workspaceId, artifact.runId)
       return { mime: artifact.mime, base64: artifact.body.toString("base64") }
     },
   })
@@ -330,6 +335,7 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
 async function failureScreenshot(deps: HandlerDeps, workspaceId: string, runId: string, nodeId: string): Promise<RunArtifact | undefined> {
   const run = await deps.runs.get(workspaceId, runId)
   const artifactId = run.results.find((result) => result.nodeId === nodeId)?.browser?.screenshotArtifactId
-  const artifact = artifactId !== undefined ? deps.runArtifacts?.get(runId, artifactId) : undefined
+  // By the artifact's own id: a rerun's copied result points at the source run's screenshot.
+  const artifact = artifactId !== undefined ? deps.runArtifacts?.get(artifactId) : undefined
   return artifact !== undefined ? { mime: artifact.mime, base64: artifact.body.toString("base64") } : undefined
 }

@@ -49,6 +49,8 @@ let server: Server
 let base: string
 /** What the dashboard greets with; a test changes it to make a check fail and then pass. */
 let greeting = "Welcome"
+/** What the `/outer` page embeds in its iframe; a test points it at another server. */
+let frameSrc = ""
 
 // The server comes first so `afterAll` always has one to close. Finding a
 // browser launches up to three, which is slow on a loaded CI runner.
@@ -61,6 +63,10 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(LOGIN_PAGE)
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
+    } else if (path === "/outer") {
+      response
+        .writeHead(200, { "content-type": "text/html" })
+        .end(`<!doctype html><title>Outer</title><h1>Outer</h1><iframe src="${frameSrc}" width="400" height="200"></iframe>`)
     } else {
       response.writeHead(404).end()
     }
@@ -109,6 +115,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
   beforeEach((context) => {
     if (channel === undefined) context.skip()
     greeting = "Welcome"
+    frameSrc = ""
     db = initDatabase({ databasePath: ":memory:" })
     workflows = new WorkflowRepository(db.kvStore)
     runs = new RunRepository(db.kvStore)
@@ -196,6 +203,25 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect([...artifacts[0]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
   })
 
+  it("keeps the screenshot when a secret was typed into an ordinary text field", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/login` }),
+      step("email", { action: "fill", locator: role("textbox", "Email"), value: "{{secrets.TEST_PASSWORD}}" }),
+      step("greets", { action: "expect-text", locator: role("heading"), text: "Welcome", match: "equals", timeoutMs: 600 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status).toBe("failed")
+    const failed = result(stored, "greets")!
+    expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-1" })
+    expect(failed.browser?.evidenceNote).toBeUndefined()
+    expect(failed.browser?.ariaSnapshot).toContain('textbox "Email": <SECRET>')
+    expect(JSON.stringify(stored)).not.toContain(SECRET_PASSWORD)
+    expect(artifacts).toHaveLength(1)
+    expect([...artifacts[0]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
+  })
+
   it("answers a confirm() only when the step says so", async () => {
     const workflowId = create([
       step("open", { action: "navigate", url: `${base}/dashboard` }),
@@ -272,6 +298,35 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     )
   })
 
+  it("refuses to type a secret into an iframe on a host an agent-run was not approved for", async () => {
+    const frameServer = createServer((_request, response) => {
+      response
+        .writeHead(200, { "content-type": "text/html" })
+        .end('<!doctype html><title>Frame</title><label for="token">Token</label><input id="token" type="text">')
+    })
+    await new Promise<void>((resolve) => frameServer.listen(0, "127.0.0.1", resolve))
+    const frameHost = `127.0.0.1:${(frameServer.address() as AddressInfo).port}`
+    frameSrc = `http://${frameHost}/`
+    try {
+      const executor = new WorkflowExecutor(executorDeps({
+        http: new SafeHttp().restrictedTo([new URL(base).host]),
+        secrets: { TEST_PASSWORD: SECRET_PASSWORD },
+      }))
+      const graph = chain(
+        step("open", { action: "navigate", url: `${base}/outer` }),
+        step("token", { action: "fill", locator: { kind: "css", value: "#token", frame: "iframe" }, value: "{{secrets.TEST_PASSWORD}}" }),
+      ) as unknown as WorkflowGraph
+
+      const output = await executor.executeWorkflow(graph)
+
+      expect(output.results.find((stored) => stored.nodeId === "token")?.error).toBe(
+        `Browser step: typing a secret into ${frameHost} was refused: this run may only reach the hosts approved for it`,
+      )
+    } finally {
+      await new Promise<void>((resolve) => frameServer.close(() => resolve()))
+    }
+  })
+
   it("shares the page with a called workflow", async () => {
     const login = chain(...loginSteps("pw"), step("submit", { action: "click", locator: role("button", "Sign in") }))
     const executor = new WorkflowExecutor(executorDeps({
@@ -331,5 +386,58 @@ describe("browser steps without a browser", () => {
     const output = await executor.executeWorkflow(chain(step("bad", { action: "click" })) as unknown as WorkflowGraph)
 
     expect(output.results.find((stored) => stored.nodeId === "bad")?.error).toBe("Browser step: the step's configuration is invalid at locator")
+  })
+
+  // The refusal lands before any node runs, so no browser is launched: this is
+  // testable with no browser on the machine.
+  it("refuses a run whose page-driving nodes are on parallel branches", async () => {
+    const child = chain(step("open", { action: "navigate", url: "http://127.0.0.1:1/" }))
+    const login = { name: "Log in", nodes: child.nodes as unknown as RunnerNode[], edges: child.edges }
+    const executor = new WorkflowExecutor({
+      ...executorDeps(),
+      resolveWorkflow: (id) => (id === "login" ? login : undefined),
+    })
+    const graph = {
+      nodes: [
+        node("start", "start"),
+        node("login-a", "workflow", { targetWorkflowId: "login" }),
+        node("login-b", "workflow", { targetWorkflowId: "login" }),
+        node("end", "end"),
+      ],
+      edges: [edge("start", "login-a"), edge("start", "login-b"), edge("login-a", "end"), edge("login-b", "end")],
+    } as unknown as WorkflowGraph
+
+    const output = await executor.executeWorkflow(graph)
+
+    expect(output.status).toBe("failed")
+    expect(output.failureMessage).toMatch(/^Browser step: these nodes drive the run's page/)
+    expect(output.results).toEqual([])
+    expect([...output.failedNodes].sort()).toEqual(["login-a", "login-b"])
+    expect(output.nodeStatuses["login-a"]).toBe("failed")
+    expect(output.nodeStatuses["end"]).toBeUndefined()
+  })
+
+  it("refuses a browser step parallel to a call into a workflow with browser steps", async () => {
+    const child = chain(step("open", { action: "navigate", url: "http://127.0.0.1:1/" }))
+    const login = { name: "Log in", nodes: child.nodes as unknown as RunnerNode[], edges: child.edges }
+    const executor = new WorkflowExecutor({
+      ...executorDeps(),
+      resolveWorkflow: (id) => (id === "login" ? login : undefined),
+    })
+    const graph = {
+      nodes: [
+        node("start", "start"),
+        node("login", "workflow", { targetWorkflowId: "login" }),
+        step("open", { action: "navigate", url: "http://127.0.0.1:1/" }),
+        node("end", "end"),
+      ],
+      edges: [edge("start", "login"), edge("start", "open"), edge("login", "end"), edge("open", "end")],
+    } as unknown as WorkflowGraph
+
+    const output = await executor.executeWorkflow(graph)
+
+    expect(output.status).toBe("failed")
+    expect(output.failureMessage).toMatch(/^Browser step: these nodes drive the run's page/)
+    expect([...output.failedNodes].sort()).toEqual(["login", "open"])
   })
 })
