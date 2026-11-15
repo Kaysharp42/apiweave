@@ -62,6 +62,10 @@ document.getElementById('f').addEventListener('submit', (event) => {
 /** Shows the API key the run sent as a secret, so the masking of what a page displays is tested. */
 const DASHBOARD_PAGE = `<!doctype html><title>Dashboard</title><h1>Welcome</h1><p>Your key: ${API_KEY}</p>`
 
+/** Navigates a moment after the click, as a sign-in that waits for its API call does. */
+const SLOW_PAGE = `<!doctype html><title>Slow</title>
+<button onclick="setTimeout(() => { location.href = '/dashboard' }, 400)">Continue</button>`
+
 let channel: BrowserChannel | undefined
 let server: Server
 let base: string
@@ -72,6 +76,7 @@ beforeAll(async () => {
     if (path === "/api/profile") response.writeHead(200, { "content-type": "application/json" }).end("{}")
     else if (path === "/login") response.writeHead(200, { "content-type": "text/html" }).end(LOGIN_PAGE)
     else if (path === "/dashboard") response.writeHead(200, { "content-type": "text/html" }).end(DASHBOARD_PAGE)
+    else if (path === "/slow") response.writeHead(200, { "content-type": "text/html" }).end(SLOW_PAGE)
     else response.writeHead(404).end()
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -233,6 +238,17 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
     expect(JSON.stringify(result)).not.toContain("screenshot")
     expect(content.filter((item) => item.type === "text").map((item) => item.text).join("")).not.toContain(image?.data?.slice(0, 64))
     expect(JSON.stringify(content)).not.toContain(API_KEY)
+  })
+
+  it("waits for a navigation the last step set off before reading the page", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/slow` }),
+      step("continue", { action: "click", locator: { kind: "role", role: "button", name: "Continue" } }),
+    ])
+    const { result } = await call("browser_inspect", { workflowId })
+    const inspection = result as BrowserInspection
+    expect(inspection.page?.url).toBe(`${base}/dashboard`)
+    expect(inspection.page?.title).toBe("Dashboard")
   })
 
   it("says no page was open when no browser step ran before the node", async () => {
