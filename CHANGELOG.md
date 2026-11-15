@@ -127,6 +127,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   machine, and can show the browser window during runs (off by default; a run an
   agent starts always stays hidden). `apiweave run` takes
   `--browser chrome|msedge|chromium` and `--headed`.
+- **Browser evidence over MCP, and `browser_inspect`.** A failed browser step's
+  action, page address and title, expected and actual values, Playwright's
+  message and masked accessibility snapshot now reach a connected agent through
+  `runs_getNodeResult` and `workflows_debugContext`. The new `browser_inspect`
+  tool runs a workflow headless up to a step (or to its end) and returns the page
+  it left open, so an agent picks role and label locators from the real page
+  instead of guessing from source; it records a run like `runs_create`. With
+  `screenshot: true`, an inspected page or one failed step also returns its JPEG
+  as MCP image content, and screenshots now paint over every element that shows
+  a masked value, not only password fields.
 
 ### Changed
 

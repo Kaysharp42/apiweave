@@ -870,6 +870,22 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     await client.close()
   })
 
+  it("teaches the browser authoring loop, its locator order and the repair recipe", async () => {
+    const client = await connectClient()
+    const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))
+      .contents[0] as { text: string }
+
+    // The page is inspected, not guessed from source, and `selector` is never written by hand.
+    expect(authoring.text).toContain("browser_inspect")
+    expect(authoring.text).toContain("beforeNodeId")
+    expect(authoring.text).toContain('kind: "selector"')
+    expect(authoring.text).toContain('{"kind": "role", "role": "button", "name": "Sign in"}')
+    // Repair: evidence, then one patched node, then a rerun that restarts the chain.
+    expect(authoring.text).toContain("sections: [\"browser\"]")
+    expect(authoring.text).toContain("resume: { nodeId }")
+    await client.close()
+  })
+
   /**
    * `instructions` rides in the `initialize` result, so it is the only
    * documentation a client is handed without asking. Most of the agent roster
@@ -2261,6 +2277,15 @@ describe("MCP prompts — /apiweave:e2e", () => {
     expect(text).toContain("Never loosen or delete an assertion")
     expect(text).toContain("{{secrets.NAME}}")
     expect(text).toContain("Do not write test scripts")
+  })
+
+  it("treats a page or user flow as a browser task and inspects the page first", () => {
+    const text = textOfPrompt("log in and check the dashboard heading")
+    expect(text).toContain("browser_inspect")
+    expect(text).toContain("beforeNodeId")
+    expect(text).toContain("{{env.BASE_URL}}")
+    expect(text).toContain("{{secrets.NAME}}")
+    expect(text).toContain("resume: { nodeId }")
   })
 
   it("is listed first and reads over an MCP client with its task", async () => {

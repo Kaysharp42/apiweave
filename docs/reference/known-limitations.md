@@ -180,15 +180,23 @@ page or through the CLI flags.
 - **The network settings do not apply.** The proxy, trusted CAs and client
   certificates of **Settings → Network** are used by HTTP nodes, not by browser
   steps, which use the machine's own network configuration.
-- **A screenshot cannot mask what the page displays.** Password fields are
-  painted over, and every secret and typed password is masked as `<SECRET>` in
-  the stored result, but text the page itself renders — an echoed API key, a token
-  in a confirmation — is visible in the screenshot. Screenshots are taken only on
-  failure, are stored with the run and are never exported.
-- **Steps are written by hand.** Recording steps by clicking through the page is
-  not available yet, and an agent cannot look at a page to pick a locator yet.
-  An agent reading a failed run gets the step's error, not its ARIA snapshot or
-  screenshot.
+- **A screenshot covers only part of what the page displays.** Password fields
+  are painted over, and so is every element whose text or field value contains a
+  value the run masks — a secret, a typed password, an OAuth token — because an
+  image cannot be masked after it is taken. Other sensitive text the page renders
+  is still visible, and the covering reaches the main frame only: an element
+  inside an iframe that shows a secret is not painted over. A failed step's
+  screenshot is stored with the run and never exported; `browser_inspect` takes
+  one only when asked, and hands it to the agent without storing it.
+- **There is no recorder.** Recording steps by clicking through the page is not
+  available yet. Steps are written by hand, or by an agent over MCP: an agent can
+  inspect a page and read a failed step's browser evidence, but there is no
+  click-through recording flow.
+- **`browser_inspect` has no `url` mode.** It reads the page a workflow run left
+  open, so inspecting an address means adding an `Open a page` step and
+  inspecting after it. The run it makes is an ordinary run: it sends real
+  traffic, waits for the user's approval when it would send secrets, and appears
+  in history as `completed` when it stopped at the step it was given.
 
 ## Execution
 
