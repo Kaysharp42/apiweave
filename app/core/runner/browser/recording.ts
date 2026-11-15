@@ -48,6 +48,8 @@ const START_TIMEOUT_MS = 30_000
 const DEFAULT_THROTTLE_MS = 150
 /** Just past Playwright's `kActionBufferTimeout` (500 ms in its `RecorderSignalProcessor`). */
 const RECORDER_BUFFER_MS = 600
+/** What an abandoned recording tells its owner: nothing at all. */
+const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () => undefined, ended: () => undefined }
 
 /**
  * One recording: a browser the user clicks through, with Playwright's in-page
@@ -69,6 +71,7 @@ export class BrowserRecording {
   private readonly pending = new Map<string, RecordedBrowserStep>()
   private timer: ReturnType<typeof setTimeout> | null = null
   private readonly converter: RecordingConverter
+  private listener: RecordingListener
 
   private constructor(
     private readonly browser: Browser,
@@ -76,33 +79,40 @@ export class BrowserRecording {
     private readonly options: RecordingOptions,
   ) {
     this.converter = new RecordingConverter(options.values, options.newStepId, options.takenSecretNames)
+    this.listener = options.listener
   }
 
   /** Launch the browser, start recording and open the start page. Throws, with nothing left open, when any of it fails. */
   public static async start(options: RecordingOptions): Promise<BrowserRecording> {
     const browser = await launchBrowser(options.launch)
+    let recording: BrowserRecording | null = null
     try {
       const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
-      const recording = new BrowserRecording(browser, context, options)
+      recording = new BrowserRecording(browser, context, options)
+      const started = recording
       await (context as unknown as RecordingContext)._startRecording(
         { language: "javascript" },
         {
-          actionAdded: (page, action) => recording.receive("added", page, action),
-          actionUpdated: (page, action) => recording.receive("updated", page, action),
+          actionAdded: (page, action) => started.receive("added", page, action),
+          actionUpdated: (page, action) => started.receive("updated", page, action),
         },
       )
       const page = await context.newPage()
-      recording.mainPage ??= page
-      page.on("close", () => void recording.stop())
-      browser.on("disconnected", () => void recording.stop())
+      started.mainPage ??= page
+      page.on("close", () => void started.stop())
+      browser.on("disconnected", () => void started.stop())
       try {
         await page.goto(options.startUrl, { waitUntil: "load", timeout: START_TIMEOUT_MS })
       } catch (error) {
         const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error)
         throw new BrowserSessionError(`the start page could not be opened: ${reason.slice(0, 200)}`)
       }
-      return recording
+      return started
     } catch (error) {
+      // The recorder may already have sent a step, and closing the browser fires
+      // `disconnected`, which would end the recording: silence it first, or a
+      // start that failed would still put steps on the canvas and report an end.
+      recording?.abandon()
       await browser.close().catch(() => undefined)
       throw error
     }
@@ -123,6 +133,16 @@ export class BrowserRecording {
     return this.stopping
   }
 
+  /**
+   * Discard a recording whose start is failing. Its owner was told the start
+   * failed, so nothing it has sent or still sends — a step, a warning, or the
+   * end that closing the browser would report — may reach the listener.
+   */
+  private abandon(): void {
+    this.accepting = false
+    this.listener = SILENT_LISTENER
+  }
+
   private async finish(): Promise<void> {
     // Playwright holds a left click (and a navigate) back for 500 ms to attach
     // the navigation it causes, and stopping drops what it still holds: the
@@ -137,7 +157,7 @@ export class BrowserRecording {
     this.flush()
     await within((this.context as unknown as RecordingContext)._stopRecording(), 2_000, undefined)
     await this.browser.close().catch(() => undefined)
-    this.options.listener.ended()
+    this.listener.ended()
   }
 
   private receive(kind: "added" | "updated", page: Page, raw: unknown): void {
@@ -154,7 +174,7 @@ export class BrowserRecording {
     const isPassword =
       action.name === "fill" && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
     const output = this.converter.apply({ kind, action, onMainPage, ...(isPassword === undefined ? {} : { isPassword }) })
-    for (const warning of output.warnings) this.options.listener.warning(warning)
+    for (const warning of output.warnings) this.listener.warning(warning)
     for (const step of output.steps) this.send(step)
   }
 
@@ -180,7 +200,7 @@ export class BrowserRecording {
     if (!this.sentStepIds.has(step.stepId)) {
       this.sentStepIds.add(step.stepId)
       this.flush()
-      this.options.listener.step(step)
+      this.listener.step(step)
       return
     }
     this.pending.set(step.stepId, step)
@@ -192,6 +212,6 @@ export class BrowserRecording {
     this.timer = null
     const steps = [...this.pending.values()]
     this.pending.clear()
-    for (const step of steps) this.options.listener.step(step)
+    for (const step of steps) this.listener.step(step)
   }
 }

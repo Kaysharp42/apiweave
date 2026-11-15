@@ -83,6 +83,16 @@ export class BrowserRecordingService {
     let next = 0
     // The user can close the browser the moment it opens: `ended` may come before `record` resolves.
     let ended = false
+    // A recording can report a step before its start has returned — the
+    // navigate for the start page arrives as the page loads. Hold every event
+    // until the start succeeds, so a start that then fails leaves no step, no
+    // warning and no end on the canvas, and release them in order afterwards.
+    let holding = true
+    const held: BrowserRecordingEvent[] = []
+    const publish = (event: BrowserRecordingEvent): void => {
+      if (holding) held.push(event)
+      else this.deps.publish(event)
+    }
     const record = this.deps.record ?? ((options: RecordingOptions) => BrowserRecording.start(options))
     let recording: { stop(): Promise<void> }
     try {
@@ -93,19 +103,22 @@ export class BrowserRecordingService {
         takenSecretNames: new Set(extractSecretRefsFromString(JSON.stringify(workflow.nodes))),
         newStepId: () => `browser-${stamp}-${++next}`,
         listener: {
-          step: (step) => this.deps.publish({ kind: "step", recordingId, workflowId, step }),
-          warning: (message) => this.deps.publish({ kind: "warning", recordingId, workflowId, message }),
+          step: (step) => publish({ kind: "step", recordingId, workflowId, step }),
+          warning: (message) => publish({ kind: "warning", recordingId, workflowId, message }),
           ended: () => {
             ended = true
             if (this.active?.status.recordingId === recordingId) this.active = null
-            this.deps.publish({ kind: "ended", recordingId, workflowId })
+            publish({ kind: "ended", recordingId, workflowId })
           },
         },
       })
     } catch (error) {
+      // `held` is dropped with this frame: nothing a failed start reported is published.
       const message = error instanceof Error ? error.message : String(error)
       throw new ValidationError(`The recording could not start: ${message.replace(`${BROWSER_STEP_PREFIX} `, "")}`)
     }
+    holding = false
+    for (const event of held) this.deps.publish(event)
     if (!ended) this.active = { status, recording }
     return status
   }

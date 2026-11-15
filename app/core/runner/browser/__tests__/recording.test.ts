@@ -161,9 +161,11 @@ describe("BrowserRecording", () => {
   )
 
   it(
-    "fails to start, leaving nothing open, when the start page does not load",
+    "fails to start, leaving nothing open and telling the listener nothing",
     async (context) => {
       if (channel === undefined) context.skip()
+      const sent: RecordedBrowserStep[] = []
+      let ended = 0
       await expect(
         BrowserRecording.start({
           launch: { headless: true, ...(channel === undefined ? {} : { channel }) },
@@ -171,9 +173,13 @@ describe("BrowserRecording", () => {
           values: { env: {}, secrets: {} },
           takenSecretNames: new Set(),
           newStepId: () => "x",
-          listener: { step: () => undefined, warning: () => undefined, ended: () => undefined },
+          listener: { step: (step) => sent.push(step), warning: () => undefined, ended: () => ended++ },
         }),
       ).rejects.toThrow(/^Browser step: the start page could not be opened/)
+      // Closing the browser after a failed start must not look like the user ending a recording.
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      expect(ended).toBe(0)
+      expect(sent).toEqual([])
     },
     BROWSER_TEST_TIMEOUT_MS,
   )

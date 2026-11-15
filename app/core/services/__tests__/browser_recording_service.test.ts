@@ -98,6 +98,46 @@ describe("BrowserRecordingService", () => {
     expect(service.status()).toBeNull()
   })
 
+  it("publishes nothing when the start fails, though the recorder had already sent a step", async () => {
+    const { service, events } = harness({
+      record: async (options) => {
+        options.listener.step({ stepId: "browser-1", config: { action: "navigate", url: "{{env.BASE_URL}}/login" } })
+        options.listener.warning("popup")
+        options.listener.ended()
+        throw new Error("Browser step: the start page could not be opened: net::ERR_CONNECTION_REFUSED")
+      },
+    })
+    await expect(service.start(request)).rejects.toThrow(/could not start: the start page could not be opened/)
+    expect(events).toEqual([])
+    expect(service.status()).toBeNull()
+  })
+
+  it("publishes what the recorder sent before the start returned, in order, once it has", async () => {
+    let reported: () => void = () => undefined
+    let release: () => void = () => undefined
+    const emitted = new Promise<void>((resolve) => (reported = resolve))
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const { service, events } = harness({
+      record: async (options) => {
+        options.listener.step({ stepId: "browser-1", config: { action: "navigate", url: "{{env.BASE_URL}}/login" } })
+        options.listener.warning("popup")
+        // The user closes the browser the moment it opens.
+        options.listener.ended()
+        reported()
+        await gate
+        return { stop: async () => undefined }
+      },
+    })
+    const starting = service.start(request)
+    await emitted
+    expect(events).toEqual([])
+    release()
+    await expect(starting).resolves.toBeDefined()
+    expect(events.map((event) => event.kind)).toEqual(["step", "warning", "ended"])
+    expect(events.every((event) => event.recordingId === "recording-1700000000000" && event.workflowId === WORKFLOW)).toBe(true)
+    expect(service.status()).toBeNull()
+  })
+
   it("works without an environment: no variables, workspace secrets only", async () => {
     const { service, started } = harness()
     await service.start({ ...request, environmentId: null, startUrl: "https://dev.example.com" })
