@@ -28,7 +28,7 @@ describe("useBrowserRecordingStore", () => {
     vi.mocked(browser.recordingStatus).mockResolvedValue(null);
     vi.mocked(browser.startRecording).mockResolvedValue({ recordingId: "recording-1", workspaceId: "ws", workflowId: "wf" });
     vi.mocked(browser.stopRecording).mockResolvedValue(undefined);
-    useBrowserRecordingStore.setState({ phase: "idle", workflowId: null, recordingId: null, anchorId: null, steps: [], insertedStepIds: [] });
+    useBrowserRecordingStore.setState({ phase: "idle", workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [] });
   });
 
   it("starts, collects steps in arrival order with their latest config, and ends", async () => {
@@ -80,5 +80,19 @@ describe("useBrowserRecordingStore", () => {
     await useBrowserRecordingStore.getState().start(request, null, "Recording");
     expect(useBrowserRecordingStore.getState().phase).toBe("idle");
     expect(toast.error).toHaveBeenCalledWith("The recording could not start: Microsoft Edge was not found on this machine.");
+  });
+
+  it("keeps what the canvas placed for a later mount, and clears it when another recording starts", async () => {
+    await useBrowserRecordingStore.getState().start(request, null, "Recording");
+    emit(step("a", "https://dev.test/"));
+    const placed = useBrowserRecordingStore.getState().steps;
+    useBrowserRecordingStore.getState().setPlaced(placed);
+
+    emit({ kind: "ended", recordingId: "recording-1", workflowId: "wf" });
+    // A canvas that mounts after the end still sees what was placed, so it does not place it again.
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "idle", placedSteps: placed });
+
+    await useBrowserRecordingStore.getState().start(request, null, "Recording");
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ steps: [], placedSteps: [] });
   });
 });

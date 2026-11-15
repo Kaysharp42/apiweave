@@ -17,11 +17,16 @@ interface BrowserRecordingState {
   readonly frameLabel: string;
   /** In the order they first arrived, each with its latest config. */
   readonly steps: readonly RecordedBrowserStep[];
-  /** Steps the canvas has placed, in order. Survives the canvas unmounting, so a step is never placed twice. */
-  readonly insertedStepIds: readonly string[];
+  /**
+   * The steps the canvas has placed, in order, each with the exact object it
+   * placed. Survives the canvas unmounting: a later mount compares each step
+   * with what was placed and re-applies only the ones that changed, so it never
+   * writes a recorded config back over the user's edits.
+   */
+  readonly placedSteps: readonly RecordedBrowserStep[];
   start(request: BrowserRecordingRequest, anchorId: string | null, frameLabel: string): Promise<void>;
   stop(): Promise<void>;
-  setInserted(stepIds: readonly string[]): void;
+  setPlaced(steps: readonly RecordedBrowserStep[]): void;
 }
 
 let subscribed = false;
@@ -39,12 +44,12 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
   anchorId: null,
   frameLabel: "Recording",
   steps: [],
-  insertedStepIds: [],
+  placedSteps: [],
 
   start: async (request, anchorId, frameLabel) => {
     if (get().phase !== "idle") return;
     subscribeToRecording();
-    set({ phase: "starting", workflowId: request.workflowId, recordingId: null, anchorId, frameLabel, steps: [], insertedStepIds: [] });
+    set({ phase: "starting", workflowId: request.workflowId, recordingId: null, anchorId, frameLabel, steps: [], placedSteps: [] });
     try {
       const status = await browser.startRecording(request);
       // The user may already have closed the browser: `ended` came first.
@@ -66,7 +71,7 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
     }
   },
 
-  setInserted: (stepIds) => set({ insertedStepIds: stepIds }),
+  setPlaced: (steps) => set({ placedSteps: steps }),
 }));
 
 function receive(event: BrowserRecordingEvent): void {

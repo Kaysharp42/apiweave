@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { subscribeToRecording, useBrowserRecordingStore } from "../stores/BrowserRecordingStore";
 import useEnvironmentStore from "../stores/EnvironmentStore";
 import type { CanvasNode } from "../types/CanvasNode";
@@ -45,29 +44,36 @@ function usePlaceRecordedSteps(
 ): void {
   const recordingId = useBrowserRecordingStore((state) => state.recordingId);
   const steps = useBrowserRecordingStore((state) => state.steps);
-  /** The step objects already placed by this mount; the store replaces a step's object when it changes. */
-  const applied = useRef(new Map<string, RecordedBrowserStep>());
 
   useEffect(() => {
     if (!isHydrated || !isThisWorkflow || recordingId === null) return;
-    const pending = steps.filter((step) => applied.current.get(step.stepId) !== step);
-    if (pending.length === 0) return;
     const store = useBrowserRecordingStore.getState();
+    // What an earlier mount already placed survives in the store, so a step that
+    // has not changed since is left alone instead of overwriting the user's edits.
+    const placedById = new Map(store.placedSteps.map((entry) => [entry.stepId, entry] as const));
+    const pending = steps.filter((step) => placedById.get(step.stepId) !== step);
+    if (pending.length === 0) return;
     const anchorId = store.anchorId ?? resumedAnchor(nodesRef.current, recordingId);
     const placement: RecordingPlacement = { anchorId: anchorId ?? "", frameId: `frame-${recordingId}`, frameLabel: store.frameLabel };
     let graph = { nodes: nodesRef.current, edges: edgesRef.current };
-    const inserted = [...store.insertedStepIds];
+    const inserted = store.placedSteps.map((entry) => entry.stepId);
+    const placed = [...store.placedSteps];
     for (const step of pending) {
-      applied.current.set(step.stepId, step);
       graph = placeRecordedStep(graph, step, placement, inserted);
-      if (!inserted.includes(step.stepId)) inserted.push(step.stepId);
+      const at = inserted.indexOf(step.stepId);
+      if (at === -1) {
+        inserted.push(step.stepId);
+        placed.push(step);
+      } else {
+        placed[at] = step;
+      }
     }
     // A save reads the refs: set them first, so Ctrl+S right after a step keeps it.
     nodesRef.current = graph.nodes;
     edgesRef.current = graph.edges;
     setNodes(graph.nodes);
     setEdges(graph.edges);
-    store.setInserted(inserted);
+    store.setPlaced(placed);
   }, [edgesRef, isHydrated, isThisWorkflow, nodesRef, recordingId, setEdges, setNodes, steps]);
 }
 
