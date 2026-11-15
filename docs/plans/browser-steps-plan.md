@@ -307,7 +307,9 @@ Steps written by hand in the panel or JSON editor. Since node schemas reach agen
 
 **Persistence and IPC**
 - `033_run_artifacts.sql` and `RunArtifactRepository` (registered in `core/repositories/index.ts`).
-- Router handler `runs:getArtifact(runId, artifactId)` → `{ mime, base64 }`, read-only.
+- Router handler `runs:getArtifact(artifactId)` → `{ mime, base64 }`, read-only. Keyed by the
+  artifact rather than by a run: a rerun copies a failed step's result unchanged, so the
+  screenshot still belongs to the run that took it.
 - Settings → Browser, wired through the same path as the network settings.
 
 **Services**

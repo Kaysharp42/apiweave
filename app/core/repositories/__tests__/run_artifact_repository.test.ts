@@ -34,24 +34,26 @@ function save(runId: string, nodeId = "browser-1", body = JPEG): string {
 }
 
 describe("RunArtifactRepository", () => {
-  it("stores a screenshot and reads its bytes back by run and id", () => {
+  it("stores a screenshot and reads its bytes back by id", () => {
     const { runId } = seedRun()
     const artifactId = save(runId)
 
-    expect(artifacts.get(runId, artifactId)).toEqual({ mime: "image/jpeg", body: JPEG })
+    expect(artifacts.get(artifactId)).toEqual({ runId, mime: "image/jpeg", body: JPEG })
     const listed = artifacts.listForRun(runId)
     expect(listed).toHaveLength(1)
     expect(listed[0]).toMatchObject({ artifactId, nodeId: "browser-1", kind: "screenshot", mime: "image/jpeg", size: JPEG.length })
     expect(listed[0]?.createdAt).toEqual(expect.any(String))
   })
 
-  it("binds an id to its own run: another run's id finds nothing", () => {
+  it("reports the run that owns an artifact, so every artifact stays in one workspace", () => {
     const first = seedRun()
     const second = seedRun()
-    const artifactId = save(first.runId)
+    const firstArtifact = save(first.runId)
+    const secondArtifact = save(second.runId)
 
-    expect(artifacts.get(second.runId, artifactId)).toBeUndefined()
-    expect(artifacts.listForRun(second.runId)).toEqual([])
+    expect(artifacts.get(firstArtifact)?.runId).toBe(first.runId)
+    expect(artifacts.get(secondArtifact)?.runId).toBe(second.runId)
+    expect(artifacts.listForRun(second.runId).map((item) => item.artifactId)).toEqual([secondArtifact])
   })
 
   it("lists a run's artifacts in the order they were stored, without bodies", () => {

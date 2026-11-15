@@ -668,10 +668,9 @@ export const apiweave = {
     get: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "get", { workspaceId, runId }),
     /** A stored screenshot's bytes for the evidence tab, as base64. */
-    getArtifact: (workspaceId: string, runId: string, artifactId: string) =>
+    getArtifact: (workspaceId: string, artifactId: string) =>
       invoke<RunArtifact>("runs", "getArtifact", {
         workspaceId,
-        runId,
         artifactId,
       }),
     listByWorkflow: (workspaceId: string, workflowId: string) =>

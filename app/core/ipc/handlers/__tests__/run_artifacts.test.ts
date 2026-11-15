@@ -99,32 +99,43 @@ async function seedRun(): Promise<{ workspaceId: string; runId: string; artifact
 
 describe("runs.getArtifact", () => {
   it("returns the stored screenshot as base64 with its mime type", async () => {
-    const { workspaceId, runId, artifactId } = await seedRun()
+    const { workspaceId, artifactId } = await seedRun()
 
-    const artifact = await ok<RunArtifact>("runs", "getArtifact", { workspaceId, runId, artifactId })
+    const artifact = await ok<RunArtifact>("runs", "getArtifact", { workspaceId, artifactId })
     expect(artifact.mime).toBe("image/jpeg")
     expect(Buffer.from(artifact.base64, "base64")).toEqual(JPEG)
   })
 
-  it("refuses a run that belongs to another workspace, like runs.get", async () => {
-    const { runId, artifactId } = await seedRun()
+  it("reads an artifact by its own id, so a rerun that copied the step still shows its screenshot", async () => {
+    const { workspaceId, runId, artifactId } = await seedRun()
+    // A rerun copies the source run's result verbatim: the pane shows the new
+    // run, while the screenshot still belongs to the run that took it.
+    const run = await ok<{ workflowId: string }>("runs", "get", { workspaceId, runId })
+    runs.create({ workspaceId, workflowId: run.workflowId })
+
+    const artifact = await ok<RunArtifact>("runs", "getArtifact", { workspaceId, artifactId })
+    expect(Buffer.from(artifact.base64, "base64")).toEqual(JPEG)
+  })
+
+  it("refuses an artifact whose run belongs to another workspace, like runs.get", async () => {
+    const { artifactId } = await seedRun()
     const other = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Other", isPersonal: false })
 
     const foreign = await router.dispatch({
       domain: "runs",
       action: "getArtifact",
-      payload: { workspaceId: other.workspaceId, runId, artifactId },
+      payload: { workspaceId: other.workspaceId, artifactId },
     })
     expect(foreign.ok ? null : foreign.error.code).toBe("not_found")
   })
 
-  it("is not_found for an artifact id the run does not own", async () => {
-    const { workspaceId, runId } = await seedRun()
+  it("is not_found for an unknown artifact id", async () => {
+    const { workspaceId } = await seedRun()
 
     const missing = await router.dispatch({
       domain: "runs",
       action: "getArtifact",
-      payload: { workspaceId, runId, artifactId: "not-an-id" },
+      payload: { workspaceId, artifactId: "not-an-id" },
     })
     expect(missing.ok ? null : missing.error.code).toBe("not_found")
   })

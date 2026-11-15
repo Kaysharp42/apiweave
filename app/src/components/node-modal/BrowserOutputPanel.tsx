@@ -24,7 +24,7 @@ function normalizeStatus(status: string): StatusBadgeProps["status"] {
 }
 
 /** The failed step's screenshot, read from the run's artifacts when the pane shows it. */
-function Screenshot({ workspaceId, runId, artifactId }: { workspaceId: string; runId: string; artifactId: string }) {
+function Screenshot({ workspaceId, artifactId }: { workspaceId: string; artifactId: string }) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +33,7 @@ function Screenshot({ workspaceId, runId, artifactId }: { workspaceId: string; r
     setSource(null);
     setError(null);
     apiweave.runs
-      .getArtifact(workspaceId, runId, artifactId)
+      .getArtifact(workspaceId, artifactId)
       .then((artifact) => {
         if (!cancelled) setSource(`data:${artifact.mime};base64,${artifact.base64}`);
       })
@@ -43,7 +43,7 @@ function Screenshot({ workspaceId, runId, artifactId }: { workspaceId: string; r
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, runId, artifactId]);
+  }, [workspaceId, artifactId]);
 
   if (error !== null) return <p className="text-sm text-text-secondary dark:text-text-secondary-dark">{error}</p>;
   if (source === null) return <Spinner size="sm" />;
@@ -60,7 +60,6 @@ function Screenshot({ workspaceId, runId, artifactId }: { workspaceId: string; r
 export function BrowserOutputPanel({ output, executionStatus = "idle", workspaceId }: BrowserOutputPanelProps) {
   const step = output?.browser;
   const screenshotId = step?.screenshotArtifactId;
-  const runId = output?.runId;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
@@ -102,9 +101,9 @@ export function BrowserOutputPanel({ output, executionStatus = "idle", workspace
             </Card>
           ) : null}
 
-          {screenshotId !== undefined && runId !== undefined && workspaceId ? (
+          {screenshotId !== undefined && workspaceId ? (
             <Card title="Screenshot" icon={CameraCardIcon}>
-              <Screenshot workspaceId={workspaceId} runId={runId} artifactId={screenshotId} />
+              <Screenshot workspaceId={workspaceId} artifactId={screenshotId} />
             </Card>
           ) : null}
 
