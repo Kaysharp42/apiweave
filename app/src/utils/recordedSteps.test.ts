@@ -68,6 +68,29 @@ describe("placeRecordedStep", () => {
     expect(after?.data).toMatchObject({ label: "Type into a field", config: { action: "fill", value: "ada" } });
   });
 
+  it("updates a step already on the canvas when the list is empty after a renderer reload", () => {
+    const first = record({ nodes: [start, end], edges: [startToEnd] }, [navigate("s1"), click("s2")]);
+    // A reload loses the store's `placedSteps`; the anchor becomes the last step placed.
+    const onLastStep: RecordingPlacement = { anchorId: "s2", frameId: "group-rec", frameLabel: "Recording" };
+    const once = placeRecordedStep(first, fill("s2", "a"), onLastStep, []);
+    const after = placeRecordedStep(once, fill("s2", "ada"), onLastStep, []);
+    expect(after.nodes.filter((node) => node.id === "s2")).toHaveLength(1);
+    expect(new Set(after.nodes.map((node) => node.id)).size).toBe(after.nodes.length);
+    expect(after.nodes.find((node) => node.id === "s2")).toMatchObject({
+      position: first.nodes.find((node) => node.id === "s2")?.position,
+      data: { label: "Type into a field", config: { action: "fill", value: "ada" } },
+    });
+    expect(after.edges.some((edge) => edge.source === edge.target)).toBe(false);
+    expect(edgePairs(after)).toEqual(["s1->s2", "s2->end-1", "start-1->s1"]);
+  });
+
+  it("still places a new step after the resumed anchor when the list is empty", () => {
+    const first = record({ nodes: [start, end], edges: [startToEnd] }, [click("s1")]);
+    const after = placeRecordedStep(first, fill("s2", "ada"), { anchorId: "s1", frameId: "group-rec", frameLabel: "Recording" }, []);
+    expect(after.nodes.filter((node) => node.id === "s2")).toHaveLength(1);
+    expect(edgePairs(after)).toEqual(["s1->s2", "s2->end-1", "start-1->s1"]);
+  });
+
   it("keeps a title the user changed", () => {
     const graph = record({ nodes: [start], edges: [] }, [click("s1")]);
     const renamed = { ...graph, nodes: graph.nodes.map((node) => (node.id === "s1" ? { ...node, data: { ...node.data, label: "Focus email" } } : node)) };

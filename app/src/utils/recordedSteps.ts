@@ -63,6 +63,10 @@ function updateStep(nodes: readonly CanvasNode[], step: RecordedBrowserStep): Ca
  *
  * A step the user deleted while recording is not put back: its updates are
  * ignored, and the next step connects to the last one still there.
+ *
+ * A step already on the canvas is always an update, even when `inserted` is
+ * empty: a renderer reload loses that list, and inserting the step again would
+ * give React Flow two nodes with one id.
  */
 export function placeRecordedStep(
   graph: CanvasGraph,
@@ -70,9 +74,11 @@ export function placeRecordedStep(
   placement: RecordingPlacement,
   inserted: readonly string[],
 ): CanvasGraph {
-  if (inserted.includes(step.stepId)) return { nodes: updateStep(graph.nodes, step), edges: graph.edges };
-
   const byId = new Map(graph.nodes.map((node) => [node.id, node] as const));
+  if (inserted.includes(step.stepId) || byId.has(step.stepId)) {
+    return { nodes: updateStep(graph.nodes, step), edges: graph.edges };
+  }
+
   const anchor = byId.get(placement.anchorId);
   let nodes = [...graph.nodes];
   let frame = byId.get(placement.frameId);
@@ -104,7 +110,9 @@ export function placeRecordedStep(
   nodes = [...nodes.map((candidate) => (candidate.id === frameId ? { ...candidate, ...frameSize(placed + 1) } : candidate)), node];
 
   const previous = [...inserted].reverse().find((id) => byId.has(id)) ?? (anchor === undefined ? undefined : anchor.id);
-  if (previous === undefined) return { nodes, edges: graph.edges };
+  // Never an edge from a node to itself: a self-loop is what a duplicate id
+  // would leave behind, and React Flow cannot run one.
+  if (previous === undefined || previous === step.stepId) return { nodes, edges: graph.edges };
   const outgoing = graph.edges.filter((edge) => edge.source === previous);
   const follows = previous !== placement.anchorId || (outgoing.length === 1 && outgoing[0]?.sourceHandle == null) ? outgoing : [];
   const moved = new Set(follows.map((edge) => edge.id));
