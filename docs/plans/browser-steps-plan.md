@@ -7,7 +7,7 @@
 | 0: Spike — packaging, CLI, recorder payloads, toolbar | `Kaysharp42/playwright-automation` | **Done** (findings below) |
 | 1: `browser` node, runner, evidence | `Kaysharp42/playwright-automation` | **Done** (notes below) |
 | 2: Agents author and repair browser steps over MCP | `Kaysharp42/browser-steps-phase-2` | **Done** (notes below) |
-| 3: Recorder — record steps into nodes | `feat/browser-recorder` | Not started |
+| 3: Recorder — record steps into nodes | `Kaysharp42/browser-recorder` | **Done** (notes below) |
 | 4: Checks, extracts and dialogs while recording | `feat/browser-recorder-checks` | Not started |
 | 5: Update one node — re-pick an element, re-record from a step | `feat/browser-node-repick` | Not started |
 
@@ -385,6 +385,17 @@ A connected coding agent can already *write* `browser` nodes after Phase 1, but 
 **Tests:** parser table tests built from the Phase 0 payloads (`docs/.scratch/browser-spike/events-msedge.json` moved into a committed fixture with the password replaced); converter tests; substitution tests (env match, secret match, unmatched password, half-typed values); a recorder service test that drives a fixture page headless through `_startRecording`, skipped without a browser.
 
 **Done when:** recording the login-and-dashboard flow on a fixture page produces the example workflow, with the email and password as templates and no click-before-fill noise, and it passes when run.
+
+**As built (differences from the text above):**
+- **No `__APIWEAVE_RECORDER__` world.** Recording sits on the existing privileged `__APIWEAVE_BROWSER__` world (`startRecording`, `stopRecording`, `recordingStatus`, `onRecording`), off the router like Settings → Browser; `mcp.test.ts` already asserts every `BROWSER_CHANNELS` entry stays off it. The logic is Electron-free: `core/runner/browser/recording.ts` (`BrowserRecording`) drives the browser and `core/services/browser_recording_service.ts` gathers the values and keeps one recording at a time; `electron/main.ts` only wires them, and quitting stops a recording.
+- **Events are upserts, not adds.** The converter (`RecordingConverter` in `recorded.ts`) emits `{ stepId, config }`; the same `stepId` again replaces that step. A focusing click arrives *before* its fill and has already been sent, so the fill takes over the click's step rather than "dropping" it. The `stepId` is the canvas node id (`browser-<stamp>-<n>`), and the frame is `frame-recording-<stamp>`, so a renderer reloaded mid-recording finds both again.
+- **Stop waits 600 ms first.** Playwright's `RecorderSignalProcessor` holds a left click (and a navigate) for 500 ms to attach the navigation it causes, and stopping drops what it holds: without the wait, a click made just before Stop is lost. Found by the recording test.
+- **Password fields are asked of the page.** The recorder's selector does not say `type="password"`, so each fill's field is checked once (`locator.evaluate`); a field the page cannot answer for counts as a password.
+- **Substitution, as built** (`recording_values.ts`): the whole text equal to a secret → `{{secrets.NAME}}` (secrets win over env); a password field otherwise → `{{secrets.UNSET_PASSWORD_n}}`; the whole text equal to an environment variable → `{{env.KEY}}`; otherwise the text with any secret of 4+ characters inside it replaced. Text ending in the first 4+ characters of a secret is held back while typed, and becomes `{{secrets.UNSET_SECRET_n}}` if the recording ends there. A navigate's start becomes the longest environment variable holding an `http(s)` URL that it continues at a boundary. An address containing a secret, or a step whose locator would show one, is not recorded. Placeholder names skip names already in scope or referenced by the workflow.
+- **Insertion is the canvas's `setNodes`/`setEdges`**, not `WorkflowContext` (which holds no nodes): a small store (`BrowserRecordingStore`) collects steps app-wide, and the recorded workflow's canvas places them (`placeRecordedStep`): a frame below the selected node or Start, five steps per row, chained, and the anchor's single plain outgoing edge spliced onto the last step. A step deleted mid-recording is not put back.
+- **Needs secret is derived, not stored**: the node badge and the panel notice check the fill's `{{secrets.NAME}}` against the names in scope (`useSecretNamesInScope`, which the autocomplete now shares and a saved secret refreshes). Choosing an existing name is the field's `{{` autocomplete.
+- **Toolbar checks are warned about, not mapped** (that is Phase 4), as are file uploads and popups (once per recording each).
+- **Checked in the app.** In the dev build, recording the fixture login from the canvas produced Start → navigate `{{env.BASE_URL}}/` → fill `{{env.TEST_EMAIL}}` → fill `{{secrets.TEST_PASSWORD}}` → press Enter → End, auto-saved, and the run passed 4/4.
 
 ## Phase 4 — Checks, extracts and dialogs while recording
 

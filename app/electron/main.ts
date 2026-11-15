@@ -50,6 +50,7 @@ import {
   OAuthService,
   NetworkSettingsService,
   BrowserSettingsService,
+  BrowserRecordingService,
   GrpcDiscoveryService,
 } from "../core/services"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
@@ -73,6 +74,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   BROWSER_CHANNELS,
+  BROWSER_RECORDING_CHANNEL,
   GIT_SIGN_IN_PROMPT_CHANNEL,
   GIT_STATUS_CHANGED_CHANNEL,
   NETWORK_CHANNELS,
@@ -159,6 +161,8 @@ let agentProcesses: AgentProcessManager | null = null
 let gitSync: GitSyncService | null = null
 // A sign-in's gh or glab waits up to 15 minutes for its code; quitting stops it.
 let gitSignIns: GitSignIns | null = null
+// A recording's browser window outlives nothing: quitting closes it.
+let browserRecording: BrowserRecordingService | null = null
 let isQuitting = false
 // Closing the window hides it to the tray (app_settings background.closeToTray).
 let closeToTray = false
@@ -1022,6 +1026,30 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(BROWSER_CHANNELS.setSettings, requireTrustedSender((settings: unknown) => browserSettings.save(settings)))
     ipcMain.handle(BROWSER_CHANNELS.listInstalled, requireTrustedSender(() => detectInstalledBrowsers()))
 
+    // Recording. Off the router for a sharper reason still: it opens a window
+    // on the user's screen and sees every key typed into it. The steps go to
+    // the canvas, which inserts them; nothing here writes a workflow.
+    const recordingService = new BrowserRecordingService({
+      workflows,
+      environments,
+      secrets: {
+        list: (workspaceId, scopeType, scopeId) => secretService.list(workspaceId, scopeType, scopeId),
+        resolvePlaintext: (name, chain) => secretService.resolvePlaintext(name, chain),
+      },
+      launch: () => {
+        const { channel } = browserSettings.get()
+        return channel === undefined ? {} : { channel }
+      },
+      publish: (event) => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.webContents.send(BROWSER_RECORDING_CHANNEL, event)
+      },
+      now: () => Date.now(),
+    })
+    browserRecording = recordingService
+    ipcMain.handle(BROWSER_CHANNELS.startRecording, requireTrustedSender((request: unknown) => recordingService.start(request)))
+    ipcMain.handle(BROWSER_CHANNELS.stopRecording, requireTrustedSender(() => recordingService.stop()))
+    ipcMain.handle(BROWSER_CHANNELS.recordingStatus, requireTrustedSender(() => recordingService.status()))
+
     // Version history. Off the router like network:* — see registerGitHandlers.
     const hostCli = new HostCliService()
     const sync = createGitSync(
@@ -1326,6 +1354,11 @@ app.on("before-quit", (event) => {
     shutdowns.push(gitSignIns.cancel())
     gitSignIns = null
   }
+
+  if (browserRecording?.status() != null) {
+    shutdowns.push(browserRecording.stop())
+  }
+  browserRecording = null
 
   // A commit in flight still writes its outcome to the database.
   if (gitSync !== null) {

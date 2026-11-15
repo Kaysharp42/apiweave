@@ -4,6 +4,7 @@ import { CanvasToolbarButton } from "./CanvasToolbarButton";
 import { CanvasToolbarDivider } from "./CanvasToolbarDivider";
 import { CanvasToolbarEnvironmentPicker } from "./CanvasToolbarEnvironmentPicker";
 import { CanvasToolbarRefreshButton } from "./CanvasToolbarRefreshButton";
+import { CanvasToolbarRecordControl } from "./CanvasToolbarRecordControl";
 import { CanvasToolbarRunControls } from "./CanvasToolbarRunControls";
 import { CanvasToolbarSecondaryActions } from "./CanvasToolbarSecondaryActions";
 import { CanvasToolbarStructureActions } from "./CanvasToolbarStructureActions";
@@ -50,6 +51,7 @@ export function CanvasToolbar({
   workflowId,
   resumeOptions = EMPTY_RESUME_OPTIONS,
   isResumeLoading = false,
+  recording,
 }: CanvasToolbarProps) {
   const openAgentSession = useOpenAgentSession();
 
@@ -209,6 +211,8 @@ export function CanvasToolbar({
         )}
 
         <CanvasToolbarDivider />
+
+        <CanvasToolbarRecordControl {...recording} showLabel={showLabels} />
 
         <CanvasToolbarRunControls
           onRun={onRun}

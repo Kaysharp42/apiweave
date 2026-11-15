@@ -1,4 +1,5 @@
 import type { RunIteration } from "@shared/types/RunIteration";
+import type { CanvasToolbarRecordProps } from "./CanvasToolbarRecordProps";
 
 export interface CanvasToolbarProps {
   onSave: () => void;
@@ -39,4 +40,6 @@ export interface CanvasToolbarProps {
   workflowId?: string;
   resumeOptions?: Array<{ nodeId: string; label: string }>;
   isResumeLoading?: boolean;
+  /** Record browser steps into this workflow. */
+  recording: Omit<CanvasToolbarRecordProps, "showLabel">;
 }

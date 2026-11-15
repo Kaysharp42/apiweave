@@ -83,15 +83,21 @@ export const NETWORK_CHANNELS = {
 } as const
 
 /**
- * Settings > Browser. Off the router like `NETWORK_CHANNELS`: an agent must
- * never decide whether a browser window shows up on the user's screen, and a
- * detour that launches processes is not something the MCP bridge should reach.
+ * Settings > Browser, and recording. Off the router like `NETWORK_CHANNELS`:
+ * an agent must never decide whether a browser window shows up on the user's
+ * screen, and a recording sees everything the user types into it.
  */
 export const BROWSER_CHANNELS = {
   getSettings: "browser:getSettings",
   setSettings: "browser:setSettings",
   listInstalled: "browser:listInstalled",
+  startRecording: "browser:startRecording",
+  stopRecording: "browser:stopRecording",
+  recordingStatus: "browser:recordingStatus",
 } as const
+
+/** Recorded steps, warnings and the end of a recording, main → renderer (`BrowserRecordingEvent`). */
+export const BROWSER_RECORDING_CHANNEL = "apiweave:browser-recording"
 
 /**
  * A workspace's version history in git. Privileged and off the router like

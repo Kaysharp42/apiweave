@@ -71,6 +71,7 @@ import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
 import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasHistory from "../hooks/useCanvasHistory";
+import { useBrowserRecording } from "../hooks/useBrowserRecording";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import { useAcyclicConnections } from "../hooks/useAcyclicConnections";
@@ -126,7 +127,7 @@ import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
 import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
-import { Copy, Files, Play, Wand2 } from "lucide-react";
+import { Copy, Files, Globe, Play, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -1601,6 +1602,18 @@ function WorkflowCanvas({
     apply: applyHistoryEntry,
   });
 
+  const recording = useBrowserRecording({
+    workflowId,
+    workspaceId: scope.workspaceId ?? undefined,
+    environmentId: selectedEnvironment,
+    isHydrated,
+    isRunning,
+    nodesRef,
+    edgesRef,
+    setNodes,
+    setEdges,
+  });
+
   const canvasTipContext = useMemo(() => {
     const selection = selectedIds(nodes);
     const selected = nodes.filter((node) => selection.has(node.id));
@@ -2155,6 +2168,19 @@ function WorkflowCanvas({
           }
         }}
         workflowId={workflowId ?? ""}
+        recording={recording.control}
+      />
+
+      <PromptDialog
+        open={recording.dialog.open}
+        onClose={recording.dialog.onClose}
+        onSubmit={recording.dialog.onStart}
+        title="Record browser steps"
+        message="A browser opens on this page. Click and type through the flow: each action becomes a step here. Typed values that match an environment variable or a secret are saved as {{env.*}} and {{secrets.*}}, never as text. Close the browser or press Stop when you are done."
+        defaultValue={recording.dialog.defaultUrl}
+        placeholder="{{env.BASE_URL}}/login"
+        submitLabel="Start recording"
+        icon={Globe}
       />
 
       <AddNodesPanel

@@ -1,0 +1,356 @@
+[
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "openPage",
+      "url": "about:blank"
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "navigate",
+      "url": "http://127.0.0.1:54460/"
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "ref": "e4",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "m"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@e"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@ex"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@exa"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@exam"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@examp"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@exampl"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@example"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@example."
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@example.c"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@example.co"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e4",
+      "selector": "internal:role=textbox[name=\"Email\"i]",
+      "text": "me@example.com"
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "ref": "e5",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "h"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hu"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hun"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hunt"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hunte"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hunter"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hunter2"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e5",
+      "selector": "internal:role=textbox[name=\"Password\"i]",
+      "text": "hunter22"
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "internal:role=textbox[name=\"Search orders\"i]",
+      "ref": "e6",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "fill",
+      "ref": "e6",
+      "selector": "internal:role=textbox[name=\"Search orders\"i]",
+      "text": "A"
+    }
+  },
+  {
+    "event": "actionUpdated",
+    "action": {
+      "name": "fill",
+      "ref": "e6",
+      "selector": "internal:role=textbox[name=\"Search orders\"i]",
+      "text": "A1"
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "check",
+      "selector": "internal:role=checkbox[name=\"Remember me\"i]",
+      "ref": "e8"
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "select",
+      "selector": "internal:label=\"Plan\"i",
+      "ref": "e9",
+      "options": [
+        "Pro"
+      ]
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "internal:role=button[name=\"Sign in\"i]",
+      "ref": "e10",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "internal:role=listitem >> internal:has-text=\"Row B Delete\"i >> internal:role=button",
+      "ref": "e15",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "internal:role=button[name=\"Danger\"i]",
+      "ref": "e16",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "signalAdded",
+    "signal": {
+      "name": "dialog",
+      "dialogAlias": ""
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "iframe[title=\"embedded\"] >> internal:control=enter-frame >> internal:role=button[name=\"Inside frame\"i]",
+      "ref": "e2",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 1
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "press",
+      "selector": "iframe[title=\"embedded\"] >> internal:control=enter-frame >> internal:role=button[name=\"Inside frame\"i]",
+      "ref": "e2",
+      "key": "Enter",
+      "modifiers": 0
+    }
+  },
+  {
+    "event": "actionAdded",
+    "action": {
+      "name": "click",
+      "selector": "iframe[title=\"embedded\"] >> internal:control=enter-frame >> internal:role=button[name=\"Inside frame\"i]",
+      "ref": "e2",
+      "button": "left",
+      "modifiers": 0,
+      "clickCount": 0
+    }
+  }
+]
