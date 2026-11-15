@@ -387,4 +387,57 @@ describe("browser steps without a browser", () => {
 
     expect(output.results.find((stored) => stored.nodeId === "bad")?.error).toBe("Browser step: the step's configuration is invalid at locator")
   })
+
+  // The refusal lands before any node runs, so no browser is launched: this is
+  // testable with no browser on the machine.
+  it("refuses a run whose page-driving nodes are on parallel branches", async () => {
+    const child = chain(step("open", { action: "navigate", url: "http://127.0.0.1:1/" }))
+    const login = { name: "Log in", nodes: child.nodes as unknown as RunnerNode[], edges: child.edges }
+    const executor = new WorkflowExecutor({
+      ...executorDeps(),
+      resolveWorkflow: (id) => (id === "login" ? login : undefined),
+    })
+    const graph = {
+      nodes: [
+        node("start", "start"),
+        node("login-a", "workflow", { targetWorkflowId: "login" }),
+        node("login-b", "workflow", { targetWorkflowId: "login" }),
+        node("end", "end"),
+      ],
+      edges: [edge("start", "login-a"), edge("start", "login-b"), edge("login-a", "end"), edge("login-b", "end")],
+    } as unknown as WorkflowGraph
+
+    const output = await executor.executeWorkflow(graph)
+
+    expect(output.status).toBe("failed")
+    expect(output.failureMessage).toMatch(/^Browser step: these nodes drive the run's page/)
+    expect(output.results).toEqual([])
+    expect([...output.failedNodes].sort()).toEqual(["login-a", "login-b"])
+    expect(output.nodeStatuses["login-a"]).toBe("failed")
+    expect(output.nodeStatuses["end"]).toBeUndefined()
+  })
+
+  it("refuses a browser step parallel to a call into a workflow with browser steps", async () => {
+    const child = chain(step("open", { action: "navigate", url: "http://127.0.0.1:1/" }))
+    const login = { name: "Log in", nodes: child.nodes as unknown as RunnerNode[], edges: child.edges }
+    const executor = new WorkflowExecutor({
+      ...executorDeps(),
+      resolveWorkflow: (id) => (id === "login" ? login : undefined),
+    })
+    const graph = {
+      nodes: [
+        node("start", "start"),
+        node("login", "workflow", { targetWorkflowId: "login" }),
+        step("open", { action: "navigate", url: "http://127.0.0.1:1/" }),
+        node("end", "end"),
+      ],
+      edges: [edge("start", "login"), edge("start", "open"), edge("login", "end"), edge("open", "end")],
+    } as unknown as WorkflowGraph
+
+    const output = await executor.executeWorkflow(graph)
+
+    expect(output.status).toBe("failed")
+    expect(output.failureMessage).toMatch(/^Browser step: these nodes drive the run's page/)
+    expect([...output.failedNodes].sort()).toEqual(["login", "open"])
+  })
 })

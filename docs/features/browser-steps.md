@@ -174,7 +174,7 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 - **One browser per run.** The first browser step launches it, every later browser step of the run uses its page, and the run closes it at the end, whether the run passed, failed or was cancelled. A workflow with no browser steps never starts one.
 - **One step at a time.** Steps run in graph order on one page, so each acts on what the earlier ones left behind. Two steps cannot run at the same time (see [Graph Rules](#graph-rules)).
 - **A fresh, empty profile.** The browser starts with no cookies and no signed-in account: your own profile, logins and extensions are never touched, so each run starts signed out.
-- **Call Workflow shares the page.** A sub-workflow's browser steps run on the caller's page, so a login sub-workflow leaves the caller signed in. A **For each** with a `concurrency` above 1 refuses a target that has browser steps, because its iterations would fight over one page; `concurrency: 1` shares the page like any other call.
+- **Call Workflow shares the page.** A sub-workflow's browser steps run on the caller's page, so a login sub-workflow leaves the caller signed in. A call therefore belongs to the browser chain: two calls with browser steps must not sit on parallel branches (see [Graph Rules](#graph-rules)). A **For each** with a `concurrency` above 1 refuses a target that has browser steps, because its iterations would fight over one page; `concurrency: 1` shares the page like any other call.
 - **The browser's cookies are its own.** The run's HTTP nodes keep using the run's cookie jar, not the browser's. Signing in on the page does not sign in an HTTP node, and signing in through an HTTP node does not sign in the page — carry a value across with `extract` when a request needs it.
 - **Each run and each data-driven iteration gets its own browser**, launched fresh, so no two of them share a signed-in state.
 - **A rerun reaches back to the first browser step.** A page cannot be restored from an earlier run, so rerunning from a node that leads to a browser step replays the chain from its first step, while everything before it keeps the earlier run's results.
@@ -182,17 +182,21 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 
 ## Graph Rules
 
-Browser steps share one page, so they must form **one ordered chain**: any two browser steps in a workflow are connected by a path. HTTP, assertion, delay and merge nodes may branch around them freely; the browser steps themselves cannot.
+Browser steps share one page, so they must form **one ordered chain**: any two browser steps in a workflow are connected by a path. HTTP, assertion, delay and merge nodes may branch around them freely; the browser steps themselves cannot. A **Call Workflow** node whose target has browser steps, directly or through further calls, drives the same page, so it is part of the chain too: two such calls on parallel branches, or one beside a browser step, are the same error.
 
 The graph check reports three things. An agent sees them from `workflow_diagnose`, and from the `diagnosis` member of every graph write.
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
-| `browser_parallel_branches` | error | Two browser steps are on parallel branches, so neither reaches the other. Connect them into one chain |
+| `browser_parallel_branches` | error | Two page-driving nodes are on parallel branches, so neither reaches the other. Connect them into one chain. Counts `browser` steps and Call Workflow nodes whose target has browser steps |
 | `browser_chain_starts_without_navigate` | warning | The first browser step is not **Open a page**, so it runs on a blank page. Add a navigate step, or ignore it when a Call Workflow before it opens the page |
 | `browser_selector_fallback` | notice | A step finds its element with a raw recorder `selector`, which breaks easily. Replace it with a role, label or test id locator |
 
 Steps on the **pass** and **fail** sides of one assertion are allowed. A run takes one side of the assertion, so those steps never run together; the check knows the difference between that and a genuine parallel branch.
+
+The runner refuses the same graph before any node runs, with a value-free error starting with `Browser step:`, so a run cannot interleave two calls on one page just because the graph was edited over MCP or in the JSON editor.
+
+The `diagnosis` member of every graph write can see the called workflows, so it also reports a Call Workflow node beside another page-driving node. A diagnosis run from the canvas cannot read other workflows, so it compares `browser` steps only; the runner still refuses the graph when it starts.
 
 ## When a Step Fails
 
@@ -262,7 +266,8 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 - **If a step fails with `{{…}} is not set`**, that placeholder could not be resolved: the run's environment or the workflow has no such variable, the node a direct reference names has not run yet, or the function is unknown. Check the spelling and the namespace it reads from.
 - **If a step fails with `{{secrets.*}} is only allowed in a fill step's value`**, the secret is in a URL, a locator or a check. Move the value into a fill, or read the page's value with an `extract` step instead.
 - **If a click times out because another element covers it**, a banner, a cookie notice or a modal is on top. Add the step that dismisses it before the click.
-- **If `browser_parallel_branches` appears**, two browser steps are on branches that never meet. Join them into one chain.
+- **If `browser_parallel_branches` appears**, two things that act on the page — browser steps, or calls into workflows with browser steps — are on branches that never meet. Join them into one chain.
+- **If a run is refused with `Browser step: these nodes drive the run's page but are on parallel branches`**, the graph check found the same thing at run time: chain the named nodes one after another.
 - **If `browser_chain_starts_without_navigate` appears**, the first browser step acts on a blank page. Add **Open a page** at the start of the chain.
 - **If a load run is refused with `A load run cannot run a workflow with browser steps`**, run the workflow normally or from the CLI; load runs are for HTTP timing.
 - **If a For each node fails with `a for-each with concurrency above 1 cannot call a workflow with browser steps`**, set its concurrency to 1, or move the browser steps out of the target.

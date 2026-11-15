@@ -760,25 +760,32 @@ function usesSelectorFallback(locator: unknown): boolean {
 }
 
 /**
- * Browser steps share one page, so they must run one after another:
- *  - two browser steps neither of which reaches the other would act on the
- *    page at the same time (an error: the run's outcome would depend on timing);
- *  - the first step of the chain should open a page, unless a Call Workflow
- *    node before it may have (a login sub-workflow);
- *  - a raw recorder selector works but breaks easily, and is worth replacing.
+ * The ids of the nodes that drive the run's page and lie on parallel branches,
+ * sorted; empty when they form one ordered chain.
+ *
+ * Two page drivers are on parallel branches when neither reaches the other and
+ * one run can take both. Steps on the pass and fail sides of one assertion
+ * cannot, because a run takes one side, so they count as ordered. `drivesBrowser`
+ * says which nodes act on the page: a `browser` step, and a Call Workflow node
+ * whose target has browser steps. The analyzer and the runner pass their own
+ * equivalent predicates so the graph check and the run agree.
  */
-function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
-  const steps = workflow.nodes.filter((node): node is Extract<WorkflowNode, { type: "browser" }> => node.type === "browser")
-  if (steps.length === 0) return
-  const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
-  const downstream = new Map(steps.map((step) => [step.nodeId, traverse([step.nodeId], successors)]))
+export function browserParallelNodeIds<N extends { readonly nodeId: string; readonly type: string }>(
+  nodes: readonly N[],
+  edges: readonly { readonly source: string; readonly target: string; readonly sourceHandle?: string | null | undefined }[],
+  drivesBrowser: (node: N) => boolean,
+): string[] {
+  const drivers = [...new Set(nodes.filter(drivesBrowser).map((node) => node.nodeId))]
+  if (drivers.length < 2) return []
+  const successors = successorMap(edges)
+  const downstream = new Map(drivers.map((nodeId) => [nodeId, traverse([nodeId], successors)]))
   // What only an assertion's pass edges reach, and what only its fail edges
-  // reach: one run takes one side, so steps on opposite sides never overlap.
-  const exclusiveSides = workflow.nodes
+  // reach: one run takes one side, so nodes on opposite sides never overlap.
+  const exclusiveSides = nodes
     .filter((node) => node.type === "assertion")
     .map((assertion) => {
       const side = (handle: string): Set<string> =>
-        traverse(workflow.edges.filter((edge) => edge.source === assertion.nodeId && edge.sourceHandle === handle).map((edge) => edge.target), successors)
+        traverse(edges.filter((edge) => edge.source === assertion.nodeId && edge.sourceHandle === handle).map((edge) => edge.target), successors)
       const pass = side("pass")
       const fail = side("fail")
       return {
@@ -792,26 +799,56 @@ function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workfl
     downstream.get(left)!.has(right) || downstream.get(right)!.has(left) || exclusive(left, right)
 
   const parallel = new Set<string>()
-  for (const [index, left] of steps.entries()) {
-    for (const right of steps.slice(index + 1)) {
-      if (!ordered(left.nodeId, right.nodeId)) {
-        parallel.add(left.nodeId)
-        parallel.add(right.nodeId)
+  for (const [index, left] of drivers.entries()) {
+    for (const right of drivers.slice(index + 1)) {
+      if (!ordered(left, right)) {
+        parallel.add(left)
+        parallel.add(right)
       }
     }
   }
-  if (parallel.size > 0) {
-    const nodeIds = [...parallel].sort()
+  return [...parallel].sort()
+}
+
+/**
+ * Browser steps share one page, so they must run one after another:
+ *  - two nodes that drive the page neither of which reaches the other would act
+ *    on it at the same time (an error: the run's outcome would depend on timing);
+ *  - the first step of the chain should open a page, unless a Call Workflow
+ *    node before it may have (a login sub-workflow);
+ *  - a raw recorder selector works but breaks easily, and is worth replacing.
+ *
+ * A Call Workflow node into a workflow with browser steps drives the same page,
+ * so it is part of the chain: `browserStepWorkflowIds` names those targets,
+ * which only a caller that can read other workflows knows.
+ */
+function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
+  const steps = workflow.nodes.filter((node): node is Extract<WorkflowNode, { type: "browser" }> => node.type === "browser")
+  if (steps.length === 0 && !workflow.nodes.some((node) => node.type === "workflow")) return
+  const browserStepWorkflowIds = new Set(workflow.browserStepWorkflowIds ?? [])
+  const drivesBrowser = (node: WorkflowNode): boolean => {
+    if (node.type === "browser") return true
+    if (node.type !== "workflow") return false
+    const targetId = node.config?.["targetWorkflowId"]
+    return typeof targetId === "string" && browserStepWorkflowIds.has(targetId)
+  }
+
+  const parallel = browserParallelNodeIds(workflow.nodes, workflow.edges, drivesBrowser)
+  if (parallel.length > 0) {
     diagnostics.push(diagnostic(
       "browser_parallel_branches",
       "error",
       "topology",
-      nodeIds,
-      "Browser steps share one page, so they must form a single chain; these steps are on parallel branches.",
-      { count: nodeIds.length },
-      { kind: "chain_browser_steps", nodeId: nodeIds[0]! },
+      parallel,
+      "Browser steps share one page, so they must form a single chain; these nodes are on parallel branches.",
+      { count: parallel.length },
+      { kind: "chain_browser_steps", nodeId: parallel[0]! },
     ))
   }
+
+  if (steps.length === 0) return
+  const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
+  const downstream = new Map(steps.map((step) => [step.nodeId, traverse([step.nodeId], successors)]))
 
   // The chain's first steps: those no other browser step reaches.
   const firsts = steps.filter((step) => !steps.some((other) => other !== step && downstream.get(other.nodeId)!.has(step.nodeId)))
