@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
-import { RecordingConverter, readRecorderAction, type RecordedStep, type RecorderEvent } from "../recorded"
+import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
+import { RecordingConverter, readRecorderAction, type RecorderEvent } from "../recorded"
 import { templateFill, templateUrl, type RecordingValues } from "../recording_values"
 import events from "./fixtures/recorder-events.json"
 
@@ -13,9 +14,9 @@ function converter(values: RecordingValues = NO_VALUES, taken: ReadonlySet<strin
 }
 
 /** Replay the Phase 0 recording; the password field is the one named "Password". */
-function replay(values: RecordingValues): { sent: RecordedStep[]; steps: Map<string, BrowserNodeData>; warnings: string[] } {
+function replay(values: RecordingValues): { sent: RecordedBrowserStep[]; steps: Map<string, BrowserNodeData>; warnings: string[] } {
   const recording = converter(values)
-  const sent: RecordedStep[] = []
+  const sent: RecordedBrowserStep[] = []
   const warnings: string[] = []
   for (const event of events) {
     if (!("action" in event)) continue
@@ -131,7 +132,7 @@ describe("RecordingConverter rules", () => {
 
   it("drops a click with clickCount 0 and records modifiers, button and double clicks", () => {
     const recording = converter()
-    const click = (extra: Record<string, unknown>): RecordedStep[] =>
+    const click = (extra: Record<string, unknown>): RecordedBrowserStep[] =>
       recording.apply({ kind: "added", action: { name: "click", selector: "#row", ...extra }, onMainPage: true }).steps
     expect(click({ clickCount: 0 })).toEqual([])
     expect(click({ clickCount: 2, button: "left", modifiers: 2 | 8 })[0]?.config).toEqual({

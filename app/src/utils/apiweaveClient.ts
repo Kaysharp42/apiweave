@@ -47,6 +47,9 @@ import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate"
 import type { BrowserBridge } from "@shared/types/BrowserBridge";
 import type { BrowserChannel } from "@shared/types/BrowserChannel";
 import type { BrowserSettings } from "@shared/types/BrowserSettings";
+import type { BrowserRecordingEvent } from "@shared/types/BrowserRecordingEvent";
+import type { BrowserRecordingRequest } from "@shared/types/BrowserRecordingRequest";
+import type { BrowserRecordingStatus } from "@shared/types/BrowserRecordingStatus";
 import type { GitAccountList } from "@shared/types/GitAccountList";
 import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
@@ -1326,10 +1329,10 @@ function getBrowserBridge(): BrowserBridge | undefined {
 
 const browserDesktopOnly = (): Promise<never> =>
   Promise.reject(
-    new Error("Browser settings are only available in the desktop app"),
+    new Error("Browsers are only available in the desktop app"),
   );
 
-/** Settings > Browser. A sibling of `network`, off the router facade: see `BrowserBridge`. */
+/** Settings > Browser and recording. A sibling of `network`, off the router facade: see `BrowserBridge`. */
 export const browser = {
   getSettings: (): Promise<BrowserSettings> =>
     getBrowserBridge()?.getSettings().catch(unwrapRemoteError) ??
@@ -1340,6 +1343,18 @@ export const browser = {
   listInstalled: (): Promise<readonly BrowserChannel[]> =>
     getBrowserBridge()?.listInstalled().catch(unwrapRemoteError) ??
     browserDesktopOnly(),
+  startRecording: (request: BrowserRecordingRequest): Promise<BrowserRecordingStatus> =>
+    getBrowserBridge()?.startRecording(request).catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  stopRecording: (): Promise<void> =>
+    getBrowserBridge()?.stopRecording().catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  recordingStatus: (): Promise<BrowserRecordingStatus | null> =>
+    getBrowserBridge()?.recordingStatus().catch(unwrapRemoteError) ??
+    Promise.resolve(null),
+  /** Recording events; a no-op outside the desktop app, where nothing can record. */
+  onRecording: (callback: (event: BrowserRecordingEvent) => void): (() => void) =>
+    getBrowserBridge()?.onRecording(callback) ?? (() => undefined),
 } as const;
 
 function getGitBridge(): GitBridge | undefined {

@@ -1,5 +1,6 @@
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
+import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
 import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
 import { parseRecordedSelector } from "./selector_parse"
 import { containsSecret, templateFill, templateUrl, type RecordingValues } from "./recording_values"
@@ -32,15 +33,9 @@ export interface RecorderEvent {
   readonly isPassword?: boolean
 }
 
-/** A step as the canvas receives it: the same `stepId` again replaces that step's config. */
-export interface RecordedStep {
-  readonly stepId: string
-  readonly config: BrowserNodeData
-}
-
 /** What one event changed: steps to insert or replace, in order, and messages for the user. */
 export interface ConverterOutput {
-  readonly steps: readonly RecordedStep[]
+  readonly steps: readonly RecordedBrowserStep[]
   readonly warnings: readonly string[]
 }
 
@@ -159,7 +154,7 @@ export class RecordingConverter {
    * of a secret becomes a placeholder secret, so the partial value is never sent.
    */
   public finish(): ConverterOutput {
-    const steps: RecordedStep[] = []
+    const steps: RecordedBrowserStep[] = []
     for (const state of this.steps) {
       if (!state.withheld || state.action.selector === undefined) continue
       const locator = parseRecordedSelector(state.action.selector)
@@ -193,7 +188,7 @@ export class RecordingConverter {
   }
 
   /** Convert `state` and return it as a step, unless it is unchanged, held back or skipped. */
-  private emit(state: StepState, warnings: string[]): RecordedStep[] {
+  private emit(state: StepState, warnings: string[]): RecordedBrowserStep[] {
     const converted = this.convert(state)
     if (converted.kind === "skip") {
       if (converted.warning !== undefined) this.warn(converted.warning, warnings)

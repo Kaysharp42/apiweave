@@ -1,6 +1,7 @@
 import type { Browser, BrowserContext, Page } from "playwright-core"
 import { within } from "./capture"
-import { RecordingConverter, readRecorderAction, type RecordedStep, type RecorderAction } from "./recorded"
+import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
+import { RecordingConverter, readRecorderAction, type RecorderAction } from "./recorded"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, launchBrowser, PAGE_VIEWPORT, type BrowserLaunchSettings } from "./session"
 
@@ -23,7 +24,7 @@ interface RecordingContext {
 /** What a recording tells its owner. Every value in it is already a template: it may go to the renderer as it is. */
 export interface RecordingListener {
   /** A new step, or a new config for a step already sent under the same `stepId`. */
-  step(step: RecordedStep): void
+  step(step: RecordedBrowserStep): void
   warning(message: string): void
   /** The recording is over, stopped or because the user closed the browser. Called once. */
   ended(): void
@@ -65,7 +66,7 @@ export class BrowserRecording {
   private stopping: Promise<void> | null = null
   private readonly passwordFields = new Map<string, boolean>()
   private readonly sentStepIds = new Set<string>()
-  private readonly pending = new Map<string, RecordedStep>()
+  private readonly pending = new Map<string, RecordedBrowserStep>()
   private timer: ReturnType<typeof setTimeout> | null = null
   private readonly converter: RecordingConverter
 
@@ -175,7 +176,7 @@ export class BrowserRecording {
     return isPassword
   }
 
-  private send(step: RecordedStep): void {
+  private send(step: RecordedBrowserStep): void {
     if (!this.sentStepIds.has(step.stepId)) {
       this.sentStepIds.add(step.stepId)
       this.flush()

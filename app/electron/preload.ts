@@ -16,6 +16,7 @@ import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import type { OAuthBridge } from "@shared/types/OAuthBridge"
 import type { NetworkBridge } from "@shared/types/NetworkBridge"
 import type { BrowserBridge } from "@shared/types/BrowserBridge"
+import type { BrowserRecordingEvent } from "@shared/types/BrowserRecordingEvent"
 import type { GitBridge } from "@shared/types/GitBridge"
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
@@ -26,6 +27,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   BROWSER_CHANNELS,
+  BROWSER_RECORDING_CHANNEL,
   GIT_CHANNELS,
   GIT_SIGN_IN_PROMPT_CHANNEL,
   GIT_STATUS_CHANGED_CHANNEL,
@@ -244,11 +246,15 @@ const networkBridge: NetworkBridge = {
 
 contextBridge.exposeInMainWorld("__APIWEAVE_NETWORK__", networkBridge)
 
-/** Settings > Browser — privileged for the same reason, and because it probes the machine. */
+/** Settings > Browser and recording — privileged for the same reason, and because it opens windows and sees typing. */
 const browserBridge: BrowserBridge = {
   getSettings: invokeBridge(BROWSER_CHANNELS.getSettings),
   setSettings: invokeBridge(BROWSER_CHANNELS.setSettings),
   listInstalled: invokeBridge(BROWSER_CHANNELS.listInstalled),
+  startRecording: invokeBridge(BROWSER_CHANNELS.startRecording),
+  stopRecording: invokeBridge(BROWSER_CHANNELS.stopRecording),
+  recordingStatus: invokeBridge(BROWSER_CHANNELS.recordingStatus),
+  onRecording: (callback) => subscribe<BrowserRecordingEvent>(BROWSER_RECORDING_CHANNEL, callback),
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_BROWSER__", browserBridge)

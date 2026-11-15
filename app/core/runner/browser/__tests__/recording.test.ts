@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import { BROWSER_SEARCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, findTestBrowser } from "../../__tests__/browser_test_channel"
-import type { RecordedStep } from "../recorded"
+import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
 import { BrowserRecording } from "../recording"
 import type { RecordingValues } from "../recording_values"
 import { BrowserSession } from "../session"
@@ -44,8 +44,8 @@ afterAll(async () => {
 })
 
 /** Record the login flow, typing with real key events the way a user does. */
-async function recordLogin(values: RecordingValues): Promise<{ sent: RecordedStep[]; steps: BrowserNodeData[]; ended: boolean }> {
-  const sent: RecordedStep[] = []
+async function recordLogin(values: RecordingValues): Promise<{ sent: RecordedBrowserStep[]; steps: BrowserNodeData[]; ended: boolean }> {
+  const sent: RecordedBrowserStep[] = []
   let ended = false
   let next = 0
   const recording = await BrowserRecording.start({
