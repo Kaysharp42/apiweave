@@ -59,8 +59,10 @@ function endsInSecretPrefix(text: string, values: RecordingValues): boolean {
  * - The whole text is a secret's value: `{{secrets.NAME}}`.
  * - A password field that matches no secret: `unset`. Its text is never sent,
  *   not even half typed.
- * - The whole text is an environment variable's value: `{{env.KEY}}`, so the
- *   test account's email typed from `TEST_EMAIL` stays tied to it.
+ * - The whole text is an environment variable's value and at least as long as
+ *   a value a run masks: `{{env.KEY}}`, so the test account's email typed from
+ *   `TEST_EMAIL` stays tied to it. A shorter text stays literal, because `10`
+ *   typed into a quantity field is not the environment's `PAGE_SIZE`.
  * - Otherwise the text itself, with any secret inside it replaced by its
  *   template, unless it ends in the start of a secret (`withheld`).
  */
@@ -69,10 +71,12 @@ export function templateFill(text: string, values: RecordingValues, password: bo
   const secret = secretNamed(text, values)
   if (secret !== undefined) return { kind: "value", value: `{{secrets.${secret}}}` }
   if (password) return { kind: "unset" }
-  const variable = Object.keys(values.env)
-    .sort()
-    .find((key) => values.env[key] === text)
-  if (variable !== undefined) return { kind: "value", value: `{{env.${variable}}}` }
+  if (text.length >= MIN_MASKED_SECRET_LENGTH) {
+    const variable = Object.keys(values.env)
+      .sort()
+      .find((key) => values.env[key] === text)
+    if (variable !== undefined) return { kind: "value", value: `{{env.${variable}}}` }
+  }
   let value = text
   for (const [name, secretValue] of maskableSecrets(values)) value = value.split(secretValue).join(`{{secrets.${name}}}`)
   return endsInSecretPrefix(value, values) ? { kind: "withheld" } : { kind: "value", value }
