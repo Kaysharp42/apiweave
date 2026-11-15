@@ -192,9 +192,15 @@ page or through the CLI flags.
   storing it.
 - **Recording covers one page.** The recorder follows the page it opened:
   actions in a popup or a new tab are not recorded.
-- **The recorder's toolbar checks and file uploads are not recorded yet.** A
-  check made with the assert buttons, and a file chosen for an upload, are left
-  out of the recording; each shows a warning toast once per recording.
+- **File uploads and two toolbar checks are not recorded yet.** A file chosen
+  for an upload, and the recorder toolbar's checkbox-state and ARIA snapshot
+  checks, are left out of the recording; each shows a warning toast once per
+  recording. A check whose expected text would hold a secret, or a password
+  field's value, is dropped instead.
+- **A recording always clicks OK on a dialog.** Playwright answers every
+  `alert()`, `confirm()` and `prompt()` with OK while recording, and the step
+  that opened it is recorded to do the same. To record the path where it is
+  cancelled, record the flow and then set that step to Click Cancel.
 - **Only password fields are treated as passwords.** Text typed into a field
   whose markup is not `<input type="password">` is stored as text; save the value
   as a secret first and it is recorded as `{{secrets.NAME}}`.

@@ -86,8 +86,27 @@ The canvas toolbar has a **Record** button beside the Run controls, marked with 
 | Choose an option | **Choose an option** |
 | Move onto an element | **Hover** |
 | Press a key | **Press a key**, with its modifiers: `ControlOrMeta+Enter` |
+| Click **Assert visibility** in the recorder toolbar | **Check it is visible** |
+| Confirm **Assert text** in the recorder toolbar | **Check text**, `contains` the confirmed text |
+| Click **Assert value** on a form field | **Check a field's value** |
 
 Clicking into a field before typing into it is not a step of its own.
+
+**Checks.** The toolbar's assert buttons record a check on the element they name:
+
+- **Assert visibility** records **Check it is visible**.
+- **Assert text** opens a small box inside the page, prefilled with the element's text and editable. Confirming it with ✓, or with Ctrl+Enter — Enter adds a new line — records **Check text** with `match: "contains"` and the confirmed text. When Playwright reports a whole-text check, `match` is `equals`.
+- **Assert value** on a form field records **Check a field's value** with the field's current value.
+
+The expected text goes through the same substitution as a typed value:
+
+- **Text equal to a variable of the selected environment becomes `{{env.NAME}}`** when the variable's value is four characters or more.
+- **A check cannot hold `{{secrets.*}}`.** A check whose expected text is a secret of any length, or contains one, is not recorded, and a toast says "A step was not recorded because it contained a secret value."
+- **A value check on a password field is not recorded**, and a toast says "A check on a password field was not recorded: it would have stored the password."
+
+**Dialogs.** Every `alert()`, `confirm()` and `prompt()` the recorded page shows is answered with **OK**, and a prompt gets its default text. The click or key press that opened it is recorded with `dialog: "accept"`, shown in the step's panel as **If the page asks for confirmation: Click OK**, so the run does what the recording did. A toast says so once per recording and names the step to change. The recording itself always clicks OK: to record the Cancel path, record the flow, set that step to **Click Cancel**, then re-record or edit the steps after it.
+
+If a dialog follows a step that cannot answer one — a page load, typing, a check — a toast says that dialog is cancelled when the workflow runs.
 
 **Where the steps go.** They are collected in a new frame named `Recording <date and time>`, placed below the selected node when exactly one node is selected, or below Start, and the steps are chained after that node. Whatever that node was connected to follows the last recorded step, so recording after Start in a Start → End workflow gives Start → steps → End. That splice happens only when the node has exactly one outgoing connection; otherwise the steps are added as an extra branch. Steps are saved by auto-save like any other edit, and **Undo** removes them. A step deleted while recording stays deleted.
 
@@ -104,8 +123,10 @@ The element the recorder picked becomes the same structured locator the node edi
 **Not recorded.** Each shows a warning toast once per recording:
 
 - Actions in a popup or a new tab. Browser steps drive one page.
-- Checks made with the recorder toolbar's assert buttons. They arrive in a later version; add an **expect** step by hand.
+- The toolbar's checkbox-state and ARIA snapshot checks. Neither has a browser step yet.
 - File uploads.
+
+**Saving a value.** The recorder toolbar has no save-a-value mode. Right-click any browser step on the canvas that acts on an element — it has a locator and is not already an extract — and its menu offers **Turn into extract**. It asks for a variable name, suggesting one made from the element's name: an element named "Order number" suggests `orderNumber`. The step keeps its element and becomes **Save a value** (`extract`): a form field — one a step typed into, chose an option in, or checked the value of — is read for its value, any other element for its text. The step's own fields are dropped — the typed text, the expected text, the click options, the dialog setting — while its `description`, `timeoutMs` and `continueOnFail` stay, and its title becomes **Save a value** unless it was renamed. Characters a variable name cannot hold are dropped from the name typed, and a name with no letter is refused. **Undo** takes the change back. Later steps read the value as `{{variables.NAME}}`. This works on a recorded step and on one added by hand.
 
 **Finishing.** Press **Stop**, or close the browser window. The frame stays on the canvas as ordinary steps: edit them, move them, run them, or undo the recording. Recording is a desktop-app feature only — an agent cannot record over MCP and the CLI cannot record — and it never writes a workflow itself: the canvas inserts the steps.
 
@@ -147,7 +168,7 @@ Every step also takes these three fields:
 | `equals` | The two texts are the same |
 | `matches` | The expected text is a JavaScript regular expression that matches. It runs in the same sandbox as the `matches` assertion operator, so a runaway pattern is stopped after 100 ms |
 
-**Dialogs.** An `alert()`, `confirm()` or `prompt()` a step opens is **cancelled** unless the step says otherwise, which means a `confirm()` flow stops the way a person clicking Cancel would. Set `dialog` to `accept` on the `click` or `press` that opens it to click OK instead, or to `dismiss` to be explicit. In the node editor this is **If the page asks for confirmation**.
+**Dialogs.** An `alert()`, `confirm()` or `prompt()` a step opens is **cancelled** unless the step says otherwise, which means a `confirm()` flow stops the way a person clicking Cancel would. Set `dialog` to `accept` on the `click` or `press` that opens it to click OK instead, or to `dismiss` to be explicit. In the node editor this is **If the page asks for confirmation**. A [recording](#recording-steps) answers dialogs with OK and records `accept` on the step that opened them.
 
 ## Finding an Element
 
@@ -308,7 +329,8 @@ The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chr
 - **No visual diffs.** Steps compare text, values and visibility, not pixels.
 - **No saved login state.** Every run starts signed out, so sign in with steps, ideally once, in a sub-workflow called through **Call Workflow**.
 - **Network settings do not apply.** `Settings > Network`'s proxy, CA certificates and client certificates are not used by browser steps; the browser uses the machine's own network configuration.
-- **Recording covers one page.** Actions in a popup or a new tab, checks made with the recorder toolbar's assert buttons, and file uploads are not recorded yet; each shows a warning toast once per recording.
+- **Recording covers one page.** Actions in a popup or a new tab, the toolbar's checkbox-state and ARIA snapshot checks, and file uploads are not recorded yet; each shows a warning toast once per recording.
+- **A recording always clicks OK on a dialog.** Record the flow, then set the step that opened the dialog to **Click Cancel** and re-record or edit the steps after it.
 - **Only password fields are treated as passwords.** Text typed into a field that is not an `<input type="password">` is stored as typed, unless it matches an environment variable or a secret. Save a value as a secret before recording and it is recorded as `{{secrets.NAME}}`.
 - **Only `type="password"` fields are treated as passwords.** A secret typed into an ordinary text field is recorded as text, unless it is saved as a secret first, in which case it becomes `{{secrets.NAME}}`.
 
@@ -318,6 +340,8 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 
 - **If a step shows `needs secret`**, its typed password matched no secret. Set it with **Save as secret**, or type `{{` in **Text to type** to pick one; until then a run fails with `{{secrets.UNSET_PASSWORD_1}} is not set`.
 - **If Record is disabled**, another workflow is being recorded, a run is in progress, or the workflow is loading. Stop the other recording or wait for the run to finish.
+- **If a recorded check was not recorded**, its expected text would have held a secret or a password field's value, or it was a checkbox-state or ARIA snapshot check, which has no step. Add an expect step by hand, reading the value from `{{env.*}}` or `{{variables.*}}`.
+- **If Turn into extract is missing from a step's menu**, the step has no element — a page load, or a key press without one — or is already an extract, or its element is half-filled in.
 - **If the recording could not start**, the toast names the reason: the browser was not found, so choose another one in **Settings → Browser**, or the start page did not load.
 - **If a step fails with `no supported browser was found on this machine`**, install Google Chrome or Microsoft Edge, or run `npx playwright install chromium`, then pick it in **Settings > Browser**.
 - **If a step fails with `… was not found on this machine`**, the chosen browser is not installed. Choose another one, **Automatic**, or pass `--browser` on the CLI.

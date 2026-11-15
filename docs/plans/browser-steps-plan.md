@@ -8,7 +8,7 @@
 | 1: `browser` node, runner, evidence | `Kaysharp42/playwright-automation` | **Done** (notes below) |
 | 2: Agents author and repair browser steps over MCP | `Kaysharp42/browser-steps-phase-2` | **Done** (notes below) |
 | 3: Recorder — record steps into nodes | `Kaysharp42/browser-recorder` | **Done** (notes below) |
-| 4: Checks, extracts and dialogs while recording | `feat/browser-recorder-checks` | Not started |
+| 4: Checks, extracts and dialogs while recording | `Kaysharp42/browser-recorder-checks` | **Done** (notes below) |
 | 5: Update one node — re-pick an element, re-record from a step | `feat/browser-node-repick` | Not started |
 
 **Base.** `main` with PR #196 merged (`5670ac42`). The next migration number is `033`.
@@ -404,6 +404,14 @@ A connected coding agent can already *write* `browser` nodes after Phase 1, but 
 - **Dialogs.** The recorder's `dialog` signal sets `dialog` on the step that caused it. During recording Playwright dismisses dialogs, so the recorded value is `dismiss`. The node panel lets the user switch it to `accept`, and the recording status bar shows a hint when a dialog was seen.
 
 **Done when:** a recorded flow includes a text check, a visibility check and an extract without hand-editing JSON, and a `confirm()` flow passes after switching its step to `accept`.
+
+**As built (differences from the text above):**
+- **Payloads, as Playwright 1.64.1 sends them:** `assertVisible { selector }`, `assertText { selector, text, substring }`, `assertValue { selector, value }`, `assertChecked { selector, checked }`, `assertSnapshot { selector, ariaSnapshot }`. The text check's in-page box is confirmed with its ✓ or Ctrl+Enter (Enter is a new line). `substring: false` maps to `match: "equals"`.
+- **Checked values have their own rule** (`templateCheck` in `recording_values.ts`), because `expect-*` refuses `{{secrets.*}}`: a text that is a secret (any length) or contains one is not recorded; a whole text equal to an environment variable of 4+ characters becomes `{{env.KEY}}`; anything else stays literal. A value check on a password field is not recorded (the recording asks the page, as for fills).
+- **`assertChecked` is warned about too**, not only `assertSnapshot`: there is no `expect-checked` action. Warnings are toasts once per recording, like Phase 3's; there is no separate status bar.
+- **Dialogs are accepted, not dismissed.** With no `dialog` listener, Playwright cancels every dialog during a recording, so a `confirm()` flow would be recorded on a page where the confirmation never happened, and switching the step to `accept` afterwards would not fix the steps recorded after it. The recording now accepts every dialog (`context.on("dialog")`), and the `dialog` signal — which Playwright sends right after the action that opened it — sets `dialog: "accept"` on that click or key press; a dialog after any other step warns that a run will cancel it. The panel's **If the page asks for confirmation** switches it to Click Cancel. So the confirm flow passes as recorded, and fails if switched to Cancel (both in `recording.test.ts`).
+- **Turn into extract** is in the canvas step menu (right-click) of any browser step with a valid locator that is not already an extract (`useTurnIntoExtract`, `utils/turnIntoExtract.ts`). It goes through the panel's own `draftFromConfig`/`configFromDraft`, so the result is what choosing **Save a value** in the panel gives: a fill, select or value check reads `value`, anything else `text`; the action's own fields go, `description`/`timeoutMs`/`continueOnFail` stay; the title follows unless renamed. The name is suggested from the locator (`Order number` → `orderNumber`) and cleaned to `[A-Za-z0-9_]`, not starting with a digit.
+- **Checked in a real browser, not in the app.** `recording.test.ts` records a `confirm()` delete plus all three toolbar checks through `_startRecording`, then replays the steps green, and red with the dialog switched to dismiss. The in-app GUI check was skipped this phase: the user's screen was in use.
 
 ## Phase 5 — Update one node
 
