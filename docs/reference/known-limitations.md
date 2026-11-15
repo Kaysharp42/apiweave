@@ -190,10 +190,19 @@ page or through the CLI flags.
   failed step's screenshot is stored with the run and never exported;
   `browser_inspect` takes one only when asked, and hands it to the agent without
   storing it.
-- **There is no recorder.** Recording steps by clicking through the page is not
-  available yet. Steps are written by hand, or by an agent over MCP: an agent can
-  inspect a page and read a failed step's browser evidence, but there is no
-  click-through recording flow.
+- **Recording covers one page.** The recorder follows the page it opened:
+  actions in a popup or a new tab are not recorded.
+- **The recorder's toolbar checks and file uploads are not recorded yet.** A
+  check made with the assert buttons, and a file chosen for an upload, are left
+  out of the recording; each shows a warning toast once per recording.
+- **Only password fields are treated as passwords.** Text typed into a field
+  whose markup is not `<input type="password">` is stored as text; save the value
+  as a secret first and it is recorded as `{{secrets.NAME}}`.
+- **`playwright-core` stays pinned to an exact version.** Recording uses
+  Playwright's own recorder through an internal API, so the dependency is not
+  moved by a range bump.
+- **Recording is a desktop-app feature.** It is not available over MCP and not in
+  the CLI.
 - **`browser_inspect` has no `url` mode.** It reads the page a workflow run left
   open, so inspecting an address means adding an `Open a page` step and
   inspecting after it. The run it makes is an ordinary run: it sends real

@@ -137,6 +137,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `screenshot: true`, an inspected page or one failed step also returns its JPEG
   as MCP image content, and screenshots now paint over every element that shows
   a masked value, not only password fields.
+- **Recording browser steps.** A **Record** button in the canvas toolbar opens a
+  browser window with Playwright's recorder inside the page, and each action
+  becomes one `browser` node in a new frame as it happens: page loads, clicks,
+  typing, check boxes, options, hover and key presses. A typed value that matches
+  an environment variable or a stored secret is saved as `{{env.NAME}}` or
+  `{{secrets.NAME}}`, and a password that matches no secret becomes a placeholder
+  secret with a **needs secret** badge and a **Save as secret** button, so the
+  typed value never reaches the workflow. Popups, checks made with the recorder's
+  own assert buttons and file uploads are not recorded yet. See
+  [Browser Steps](docs/features/browser-steps.md#recording-steps).
 
 ### Changed
 

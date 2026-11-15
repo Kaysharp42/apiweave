@@ -12,6 +12,7 @@
 
 - [What Browser Steps Are](#what-browser-steps-are)
 - [A Worked Example](#a-worked-example)
+- [Recording Steps](#recording-steps)
 - [Actions](#actions)
 - [Finding an Element](#finding-an-element)
 - [Placeholders and Secrets](#placeholders-and-secrets)
@@ -65,6 +66,48 @@ On the canvas the chain is:
 ```
 
 To run it, put `BASE_URL` and `TEST_EMAIL` in the environment selected in the toolbar, and store `TEST_PASSWORD` as a secret once. Nothing else is needed: there is no test script to write.
+
+## Recording Steps
+
+The canvas toolbar has a **Record** button beside the Run controls, marked with a red dot. It opens a dialog titled **Record browser steps** and asks for a start address, then opens a real browser window on that address with Playwright's recorder toolbar inside the page: click and type through the flow, and each action arrives on the canvas as a `browser` node. The address is prefilled with `{{env.BASE_URL}}/` when the selected environment, or a base environment it inherits from, defines `BASE_URL`, and with `https://` otherwise; `{{env.*}}` placeholders in it are filled from the selected environment, and it must start with `http://` or `https://`.
+
+**Start recording.** The button opens a window in the browser chosen in [Settings > Browser](#settings--browser), with a fresh, empty profile and the same 1280×720 page a run uses. Recording is not a run: the steps are added to the workflow on the canvas, and nothing is executed until you run them.
+
+**While it records.** The canvas toolbar reads **Recording — N steps** and carries a **Stop** button. One recording runs at a time in the whole app, so **Record** is disabled while another workflow is being recorded, while a run is in progress, and while the workflow is loading.
+
+**What becomes a step.** Each action becomes one node, live, as it happens:
+
+| What you do | The step |
+| --- | --- |
+| Load a page | **Open a page** |
+| Click an element | **Click** |
+| Type into a field | **Type into a field**, one step per field, updated as you type |
+| Tick or untick a box | **Tick a checkbox** / **Untick a checkbox** |
+| Choose an option | **Choose an option** |
+| Move onto an element | **Hover** |
+| Press a key | **Press a key**, with its modifiers: `ControlOrMeta+Enter` |
+
+Clicking into a field before typing into it is not a step of its own.
+
+**Where the steps go.** They are collected in a new frame named `Recording <date and time>`, placed below the selected node when exactly one node is selected, or below Start, and the steps are chained after that node. Whatever that node was connected to follows the last recorded step, so recording after Start in a Start → End workflow gives Start → steps → End. That splice happens only when the node has exactly one outgoing connection; otherwise the steps are added as an extra branch. Steps are saved by auto-save like any other edit, and **Undo** removes them. A step deleted while recording stays deleted.
+
+**Values.** The recorder never stores a value it can name instead.
+
+- **A typed value equal to a variable of the selected environment becomes `{{env.NAME}}`.** Typing the test email that `TEST_EMAIL` holds gives `{{env.TEST_EMAIL}}`, and a page address that starts with an environment variable's URL becomes `{{env.BASE_URL}}/login`.
+- **A typed value equal to a secret of the workspace or the selected environment becomes `{{secrets.NAME}}`**, and a secret inside longer text is replaced by its placeholder.
+- **Text typed into a password field (`<input type="password">`) that matches no secret becomes `{{secrets.UNSET_PASSWORD_1}}`**, numbered, never reusing a name already in scope or in the workflow. The typed value is discarded and is never sent to the canvas, not even partly typed. The node shows a **needs secret** badge, and its **Text to type** field says the secret is not set, with a **Save as secret** button that opens the workspace secret form with that name filled in; or type `{{` in the field to pick an existing secret. Until it is set, a run fails that step with `{{secrets.UNSET_PASSWORD_1}} is not set` rather than typing the placeholder.
+- **Text that ends in the beginning of a stored secret is held back** once it matches four characters or more, until it either completes the secret or stops matching. A recording that ends while text is still held back gives the step a placeholder secret, `{{secrets.UNSET_SECRET_n}}`.
+- **A page address that contains a secret is not recorded, and neither is a step whose element locator would show one.** A toast says so.
+
+The element the recorder picked becomes the same structured locator the node editor edits: role and name, label, placeholder, text, alt, title, test id, CSS, with **inside** parents, `nth` and iframe. When it has no structured equivalent it is kept as a raw `selector` locator (see [Finding an Element](#finding-an-element)).
+
+**Not recorded.** Each shows a warning toast once per recording:
+
+- Actions in a popup or a new tab. Browser steps drive one page.
+- Checks made with the recorder toolbar's assert buttons. They arrive in a later version; add an **expect** step by hand.
+- File uploads.
+
+**Finishing.** Press **Stop**, or close the browser window. The frame stays on the canvas as ordinary steps: edit them, move them, run them, or undo the recording. Recording is a desktop-app feature only — an agent cannot record over MCP and the CLI cannot record — and it never writes a workflow itself: the canvas inserts the steps.
 
 ## Actions
 
@@ -265,12 +308,17 @@ The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chr
 - **No visual diffs.** Steps compare text, values and visibility, not pixels.
 - **No saved login state.** Every run starts signed out, so sign in with steps, ideally once, in a sub-workflow called through **Call Workflow**.
 - **Network settings do not apply.** `Settings > Network`'s proxy, CA certificates and client certificates are not used by browser steps; the browser uses the machine's own network configuration.
-- **No recorder yet.** Recording steps by clicking through the page is planned, not available: steps are written by hand in the node editor or the JSON editor, or by an agent over MCP. An agent can inspect the page and read a failed step's evidence (see [Agents](#agents)).
+- **Recording covers one page.** Actions in a popup or a new tab, checks made with the recorder toolbar's assert buttons, and file uploads are not recorded yet; each shows a warning toast once per recording.
+- **Only password fields are treated as passwords.** Text typed into a field that is not an `<input type="password">` is stored as typed, unless it matches an environment variable or a secret. Save a value as a secret before recording and it is recorded as `{{secrets.NAME}}`.
+- **Only `type="password"` fields are treated as passwords.** A secret typed into an ordinary text field is recorded as text, unless it is saved as a secret first, in which case it becomes `{{secrets.NAME}}`.
 
 The [Known Limitations](../reference/known-limitations.md#browser-steps) page keeps the same list with the rest of the product's boundaries.
 
 ## Troubleshooting
 
+- **If a step shows `needs secret`**, its typed password matched no secret. Set it with **Save as secret**, or type `{{` in **Text to type** to pick one; until then a run fails with `{{secrets.UNSET_PASSWORD_1}} is not set`.
+- **If Record is disabled**, another workflow is being recorded, a run is in progress, or the workflow is loading. Stop the other recording or wait for the run to finish.
+- **If the recording could not start**, the toast names the reason: the browser was not found, so choose another one in **Settings → Browser**, or the start page did not load.
 - **If a step fails with `no supported browser was found on this machine`**, install Google Chrome or Microsoft Edge, or run `npx playwright install chromium`, then pick it in **Settings > Browser**.
 - **If a step fails with `… was not found on this machine`**, the chosen browser is not installed. Choose another one, **Automatic**, or pass `--browser` on the CLI.
 - **If a step fails with `matches N elements; add hasText, nth or within to pick one`**, the locator is not specific enough. Add the visible text with `hasText`, pick one with `nth`, or scope it to a parent with `within`.
