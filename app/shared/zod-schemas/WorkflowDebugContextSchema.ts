@@ -71,9 +71,30 @@ const DebugEvidenceSelectorSchema = z
         workspaceId: z.string().min(1),
         runId: z.string().min(1),
         nodeIds: z.array(z.string().min(1)).min(1),
-        sections: z.array(z.enum(["error", "assertions", "extractors", "request", "response"])).min(1),
+        sections: z.array(z.enum(["error", "assertions", "extractors", "request", "response", "browser"])).min(1),
       })
       .strict(),
+  })
+  .strict()
+
+/**
+ * A failed browser step, compacted for the one-call debug read: what ran, what
+ * it compared, which page it was on, and the start of its ARIA snapshot with
+ * byte accounting. Screenshots are presence only. Budget pressure removes the
+ * page text (see `dropBrowserSummaries`), never the identity fields, so the
+ * `moreDetail` selector that asks for the `browser` section stays meaningful.
+ */
+const DebugBrowserSummarySchema = z
+  .object({
+    action: z.string().min(1),
+    url: z.string().optional(),
+    title: z.string().optional(),
+    expected: z.string().optional(),
+    actual: z.string().optional(),
+    hasScreenshot: z.boolean(),
+    ariaSnapshotPreview: z.string().optional(),
+    ariaSnapshotTruncated: z.boolean(),
+    ariaSnapshotBytes: z.number().int().nonnegative(),
   })
   .strict()
 
@@ -90,6 +111,7 @@ const DebugEvidenceSchema = z
     unresolvedPlaceholders: z.array(z.string().min(1)),
     assertionFailureCount: z.number().int().nonnegative(),
     extractorMissCount: z.number().int().nonnegative(),
+    browser: DebugBrowserSummarySchema.optional(),
     moreDetail: DebugEvidenceSelectorSchema,
   })
   .strict()
@@ -145,7 +167,8 @@ const DebugNextReadSchema = z
  * failed nodes plus their nearest dependencies with incident edges, unresolved
  * placeholders, environment key presence with provenance, secret
  * names/resolution metadata only (never values), and bounded error evidence
- * with selectors for more detail.
+ * with selectors for more detail — a failed browser step adds its action,
+ * page URL/title, compared values and the start of its ARIA snapshot.
  *
  * Held to a 32 KiB aggregate inline budget. Over-budget detail moves to
  * `omittedNodeIds`/`nextReads` with explicit continuation arguments — counts

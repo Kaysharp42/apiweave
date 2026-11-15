@@ -28,7 +28,7 @@ export const NODE_DETAIL_MAX_LIMIT = 50
 export const RUN_HISTORY_DEFAULT_LIMIT = 20
 export const RUN_HISTORY_MAX_LIMIT = 100
 
-/** Default/maximum preview bytes per request/response body in node evidence. */
+/** Default/maximum preview bytes per request/response body or browser text in node evidence. */
 export const EVIDENCE_PREVIEW_DEFAULT_BYTES = 2048
 export const EVIDENCE_PREVIEW_MAX_BYTES = 8192
 
@@ -62,6 +62,29 @@ export const DEBUG_CONTEXT_MAX_ISSUE_LIMIT = 50
 /** Default/maximum error characters per evidence entry in a debug context. */
 export const DEBUG_CONTEXT_DEFAULT_ERROR_BYTES = 2048
 export const DEBUG_CONTEXT_MAX_ERROR_BYTES = 8192
+
+/**
+ * Bytes of a failed browser step's ARIA snapshot carried inline per evidence
+ * entry. A snapshot runs to 64 KiB, so the debug read carries its opening only —
+ * enough to see the page's structure near the top — and states the full size;
+ * the whole window is a `runs_getNodeResult` call away. The same cap applies to
+ * the step's `expected`/`actual` page text.
+ */
+export const DEBUG_CONTEXT_BROWSER_TEXT_BYTES = 2048
+
+/**
+ * Cut `text` to at most `maxBytes` UTF-8 bytes on a character boundary, appending
+ * a marker inside the value when anything was removed. For page text carried
+ * as a plain string (a step's compared values), where there is no separate
+ * truncation flag to state the cut: the marker is what stops a shortened string
+ * being read as the page's actual text. The runner uses the same `…` for a
+ * `detail` it had to cut.
+ */
+export function truncateUtf8Marked(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
+  const marker = "…"
+  return `${truncateUtf8(text, Math.max(0, maxBytes - Buffer.byteLength(marker, "utf8")))}${marker}`
+}
 
 /**
  * Cut `text` to at most `maxBytes` UTF-8 bytes on a character boundary. Every

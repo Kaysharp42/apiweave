@@ -782,3 +782,131 @@ describe("Phase 3 — redaction and whitelist", () => {
     expect(description).toContain("runRev")
   })
 })
+
+describe("Phase 3 — a failed browser step is legible in one call", () => {
+  const SNAPSHOT = [
+    '- heading "Sign in" [level=1]',
+    '- textbox "Email": ann@example.test',
+    '- textbox "Password": <SECRET>',
+    '- button "Sign in"',
+  ].join("\n")
+
+  /** A chain of browser steps, so every failed id is a real node of the workflow. */
+  async function seedBrowserFailures(
+    count: number,
+    details: { readonly snapshot: string; readonly expected?: string; readonly actual?: string; readonly url?: string; readonly title?: string },
+  ): Promise<{ workspaceId: string; workflowId: string; runId: string; nodeIds: string[] }> {
+    const workspaceId = await seedWorkspace()
+    const nodeIds = Array.from({ length: count }, (_, index) => `step${index}`)
+    const nodes = [
+      { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+      ...nodeIds.map((nodeId, index) => ({
+        nodeId,
+        type: "browser",
+        position: { x: 100 + index * 100, y: 0 },
+        config: index === 0
+          ? { action: "navigate", url: "https://example.test/login" }
+          : { action: "expect-text", locator: { kind: "text", value: "Dashboard" }, text: "Dashboard" },
+      })),
+    ]
+    const edges = nodeIds.map((nodeId, index) => ({
+      edgeId: `e${index}`,
+      source: index === 0 ? "start" : nodeIds[index - 1]!,
+      target: nodeId,
+    }))
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "browser-debug",
+      nodes,
+      edges,
+    })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: nodeIds.map((nodeId, index) => ({
+        nodeId,
+        status: "failed" as const,
+        duration: 900 + index,
+        error: `Browser step: the text of getByText('Dashboard') did not contain the expected text within 10s`,
+        browser: {
+          action: "expect-text",
+          expected: details.expected ?? "Dashboard",
+          actual: details.actual ?? "Welcome",
+          url: details.url ?? "https://example.test/dashboard",
+          title: details.title ?? "Sign in",
+          ariaSnapshot: details.snapshot,
+          screenshotArtifactId: `shot-${index}`,
+        },
+      })),
+      failedNodes: nodeIds,
+    })
+    return { workspaceId, workflowId: workflow.workflowId, runId: run.runId, nodeIds }
+  }
+
+  it("carries the step summary and points its selector at the browser section", async () => {
+    const seed = await seedBrowserFailures(1, { snapshot: SNAPSHOT })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    const item = context.evidence.find((entry) => entry.nodeId === "step0")
+    expect(item?.browser).toEqual({
+      action: "expect-text",
+      expected: "Dashboard",
+      actual: "Welcome",
+      url: "https://example.test/dashboard",
+      title: "Sign in",
+      hasScreenshot: true,
+      ariaSnapshotPreview: SNAPSHOT,
+      ariaSnapshotTruncated: false,
+      ariaSnapshotBytes: Buffer.byteLength(SNAPSHOT, "utf8"),
+    })
+    expect(item?.moreDetail.tool).toBe("runs_getNodeResult")
+    expect(item?.moreDetail.args.sections).toContain("browser")
+    // The screenshot is a presence flag; its id and bytes never travel here.
+    expect(JSON.stringify(context)).not.toContain("shot-0")
+  })
+
+  it("cuts a long snapshot and long compared text with byte accounting", async () => {
+    const snapshot = "n".repeat(20_000)
+    const seed = await seedBrowserFailures(1, { snapshot, expected: "e".repeat(5_000), actual: "a".repeat(5_000) })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    const browser = context.evidence[0]?.browser
+    expect(browser?.ariaSnapshotTruncated).toBe(true)
+    expect(browser?.ariaSnapshotBytes).toBe(20_000)
+    expect(Buffer.byteLength(browser?.ariaSnapshotPreview ?? "", "utf8")).toBeLessThanOrEqual(2_048)
+    expect(Buffer.byteLength(browser?.expected ?? "", "utf8")).toBeLessThanOrEqual(2_048)
+    expect(Buffer.byteLength(browser?.actual ?? "", "utf8")).toBeLessThanOrEqual(2_048)
+    expect(browser?.expected?.endsWith("…")).toBe(true)
+  })
+
+  it("holds the aggregate budget by dropping page text, never the step's identity", async () => {
+    const seed = await seedBrowserFailures(5, {
+      snapshot: "s".repeat(20_000),
+      expected: "e".repeat(5_000),
+      actual: "a".repeat(5_000),
+      url: `https://example.test/${"u".repeat(2_000)}`,
+      title: "t".repeat(1_000),
+    })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    expect(context.budgetBytes).toBeLessThanOrEqual(context.budgetLimitBytes)
+    expect(Buffer.byteLength(JSON.stringify(context), "utf8")).toBeLessThanOrEqual(32 * 1024)
+    const summaries = context.evidence.flatMap((entry) => (entry.browser === undefined ? [] : [entry]))
+    expect(summaries).toHaveLength(5)
+    for (const entry of summaries) {
+      expect(entry.browser?.action).toBe("expect-text")
+      expect(entry.browser?.hasScreenshot).toBe(true)
+      expect(entry.browser?.ariaSnapshotBytes).toBe(20_000)
+      expect(entry.moreDetail.args.sections).toContain("browser")
+    }
+    // At least one summary lost its page text, which is what made the page fit —
+    // and it says so rather than looking like a step with no snapshot.
+    const trimmed = summaries.filter((entry) => entry.browser?.ariaSnapshotPreview === undefined)
+    expect(trimmed.length).toBeGreaterThan(0)
+    for (const entry of trimmed) {
+      expect(entry.browser?.ariaSnapshotTruncated).toBe(true)
+      expect(entry.browser?.expected).toBeUndefined()
+      expect(entry.browser?.actual).toBeUndefined()
+    }
+  })
+})

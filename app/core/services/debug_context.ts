@@ -9,11 +9,13 @@ import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import { NotFoundError } from "../ipc/errors"
 import {
+  DEBUG_CONTEXT_BROWSER_TEXT_BYTES,
   DEBUG_CONTEXT_DEFAULT_ERROR_BYTES,
   DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT,
   DEBUG_CONTEXT_MAX_NODE_DETAILS,
   INLINE_RESULT_BUDGET_BYTES,
   truncateUtf8,
+  truncateUtf8Marked,
 } from "./read_budgets"
 import type { EnvironmentService } from "./environment_service"
 import type { RunService } from "./run_service"
@@ -388,6 +390,7 @@ function buildEvidence(
   const truncated = errorBytes > errorBudget
   const response = isRecord(result.response) ? result.response : null
   const statusCode = typeof response?.["statusCode"] === "number" ? response["statusCode"] : null
+  const browser = result.browser === undefined ? undefined : summarizeBrowser(result.browser)
   return {
     nodeId: result.nodeId,
     status: result.status,
@@ -400,15 +403,50 @@ function buildEvidence(
     unresolvedPlaceholders: [...(result.unresolvedPlaceholders ?? [])],
     assertionFailureCount: (result.assertions ?? []).filter((item) => item.outcome === "fail").length,
     extractorMissCount: (result.extractorOutcomes ?? []).filter((outcome) => !outcome.matched).length,
+    ...(browser === undefined ? {} : { browser }),
     moreDetail: {
       tool: "runs_getNodeResult",
       args: {
         workspaceId,
         runId,
         nodeIds: [result.nodeId],
-        sections: ["error", "assertions", "extractors", "request", "response"],
+        // A browser step's evidence is only legible with its own section: the
+        // summary above is the opening of a 64 KiB snapshot, and the selector is
+        // how the agent asks for the window it needs.
+        sections: browser === undefined ? EVIDENCE_SECTIONS : EVIDENCE_SECTIONS_WITH_BROWSER,
       },
     },
+  }
+}
+
+type DebugEvidenceSections = WorkflowDebugContext["evidence"][number]["moreDetail"]["args"]["sections"]
+
+const EVIDENCE_SECTIONS: DebugEvidenceSections = ["error", "assertions", "extractors", "request", "response"]
+const EVIDENCE_SECTIONS_WITH_BROWSER: DebugEvidenceSections = [...EVIDENCE_SECTIONS, "browser"]
+
+/**
+ * A failed browser step, compacted: what ran, what it compared, which page it
+ * was on, whether a screenshot exists, and the opening of the masked ARIA
+ * snapshot with its full size stated. The artifact id never travels — bytes are
+ * read through their own capped route — and the snapshot is cut in bytes so a
+ * multi-byte page cannot overrun the aggregate budget.
+ */
+function summarizeBrowser(
+  browser: NonNullable<RunResult["browser"]>,
+): NonNullable<WorkflowDebugContext["evidence"][number]["browser"]> {
+  const snapshot = browser.ariaSnapshot
+  const snapshotBytes = snapshot === undefined ? 0 : Buffer.byteLength(snapshot, "utf8")
+  const snapshotTruncated = snapshotBytes > DEBUG_CONTEXT_BROWSER_TEXT_BYTES
+  return {
+    action: browser.action,
+    ...(browser.url !== undefined ? { url: browser.url } : {}),
+    ...(browser.title !== undefined ? { title: browser.title } : {}),
+    ...(browser.expected !== undefined ? { expected: truncateUtf8Marked(browser.expected, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) } : {}),
+    ...(browser.actual !== undefined ? { actual: truncateUtf8Marked(browser.actual, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) } : {}),
+    hasScreenshot: browser.screenshotArtifactId !== undefined,
+    ...(snapshot === undefined ? {} : { ariaSnapshotPreview: snapshotTruncated ? truncateUtf8(snapshot, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) : snapshot }),
+    ariaSnapshotTruncated: snapshotTruncated,
+    ariaSnapshotBytes: snapshotBytes,
   }
 }
 
@@ -505,11 +543,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Hold the response to the aggregate inline budget. Drop order is
  * value-per-byte: error previews first (rows and selectors survive), then
- * diagnosis items from the notices end (summary counts survive), then node
- * detail entries from the lowest-priority end (counts, evidence selectors and
- * omission ids survive), then identifier tails with the continuation hints
- * already weighed. Metadata is never dropped, so this terminates with a valid,
- * explicitly partial response.
+ * browser snapshots and compared values (step identity and evidence size
+ * survive), then diagnosis items from the notices end (summary counts survive),
+ * then node detail entries from the lowest-priority end (counts, evidence
+ * selectors and omission ids survive), then identifier tails with the
+ * continuation hints already weighed. Metadata is never dropped, so this
+ * terminates with a valid, explicitly partial response.
  */
 function fitBudget(
   response: WorkflowDebugContext,
@@ -522,6 +561,7 @@ function fitBudget(
   const byId = new Map(workflow.nodes.map((node) => [node.nodeId, node]))
   const bytes = (): number => Buffer.byteLength(JSON.stringify(response), "utf8")
   dropErrorPreviews(response, bytes)
+  dropBrowserSummaries(response, bytes)
   dropDiagnosisTail(response, bytes)
   dropNodeDetails(response, byId, bytes)
   // The continuations are part of the response, so they go on the scales
@@ -555,6 +595,47 @@ function dropErrorPreviews(response: WorkflowDebugContext, bytes: () => number):
 
 function previewBytes(preview: string | undefined): number {
   return preview === undefined ? 0 : Buffer.byteLength(preview, "utf8")
+}
+
+/**
+ * Second rung: a browser step's page text. Page values and the snapshot opening
+ * go first, and only if that is not enough do its URL and title — the step's
+ * identity (action, `hasScreenshot`) and the snapshot's full size always
+ * survive, so the entry still says what ran and how much evidence exists.
+ * `ariaSnapshotTruncated` then states that what is left is not the whole page,
+ * and the `moreDetail` selector on the same entry asks `runs_getNodeResult` for
+ * the `browser` section, whose preview the caller can window.
+ */
+function dropBrowserSummaries(response: WorkflowDebugContext, bytes: () => number): void {
+  while (overBudget(bytes)) {
+    let victim: DebugEvidenceBrowser | undefined
+    for (const item of response.evidence) {
+      if (item.browser === undefined) continue
+      if (browserSummaryBytes(item.browser) > 0 && (victim === undefined || browserSummaryBytes(item.browser) > browserSummaryBytes(victim))) {
+        victim = item.browser
+      }
+    }
+    if (victim === undefined) return
+    if (browserTextBytes(victim) > 0) {
+      delete victim.expected
+      delete victim.actual
+      delete victim.ariaSnapshotPreview
+      victim.ariaSnapshotTruncated = victim.ariaSnapshotBytes > 0
+      continue
+    }
+    delete victim.url
+    delete victim.title
+  }
+}
+
+type DebugEvidenceBrowser = NonNullable<WorkflowDebugContext["evidence"][number]["browser"]>
+
+function browserSummaryBytes(browser: DebugEvidenceBrowser): number {
+  return browserTextBytes(browser) + previewBytes(browser.url) + previewBytes(browser.title)
+}
+
+function browserTextBytes(browser: DebugEvidenceBrowser): number {
+  return previewBytes(browser.expected) + previewBytes(browser.actual) + previewBytes(browser.ariaSnapshotPreview)
 }
 
 function dropDiagnosisTail(response: WorkflowDebugContext, bytes: () => number): void {
