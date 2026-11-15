@@ -380,9 +380,14 @@ with one `nodeId` returns the stored JPEG as image content.
   (`beforeNodeId`) or to its end, and return the page that run left open:
   address, title and the masked ARIA snapshot to pick role and label locators
   from. It records a run like `runs_create`, waits for the user's approval when
-  it would send secrets, and is then limited to the hosts they approved. There is no `url`
-  argument: add a `navigate` step and inspect after it. `screenshot: true` adds
-  a JPEG of the viewport as image content.
+  it would send secrets, and is then limited to the hosts they approved
+  (`deniedByUser: true` when they refuse or do not answer: tell them, do not
+  retry). The wait is bounded (`waitMs`, default 10 s, max 30 s): on deadline
+  it returns `terminal: false` with the run id, which another call with `runId`
+  resumes without starting a run or asking for a second approval; a timeout or
+  disconnect never cancels the run. There is no `url` argument: add a
+  `navigate` step and inspect after it. `screenshot: true` adds a JPEG of the
+  viewport as image content.
 
 ### Guides
 

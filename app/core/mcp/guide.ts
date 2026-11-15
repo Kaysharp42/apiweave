@@ -268,7 +268,12 @@ flow is written. \`beforeNodeId\` stops the run before an existing step instead,
 showing the page that step acts on: the way to check a locator you are
 repairing. \`page: null\` means no browser step had run: add a \`navigate\`
 first (there is no \`url\` mode). \`browser_inspect\` sends real traffic and
-records a run, like \`runs_create\`.
+records a run, like \`runs_create\`. Its wait is bounded (\`waitMs\`, default
+10000, max 30000): \`terminal: false\` means the run has not finished, possibly
+waiting for the user's approval — pass that \`runId\` back to keep waiting, which
+starts no new run and asks for no second approval. \`deniedByUser: true\` means
+they refused or did not answer — say so, do not retry. A timeout or disconnect
+never cancels the run (only \`runs_cancel\` does).
 
 **Repair.** A failed step's evidence is in \`workflows_debugContext\`, or in
 \`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,

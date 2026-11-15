@@ -330,6 +330,32 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
   })
 
   /**
+   * `browser_inspect` continues an inspection by runId instead of starting a
+   * second run: exactly one of workflowId and runId, and a runId names a run
+   * whose page is still kept.
+   */
+  it("browser_inspect takes exactly one of workflowId and runId", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const both = await client.callTool({
+      name: "browser_inspect",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: "wf", runId: "run-1" },
+    })
+    expect(both.isError).toBe(true)
+    expect(textOf(both as { content: Array<{ type: string; text?: string }> })).toContain("exactly one of workflowId")
+
+    const neither = await client.callTool({ name: "browser_inspect", arguments: { workspaceId: workspace.workspaceId } })
+    expect(neither.isError).toBe(true)
+    expect(textOf(neither as { content: Array<{ type: string; text?: string }> })).toContain("exactly one of workflowId")
+
+    // A runId that is not a kept inspection says how to start one.
+    const unknown = await client.callTool({ name: "browser_inspect", arguments: { workspaceId: workspace.workspaceId, runId: "run-1" } })
+    expect(unknown.isError).toBe(true)
+    expect(textOf(unknown as { content: Array<{ type: string; text?: string }> })).toContain("browser_inspect with a workflowId")
+    await client.close()
+  })
+
+  /**
    * Version history runs git and, through `connectRemote`, decides where a
    * workspace is pushed: an agent that could reach it could send the workspace
    * to a repository it controls. It lives off the router (GIT_CHANNELS, the

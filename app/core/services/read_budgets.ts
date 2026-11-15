@@ -82,12 +82,6 @@ export const BROWSER_INSPECT_SNAPSHOT_DEFAULT_BYTES = 16 * 1024
 export const BROWSER_INSPECT_SNAPSHOT_MAX_BYTES = 24 * 1024
 
 /**
- * The longest `browser.inspect` waits for its run, which can include the
- * user's two-minute approval to send secrets. Past it the run is cancelled.
- */
-export const BROWSER_INSPECT_MAX_WAIT_MS = 5 * 60_000
-
-/**
  * Cut `text` to at most `maxBytes` UTF-8 bytes on a character boundary, appending
  * a marker inside the value when anything was removed. For page text carried
  * as a plain string (a step's compared values), where there is no separate
