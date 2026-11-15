@@ -13,6 +13,7 @@ import {
   RUN_WAIT_MAX_MS,
 } from "../../services/read_budgets"
 import type { EvidenceSection } from "../../services/run_evidence"
+import type { RunArtifact } from "@shared/types/RunArtifact"
 import { buildReport } from "../../runner/reporters"
 import { MAX_ITERATION_ROWS } from "@shared/iteration-data/iterationData"
 import { LoadRunSchema } from "@shared/zod-schemas"
@@ -80,7 +81,7 @@ const historyInput = z.object({
   cursor: z.string().min(1).optional().describe("Continue a history read. Bound to these filters and to the history revision; a stale cursor is rejected, so re-read without it."),
 }).strict()
 
-const evidenceSection = z.enum(["error", "assertions", "extractors", "request", "response"])
+const evidenceSection = z.enum(["error", "assertions", "extractors", "request", "response", "browser"])
 
 // Targeted evidence for a small node set. Bodies travel as bounded previews
 // with explicit truncation accounting — never whole — and sections the caller
@@ -91,19 +92,33 @@ const nodeResultInput = z.object({
   runId: z.string().min(1),
   nodeId: z.string().min(1).optional().describe("One node to inspect. Prefer nodeIds for up to 50 nodes in one call."),
   nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes to inspect, in the order to return. Combined with nodeId at most 50."),
-  sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). Omitted sections are named, never silently absent."),
+  sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). `browser` carries a browser step's action, page URL and title, compared values, and its masked ARIA snapshot as a windowable preview, plus hasScreenshot — never the screenshot's bytes or its artifact id. Omitted sections are named, never silently absent."),
   path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) or RFC 9535 JSONPath ($.response.body.items[?@.id==3].name) selecting within the RESPONSE body. A miss reports path-missing, type-mismatch or invalid-path distinctly."),
-  maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per body in bytes (default 2048)."),
+  maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per text payload in bytes (default 2048): request/response bodies, a browser step's ARIA snapshot, and its expected/actual text."),
   start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
   end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
+  screenshot: z.boolean().optional().describe("Also return a failed browser step's screenshot as image content (JPEG, at most 1 MB, password fields and secret values painted over), when its browser section says hasScreenshot. One node only: pass nodeId alone."),
 }).strict().superRefine((value, context) => {
   if (value.nodeId === undefined && value.nodeIds === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "Name a node: nodeId for one, nodeIds for several." })
+  }
+  if (value.screenshot === true && (value.nodeId === undefined || value.nodeIds !== undefined)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["screenshot"], message: "A screenshot is read for one node: pass nodeId alone." })
   }
   if (value.start !== undefined && value.end !== undefined && value.end <= value.start) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: "end must be greater than start." })
   }
 })
+
+/** Distinct node ids for one evidence read, in request order, held to the call's node cap. */
+function evidenceNodeIds(nodeId: string | undefined, nodeIds: readonly string[] | undefined): string[] {
+  const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
+  const ordered = [...new Set(merged)]
+  if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
+    throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
+  }
+  return ordered
+}
 
 export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { runs } = deps
@@ -213,20 +228,17 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   router.register("runs", "getNodeResult", {
     input: nodeResultInput,
     output: NodeEvidencePageSchema,
-    handle: ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end }) => {
-      const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
-      const ordered = [...new Set(merged)]
-      if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
-        throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
-      }
-      return runs.getNodeEvidence(workspaceId, runId, {
-        nodeIds: ordered,
+    handle: async ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end, screenshot }) => {
+      const page = await runs.getNodeEvidence(workspaceId, runId, {
+        nodeIds: evidenceNodeIds(nodeId, nodeIds),
         ...(sections !== undefined ? { sections: sections as readonly EvidenceSection[] } : {}),
         ...(path !== undefined ? { path } : {}),
         ...(maxBytes !== undefined ? { maxBytes } : {}),
         ...(start !== undefined ? { start } : {}),
         ...(end !== undefined ? { end } : {}),
       })
+      const image = screenshot === true && nodeId !== undefined ? await failureScreenshot(deps, workspaceId, runId, nodeId) : undefined
+      return image !== undefined ? { ...page, screenshot: image } : page
     },
   })
 
@@ -318,4 +330,17 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
       return buildReport(format, { kind: "run", run, workflow })
     },
   })
+}
+
+/**
+ * The screenshot a failed browser step stored, or undefined when it has none.
+ * Its size is capped where it is taken (`SCREENSHOT_MAX_BYTES`), and it was
+ * painted over there: an image cannot be masked afterwards.
+ */
+async function failureScreenshot(deps: HandlerDeps, workspaceId: string, runId: string, nodeId: string): Promise<RunArtifact | undefined> {
+  const run = await deps.runs.get(workspaceId, runId)
+  const artifactId = run.results.find((result) => result.nodeId === nodeId)?.browser?.screenshotArtifactId
+  // By the artifact's own id: a rerun's copied result points at the source run's screenshot.
+  const artifact = artifactId !== undefined ? deps.runArtifacts?.get(artifactId) : undefined
+  return artifact !== undefined ? { mime: artifact.mime, base64: artifact.body.toString("base64") } : undefined
 }

@@ -180,9 +180,9 @@ tool includes:
   fallback.
 - Read-only, destructive, idempotent, and open-world annotations.
 
-`runs_create` and `projects_run` are marked open-world because they execute
-workflows' outbound HTTP requests on this machine. Other tools operate on local
-APIWeave data.
+`runs_create`, `projects_run` and `browser_inspect` are marked open-world
+because they execute workflows' outbound traffic on this machine. Other tools
+operate on local APIWeave data.
 
 `workflows_search`, `workflows_get`, `workflows_patch`, `workflows_debugContext`
 and `runs_create` carry `_meta: {"anthropic/alwaysLoad": true}`, so Claude Code
@@ -368,7 +368,26 @@ masked is refused. See
 node's stored request and response from a run, body included, after the same
 secret-redaction pass every MCP read gets. Use it to inspect a single node's
 payload without leaving the agent; secret-shaped values still come back
-withheld.
+withheld. A `browser` node's evidence is its `browser` section: the action,
+page address and title, the expected and actual values, Playwright's message,
+the masked accessibility (ARIA) snapshot as a windowable preview, and
+`hasScreenshot`. That section never carries the image itself; `screenshot: true`
+with one `nodeId` returns the stored JPEG as image content.
+
+### Browser
+
+- `browser_inspect` (write) — run a workflow headless up to a browser step
+  (`beforeNodeId`) or to its end, and return the page that run left open:
+  address, title and the masked ARIA snapshot to pick role and label locators
+  from. It records a run like `runs_create`, waits for the user's approval when
+  it would send secrets, and is then limited to the hosts they approved
+  (`deniedByUser: true` when they refuse or do not answer: tell them, do not
+  retry). The wait is bounded (`waitMs`, default 10 s, max 30 s): on deadline
+  it returns `terminal: false` with the run id, which another call with `runId`
+  resumes without starting a run or asking for a second approval; a timeout or
+  disconnect never cancels the run. There is no `url` argument: add a
+  `navigate` step and inspect after it. `screenshot: true` adds a JPEG of the
+  viewport as image content.
 
 ### Guides
 
@@ -485,9 +504,10 @@ Run tools return operational metadata suitable for an agent to monitor a run:
 - Resume lineage and record revision.
 
 Run responses intentionally omit raw request/response and variable content —
-except `runs_getNodeResult`, which returns one node's stored request/response
-under the standard secret-redaction pass. Use the desktop response inspector
-when full payloads for other nodes are needed.
+except `runs_getNodeResult`, which returns one node's stored request/response,
+or a browser step's page address, values and masked ARIA snapshot, under the
+standard secret-redaction pass. Use the desktop response inspector when full
+payloads for other nodes are needed.
 
 Run tools do not push updates themselves. A session client can subscribe to the
 run resource for `notifications/resources/updated` change signals (see
@@ -590,7 +610,10 @@ show MCP prompts.
   and negative cases, fixes every diagnosis error before running, runs, and
   debugs. It tells a workflow bug from an API bug, never weakens an assertion
   to make a run pass, asks before the first run against anything that looks
-  like production, and ends with a report.
+  like production, and ends with a report. A task that names a page, screen or
+  user flow is a browser task: the agent reads the frontend code for intent,
+  takes locators from the page with `browser_inspect`, builds `browser` nodes,
+  runs them, and repairs a failing step from its browser evidence.
 
   The one optional argument, `task`, is what to test. **Quote it**:
   `/apiweave:e2e "invoice create and list"`. OpenCode 2.x and Claude Code
@@ -828,7 +851,9 @@ automatically: the app is running whenever they are.
 4. Call `runs_create` with `workspaceId` and `workflowId`. It waits up to 10
    seconds; if the run is still going, call `runs_wait` with its `runId`.
 5. On a failure, call `workflows_debugContext` for the failed nodes, their
-   diagnosis and error previews, then `runs_getNodeResult` for more evidence.
+   diagnosis and error previews, then `runs_getNodeResult` for more evidence. A
+   browser step's page address and masked accessibility tree are in both; add
+   `screenshot: true` with that one node for the image.
 6. Summarize node status metadata. Ask the user to inspect the desktop response
    panel when diagnosis requires raw payload content.
 
@@ -929,8 +954,10 @@ sentence in the `start-here` guide telling it to query `graphify-out/` with
   `workflow_run` and `run_get_status` belonged to the removed backend.
 - **No raw response body:** Run tools other than `runs_getNodeResult` expose
   safe metadata only. Inspect a full body in the desktop UI, or call
-  `runs_getNodeResult` for one node's stored request/response (secret-shaped
-  values still come back redacted).
+  `runs_getNodeResult` for one node's stored request/response, or a browser
+  step's page evidence (secret-shaped values still come back redacted). A
+  screenshot is the one image a run read carries: ask for it with
+  `screenshot: true` and a single `nodeId`.
 - **A config value comes back as `<SECRET>`:** Intentional — the structure is
   intact, the credential value is withheld. It is why an agent cannot re-apply
   an existing preset; drag it onto the canvas in the desktop app instead.

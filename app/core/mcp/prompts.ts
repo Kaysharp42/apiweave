@@ -129,7 +129,7 @@ Clients split what is typed after a command on spaces, so this may be only its f
 }
 
 function buildE2e(args: PromptArgs): GetPromptResult {
-  const text = `You are testing the user's API end to end with APIWeave. Do the testing *in APIWeave*: find, build, run and debug workflows through the apiweave MCP tools. Do not write test scripts, curl loops or test files in the repository, and do not look for workflows on disk — they live in APIWeave's database, and these tools are the only way to reach them.
+  const text = `You are testing the user's API — or a web page and the user flow it serves — end to end with APIWeave. Do the testing *in APIWeave*: find, build, run and debug workflows through the apiweave MCP tools. Do not write test scripts, curl loops or test files in the repository, and do not look for workflows on disk — they live in APIWeave's database, and these tools are the only way to reach them.
 
 ## Task
 
@@ -147,6 +147,15 @@ If the task is to run or check tests that already exist, find them and go straig
 
 - If the working directory is the service's code, read its routes, handlers, request validation and any OpenAPI spec for the real paths, required fields, status codes and auth. If it has a \`graphify-out/\` folder, use \`graphify query\`. Test what the code and the user promise, not what you guess.
 - \`environments_list\` / \`environments_get\` show which environment holds the base URL and credentials; \`secrets_list\` shows which secret names exist.
+
+## 2b. A page, screen or user flow is a browser task
+
+"Log in and check the dashboard heading" or "check the checkout page after login": a task that names a page, a screen or a user flow in a web UI is a **browser** task — build \`browser\` nodes, not request nodes. Read the frontend code for intent (routes, labels, button text, test ids), but take locators from the page itself: \`browser_inspect\` runs the workflow headless and returns the page it left open — URL, title and ARIA snapshot, the same tree Playwright's own recorder picks locators from. Never guess a locator from the source.
+
+- One ordered chain starting with \`navigate\`; every browser step of the workflow shares one page. Any requests the journey also needs stay HTTP nodes, so the scenario in step 3 still applies to them.
+- \`{{env.BASE_URL}}\` for the base URL and \`{{env.TEST_EMAIL}}\` for the test account; the password is \`{{secrets.NAME}}\` in a fill's value, never a literal. Secrets cannot be created over MCP: when the name is missing, tell the user its exact name and scope and set that part aside.
+- The loop: write the \`navigate\` step and the login steps, then \`browser_inspect\` without \`beforeNodeId\` to see the page the workflow ends on, which is where the next step starts. Pick role and label locators from the snapshot, add the step with \`workflows_patch\`, inspect again, and \`runs_create\` once the flow is written. \`beforeNodeId\` shows the page an existing step acts on, for checking a locator you are repairing. \`browser_inspect\` sends real traffic and records a run, like \`runs_create\`; \`page: null\` means no browser step ran, so add a \`navigate\` step first — there is no \`url\` mode. Its wait is bounded (\`waitMs\`, max 30000): \`terminal: false\` means the run is still going — pass that \`runId\` back to keep waiting, which starts no new run and asks for no second approval; \`deniedByUser: true\` means they refused — say so, do not retry; a timeout never cancels it.
+- On a failure, \`workflows_debugContext\` (or \`runs_getNodeResult\` with \`sections: ["browser"]\`) shows expected vs actual and the page's masked ARIA snapshot at the failure; \`screenshot: true\` with one \`nodeId\` adds the image. Patch only that node with \`workflows_patch\` and rerun with \`runs_create\` \`resume: { nodeId }\`; a rerun that reaches a browser step restarts the chain from its first step. Separate a broken test from a broken page as you would for an API, and never loosen a check.
 
 ## 3. Design the scenario
 
@@ -178,7 +187,7 @@ For a large surface, write one workflow per journey grouped in a project, not on
 
 ## Report
 
-Finish with: the workflows you created or changed (name, id, project) and what each covers; each one's last run result; API bugs found, with evidence; and anything the user must do next, such as a missing secret or environment variable.`
+Finish with: the workflows you created or changed (name, id, project) and what each covers — requests or browser steps; each one's last run result; API or page bugs found, with evidence; and anything the user must do next, such as a missing secret or environment variable.`
 
   return {
     description: E2E_DESCRIPTION,

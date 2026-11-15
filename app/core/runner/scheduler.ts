@@ -23,7 +23,8 @@ import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVari
 import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
-import { BROWSER_STEP_PREFIX, type BrowserLaunchSettings } from "./browser/session"
+import { BROWSER_STEP_PREFIX, BrowserSession, type BrowserLaunchSettings } from "./browser/session"
+import { inspectPage, type InspectedPage } from "./browser/inspect"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
@@ -139,6 +140,23 @@ export interface SchedulerDeps {
   ) => Promise<void>
 }
 
+/**
+ * `browser_inspect`: run the workflow up to a node, then read the page it left
+ * open before the browser closes. Always headless.
+ */
+export interface RunInspection {
+  /** The run stops before this node. Absent: the whole workflow runs. */
+  readonly beforeNodeId?: string
+  /** Also take a screenshot, painted over like a failed step's. */
+  readonly screenshot: boolean
+  /**
+   * Called once the run has stopped and before it is reported finished, with
+   * the page masked by the run's masker, or null when no browser step opened
+   * one. Not called when the run is cancelled or fails to execute.
+   */
+  readonly done: (page: InspectedPage | null) => void
+}
+
 export interface EnqueueRequest {
   readonly workspaceId: string
   readonly workflowId: string
@@ -152,6 +170,8 @@ export interface EnqueueRequest {
   readonly data?: Readonly<Record<string, JsonValue>>
   /** Where the run sits in a data-driven run; stored with the run. */
   readonly iteration?: RunIteration
+  /** Read the page the run leaves open (`browser_inspect`). Held in memory only. */
+  readonly inspect?: RunInspection
 }
 
 /**
@@ -178,6 +198,8 @@ export class RunScheduler {
   private readonly sessionApprovals = new Set<string>()
   /** runId → its iteration's data row. In memory for the same reason, and so a data file's values are never written to history. */
   private readonly runData = new Map<string, Readonly<Record<string, JsonValue>>>()
+  /** runId → the page read it was started for (`browser_inspect`). */
+  private readonly runInspections = new Map<string, RunInspection>()
   private readonly queue: string[] = []
   /** runId → callers of {@link whenFinished} still waiting on it. */
   private readonly finishWaiters = new Map<string, ((status: RunTerminalStatus) => void)[]>()
@@ -220,6 +242,10 @@ export class RunScheduler {
     if (!workflow) {
       throw new NotFoundError(`workflow ${request.workflowId} not found`)
     }
+    const stopBefore = request.inspect?.beforeNodeId
+    if (stopBefore !== undefined && !workflow.nodes.some((node) => node.nodeId === stopBefore)) {
+      throw new ValidationError(`node ${stopBefore} is not in workflow ${request.workflowId}`)
+    }
     // Inherit the workflow's stored `selectedEnvironmentId` when the caller
     // omits it (an MCP agent running a workflow without a UI dropdown, or the
     // canvas's Run button before the environment picker has a value). Without
@@ -253,6 +279,7 @@ export class RunScheduler {
     })
     if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
     if (request.data !== undefined) this.runData.set(run.runId, request.data)
+    if (request.inspect !== undefined) this.runInspections.set(run.runId, request.inspect)
     this.queue.push(run.runId)
     void this.drain()
     return run.runId
@@ -281,6 +308,7 @@ export class RunScheduler {
       this.queue.splice(idx, 1)
       this.agentRuns.delete(runId)
       this.runData.delete(runId)
+      this.runInspections.delete(runId)
       this.deps.runs.updateStatus(runId, "cancelled")
       // A queued run never reached executeRun, so nothing else will publish its
       // terminal event — do it here or a subscriber waits forever (Phase 6).
@@ -357,6 +385,12 @@ export class RunScheduler {
     this.activeRuns.set(runId, controller)
     this.deps.runs.updateStatus(runId, "running")
     this.deps.emitProgress?.(runId, { kind: "run.started", runId })
+    const inspection = this.runInspections.get(runId)
+    // An inspection owns the run's browser, so the page outlives the executor
+    // long enough to be read. Headless whoever asked: nothing is shown to anyone.
+    const inspectSession = inspection !== undefined
+      ? new BrowserSession({ ...(this.deps.browser?.() ?? {}), headless: true })
+      : undefined
 
     try {
       const run = this.deps.runs.getById(runId)
@@ -462,6 +496,8 @@ export class RunScheduler {
         ...(this.deps.updateSnapshots === true ? { updateSnapshots: true } : {}),
         oauthTokens: this.deps.oauthTokens ?? new Map(),
         maskValue,
+        maskedValues: () => [...maskedValues],
+        ...(inspectSession !== undefined ? { browserSession: inspectSession } : {}),
         ...(this.deps.browser !== undefined
           ? { browser: agent !== undefined ? { ...this.deps.browser(), headless: true } : this.deps.browser() }
           : {}),
@@ -520,7 +556,17 @@ export class RunScheduler {
         ...(run.resumeFromRunId && run.resumeFromNodeIds
           ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph, workflow.variables) }
           : {}),
+        ...(inspection?.beforeNodeId !== undefined ? { stopBeforeNodeId: inspection.beforeNodeId } : {}),
       })
+
+      if (inspection !== undefined && inspectSession !== undefined && !controller.signal.aborted) {
+        const page = await inspectSession.currentPage()
+        inspection.done(
+          page === null
+            ? null
+            : await inspectPage(page, { mask, sensitiveValues: [...maskedValues], screenshot: inspection.screenshot }),
+        )
+      }
 
       this.emitFinished(runId, this.recordOutcome(runId, mask(output)))
     } catch (error) {
@@ -544,9 +590,11 @@ export class RunScheduler {
         this.emitFinished(runId, "failed")
       }
     } finally {
+      await inspectSession?.close()
       this.activeRuns.delete(runId)
       this.agentRuns.delete(runId)
       this.runData.delete(runId)
+      this.runInspections.delete(runId)
       void this.drain()
     }
   }

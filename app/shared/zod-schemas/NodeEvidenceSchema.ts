@@ -26,6 +26,42 @@ const EvidenceResponseSchema = z
   .strict()
 
 /**
+ * A page's ARIA (accessibility) snapshot is page content, routinely tens of
+ * kilobytes long, so it travels as the same bounded, windowable preview a
+ * response body does: `preview` is a byte window (`maxBytes`/`start`/`end`),
+ * `previewTruncated` says the window is not the whole snapshot, and
+ * `totalBytes` is the snapshot's full size so the caller can choose offsets.
+ */
+const EvidenceBrowserSnapshotSchema = z
+  .object({
+    preview: z.string().optional(),
+    previewTruncated: z.boolean().optional(),
+    totalBytes: z.number().int().nonnegative().optional(),
+  })
+  .strict()
+
+/**
+ * A `browser` node's step evidence. `expected`/`actual` can be long page text
+ * (an element's innerText), so they are cut to the caller's preview cap with a
+ * trailing marker; the snapshot's window is accounted separately. The
+ * screenshot is named as a presence flag only — its bytes and its artifact id
+ * are never part of an agent read.
+ */
+const EvidenceBrowserSchema = z
+  .object({
+    action: z.string().min(1),
+    url: z.string().optional(),
+    title: z.string().optional(),
+    expected: z.string().optional(),
+    actual: z.string().optional(),
+    detail: z.string().optional(),
+    evidenceNote: z.string().optional(),
+    hasScreenshot: z.boolean(),
+    ariaSnapshot: EvidenceBrowserSnapshotSchema.optional(),
+  })
+  .strict()
+
+/**
  * Targeted evidence for one node of a run. Sections the caller did not ask
  * for are named in `omittedSections`, never silently absent. Four states are
  * reported distinctly:
@@ -54,6 +90,7 @@ export const NodeEvidenceSchema = z
     extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
     request: EvidenceRequestSchema.optional(),
     response: EvidenceResponseSchema.optional(),
+    browser: EvidenceBrowserSchema.optional(),
     omittedSections: z.array(z.string().min(1)),
     budgetOmitted: z.boolean(),
   })

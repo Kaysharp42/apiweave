@@ -938,7 +938,7 @@ describe("Phase 2 — targeted node evidence", () => {
     expect(item.assertions).toBeUndefined()
     expect(item.extractorOutcomes).toBeUndefined()
     expect(item.request).toBeUndefined()
-    expect(item.omittedSections.sort()).toEqual(["assertions", "extractors", "request"])
+    expect(item.omittedSections.sort()).toEqual(["assertions", "browser", "extractors", "request"])
     expect(item.expectedStatus).toBe(200)
     expect(item.unresolvedPlaceholders).toEqual(["env.PASSWORD"])
   })
@@ -1278,5 +1278,291 @@ describe("Phase 2 — evidence path and empty-read edge cases", () => {
     expect(emptyNodes.totalMatched).toBe(0)
     expect(emptyNodes.omittedMatchCount).toBe(0)
     expect(emptyNodes.items).toEqual([])
+  })
+})
+
+describe("Phase 2 — browser step evidence", () => {
+  interface BrowserItem {
+    nodeId: string
+    request?: Record<string, unknown>
+    response?: Record<string, unknown>
+    browser?: {
+      action: string
+      url?: string
+      title?: string
+      expected?: string
+      actual?: string
+      detail?: string
+      evidenceNote?: string
+      hasScreenshot: boolean
+      ariaSnapshot?: { preview?: string; previewTruncated?: boolean; totalBytes?: number }
+    }
+    omittedSections: string[]
+    budgetOmitted: boolean
+  }
+
+  interface BrowserPage {
+    items: BrowserItem[]
+    omittedBodyCount: number
+    budgetBytes: number
+    budgetLimitBytes: number
+  }
+
+  const SNAPSHOT = [
+    '- heading "Sign in" [level=1]',
+    '- textbox "Email": ann@example.test',
+    '- textbox "Password": <SECRET>',
+    '- button "Sign in"',
+  ].join("\n")
+
+  /** A workspace with one browser step node, so a stored result can be seeded against it. */
+  async function seedBrowserWorkflow(): Promise<{ workspaceId: string; workflowId: string }> {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "browser-evidence",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "signin",
+          type: "browser",
+          position: { x: 100, y: 0 },
+          config: { action: "navigate", url: "https://example.test/login" },
+        },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "signin" }],
+    })
+    return { workspaceId, workflowId: workflow.workflowId }
+  }
+
+  async function evidence(workspaceId: string, runId: string, payload: Record<string, unknown>): Promise<BrowserPage> {
+    return dispatchOk<BrowserPage>("runs", "getNodeResult", { workspaceId, runId, ...payload })
+  }
+
+  it("returns the browser section for a browser node, without the screenshot's artifact id", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "signin",
+        status: "failed",
+        duration: 1_200,
+        error: "Browser step: the text of getByRole('heading', { name: 'Dashboard' }) did not contain the expected text within 10s",
+        browser: {
+          action: "expect-text",
+          url: "https://example.test/dashboard",
+          title: "Sign in",
+          expected: "Dashboard",
+          actual: "Welcome",
+          detail: "locator.innerText: Timeout 10000ms exceeded.",
+          ariaSnapshot: SNAPSHOT,
+          screenshotArtifactId: "artifact-1",
+          evidenceNote: "The screenshot was larger than 1 MB and was not kept.",
+        },
+      }],
+      failedNodes: ["signin"],
+    })
+
+    const page = await evidence(workspaceId, run.runId, { nodeId: "signin" })
+    const browser = page.items[0]?.browser
+    expect(browser).toEqual({
+      action: "expect-text",
+      url: "https://example.test/dashboard",
+      title: "Sign in",
+      expected: "Dashboard",
+      actual: "Welcome",
+      detail: "locator.innerText: Timeout 10000ms exceeded.",
+      evidenceNote: "The screenshot was larger than 1 MB and was not kept.",
+      hasScreenshot: true,
+      ariaSnapshot: {
+        preview: SNAPSHOT,
+        previewTruncated: false,
+        totalBytes: Buffer.byteLength(SNAPSHOT, "utf8"),
+      },
+    })
+    expect(page.items[0]?.omittedSections).toEqual([])
+    // The artifact id is a transport detail: the bytes are read through their
+    // own capped route, so the evidence page only reports presence.
+    expect(JSON.stringify(page)).not.toContain("artifact-1")
+  })
+
+  it("reports hasScreenshot false when the step kept no screenshot", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "signin",
+        status: "failed",
+        duration: 900,
+        browser: { action: "click", ariaSnapshot: SNAPSHOT, evidenceNote: "The ARIA snapshot could not be taken." },
+      }],
+    })
+
+    const page = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"] })
+    expect(page.items[0]?.browser?.hasScreenshot).toBe(false)
+    expect(page.items[0]?.browser?.action).toBe("click")
+    expect(JSON.stringify(page)).not.toContain("screenshotArtifactId")
+  })
+
+  it("windows the ARIA snapshot like a response body preview", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    const snapshot = "0123456789".repeat(400)
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "click", ariaSnapshot: snapshot } }],
+    })
+
+    const capped = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"], maxBytes: 100 })
+    const preview = capped.items[0]?.browser?.ariaSnapshot
+    expect(Buffer.byteLength(preview?.preview ?? "", "utf8")).toBeLessThanOrEqual(100)
+    expect(capped.items[0]).toMatchObject({ budgetOmitted: false, browser: { ariaSnapshot: { previewTruncated: true, totalBytes: 4_000 } } })
+
+    const windowed = await evidence(workspaceId, run.runId, {
+      nodeId: "signin",
+      sections: ["browser"],
+      start: 10,
+      end: 25,
+      maxBytes: 100,
+    })
+    // Byte offsets into the snapshot, exactly like `response.body` windows.
+    expect(windowed.items[0]).toMatchObject({
+      browser: { ariaSnapshot: { preview: snapshot.slice(10, 25), previewTruncated: true, totalBytes: 4_000 } },
+    })
+  })
+
+  it("caps compared page text at the preview cap instead of echoing it whole", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    const longText = "x".repeat(5_000)
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "expect-text", expected: "ok", actual: longText } }],
+    })
+
+    const page = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"], maxBytes: 64 })
+    const actual = page.items[0]?.browser?.actual ?? ""
+    expect(Buffer.byteLength(actual, "utf8")).toBeLessThanOrEqual(64)
+    expect(actual.endsWith("…")).toBe(true)
+    expect(page.items[0]?.browser?.expected).toBe("ok")
+  })
+
+  it("holds a page of browser evidence to the budget, keeping identity and snapshot sizes", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    const ids = Array.from({ length: 6 }, (_, index) => `b${index}`)
+    const snapshot = "s".repeat(8_000)
+    const text = "t".repeat(3_000)
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: ids.map((nodeId, index) => ({
+        nodeId,
+        status: "failed" as const,
+        duration: index,
+        browser: {
+          action: "expect-text",
+          expected: text,
+          actual: text,
+          ariaSnapshot: snapshot,
+          screenshotArtifactId: `shot-${index}`,
+        },
+      })),
+      failedNodes: ids,
+    })
+
+    const page = await evidence(workspaceId, run.runId, { nodeIds: ids, maxBytes: 8192 })
+    expect(page.budgetBytes).toBeLessThanOrEqual(page.budgetLimitBytes)
+    expect(page.items.map((item) => item.nodeId)).toEqual(ids)
+    const omitted = page.items.filter((item) => item.budgetOmitted)
+    expect(omitted.length).toBeGreaterThan(0)
+    for (const item of omitted) {
+      // Identity and the size of what was withheld survive for a single-node refetch.
+      expect(item.browser?.action).toBe("expect-text")
+      expect(item.browser?.hasScreenshot).toBe(true)
+      expect(item.browser?.expected).toBeUndefined()
+      expect(item.browser?.actual).toBeUndefined()
+      expect(item.browser?.ariaSnapshot?.preview).toBeUndefined()
+      expect(item.browser?.ariaSnapshot?.totalBytes).toBe(8_000)
+    }
+    // `omittedBodyCount` keeps counting request/response bodies, as before.
+    expect(page.omittedBodyCount).toBe(0)
+    expect(JSON.stringify(page)).not.toContain("shot-")
+  })
+
+  it("has no browser section for an HTTP node, and can leave it out explicitly", async () => {
+    const { workspaceId, runId } = await seedFailedRunWithResponse()
+    const page = await evidence(workspaceId, runId, { nodeId: "login" })
+    expect(page.items[0]).not.toHaveProperty("browser")
+    expect(page.items[0]?.omittedSections).toEqual([])
+
+    const restricted = await evidence(workspaceId, runId, { nodeId: "login", sections: ["response"] })
+    expect(restricted.items[0]).not.toHaveProperty("browser")
+    expect(restricted.items[0]?.omittedSections.sort()).toEqual(["assertions", "browser", "error", "extractors", "request"])
+  })
+
+  async function seedFailedRunWithResponse(): Promise<{ workspaceId: string; runId: string }> {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "http-only" })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "login",
+        status: "failed",
+        duration: 8,
+        request: { method: "POST", url: "https://example.test/login" },
+        response: { statusCode: 401, body: { error: "BAD_CREDENTIALS" } },
+        error: "Request failed with status 401",
+      }],
+    })
+    return { workspaceId, runId: run.runId }
+  }
+
+  it("redacts browser evidence exactly like a response body, keeping a stored mask", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const secretValue = "s3cret-value-never-in-a-read"
+    const run = runRepository.create({ workspaceId, workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "signin",
+        status: "failed",
+        duration: 300,
+        secretRefs: ["TEST_PASSWORD"],
+        browser: {
+          action: "fill",
+          // The run's masker already replaced the password with the placeholder
+          // at persistence; the read must neither undo it nor print the value.
+          ariaSnapshot: SNAPSHOT,
+          // A query the page carried is still scrubbed on the way out, which is
+          // how the transport pass is shown to reach this section too.
+          url: `https://example.test/callback?access_token=${secretValue}`,
+          screenshotArtifactId: "artifact-1",
+        },
+      }],
+      failedNodes: ["signin"],
+      resolvedSecrets: [{ name: "TEST_PASSWORD", scopeType: "workspace", resolved: true }],
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_getNodeResult",
+      arguments: { workspaceId, runId: run.runId, nodeId: "signin", sections: ["browser"] },
+    })
+    const text = textOf(result as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      items: Array<{ secretRefs: string[]; browser: { url: string; ariaSnapshot: { preview: string } } }>
+    }
+    // The mask the run stored survives verbatim: the read neither undoes it nor
+    // prints a value it never had.
+    expect(parsed.items[0]?.browser.ariaSnapshot.preview).toContain('<SECRET>')
+    expect(parsed.items[0]?.secretRefs).toEqual(["TEST_PASSWORD"])
+    // The transport's redaction reaches this section like any other read. URL
+    // query values serialize form-encoded, so decode before reading the mask.
+    expect(decodeURIComponent(parsed.items[0]?.browser.url ?? "")).toBe("https://example.test/callback?access_token=<SECRET>")
+    expect(text).not.toContain(secretValue)
+    await client.close()
   })
 })

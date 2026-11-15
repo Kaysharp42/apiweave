@@ -29,7 +29,7 @@ import type { SecretMetadata } from "../../secrets/scoped_secret_resolver"
 import { IpcRouter } from "../../ipc/router"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
 import { RunEventBroker } from "../../runner/run_event_broker"
-import { RunScheduler, type AgentRunApprovalRequest } from "../../runner/scheduler"
+import { AGENT_RUN_DENIED_ERROR, RunScheduler, type AgentRunApprovalRequest } from "../../runner/scheduler"
 import { SafeHttp } from "../../runner/safe_http"
 import { DynamicFunctions } from "../../runner/dynamic_functions"
 import { FixedClockProvider, SeededRandomProvider } from "../../runner/harness/providers"
@@ -698,6 +698,24 @@ describe("H10 — an agent's run that would send secrets needs the user's approv
     expect(approvals).toHaveLength(1)
     expect(approvals[0]).toMatchObject({ agent: "test-client", workflowName: "uses-secret", secretNames: ["API_KEY"], destinations: ["127.0.0.1:9"] })
     expect(run).toMatchObject({ status: "failed", terminal: true, deniedByUser: true })
+    await client.close()
+  })
+
+  it("reports a browser_inspect denial as deniedByUser, and says not to inspect again", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const workflowId = seedSecretWorkflow(workspace.workspaceId)
+    const client = await connectClient()
+
+    const result = await client.callTool({
+      name: "browser_inspect",
+      arguments: { workspaceId: workspace.workspaceId, workflowId },
+    })
+    const inspection = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+
+    expect(approvals).toHaveLength(1)
+    expect(inspection).toMatchObject({ status: "failed", terminal: true, deniedByUser: true, page: null })
+    expect(inspection.error).toBe(AGENT_RUN_DENIED_ERROR)
+    expect(inspection.note).toMatch(/do not call browser_inspect again/)
     await client.close()
   })
 

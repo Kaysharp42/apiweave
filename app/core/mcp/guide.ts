@@ -40,11 +40,10 @@ follows edges; nothing runs unless an edge leads to it.
 
 1. **Find.** \`workflows_search\` (summaries, never graphs), then
    \`workflows_get\` outline, then \`view: "nodes"\` for the ids you will touch.
-   A similar workflow shows this workspace's base URLs, auth headers and
-   variable names; credential values are withheld, the structure is not.
+   A similar workflow shows this workspace's base URLs and variable names.
    \`workspaces_map\` orients in a whole workspace; \`workflows_searchNodes\`
-   without \`workflowId\` maps a route (\`query\`) or a \`ref\` such as
-   \`secrets.API_KEY\` to every node using it.
+   without \`workflowId\` maps a route (\`query\`) or a \`ref\` to every node
+   using it.
 2. **Learn the shapes.** \`apiweave://guide/workflow-authoring\` for nodes and
    edges, \`apiweave://guide/placeholders\` for \`{{…}}\` syntax, and
    \`workflows_nodeSchema\` for one node type's config fields.
@@ -59,15 +58,17 @@ follows edges; nothing runs unless an edge leads to it.
    A wait timeout returns the runId for \`runs_wait\` and never cancels the run.
    A run using stored secrets waits for the user's approval;
    \`deniedByUser: true\` means they refused — say so, do not retry.
+   Before writing a browser step, read the page with \`browser_inspect\`.
 6. **Debug** with \`workflows_debugContext\` (one bounded call: failed nodes,
    diagnosis, configs, placeholders, error previews), then
-   \`runs_getNodeResult\` for evidence slices.
+   \`runs_getNodeResult\` for evidence slices; \`screenshot: true\` adds the
+   screenshot.
 7. **Assertions.** After a run, \`assertion_suggest\` derives rules with
    verified paths from a real response; \`assertion_apply\` writes them.
 
-If the user's repository has a \`graphify-out/\` folder, query it with
-\`graphify query "<route or handler>"\` instead of grepping when learning the API
-under test (graphify for the code, the tools above for the workflows).
+If the repository has a \`graphify-out/\` folder, use
+\`graphify query "<route or handler>"\` for the code under test instead of
+grepping (graphify for the code, the tools above for the workflows).
 
 ## Minimal working graph
 
@@ -255,12 +256,35 @@ Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`.
 always that reference, never a literal; \`{{env.*}}\` for the URL and the test
 account. An unresolved placeholder fails the step.
 
-A failed step's node result has a \`browser\` member — \`expected\`, \`actual\`,
-the masked \`ariaSnapshot\` and Playwright's \`detail\`; \`runs_getNodeResult\`
-returns the step's \`error\`, and the app's result pane shows the rest. Fix that
-one node with \`workflows_patch\` and rerun — a rerun that reaches a browser step
-restarts the chain from its first step. Runs started over MCP are always
-headless.
+**Write from the page, not from source.** Write the \`navigate\` step and any
+login steps, then call \`browser_inspect\` without \`beforeNodeId\`: it runs the
+workflow headless and returns the page it ends on — URL, title and the masked
+ARIA snapshot — which is where the next step starts. Take that step's locator
+from the snapshot, the tree Playwright's own recorder picks locators from:
+\`button "Sign in"\` is \`{"kind": "role", "role": "button", "name": "Sign in"}\`,
+and \`textbox "Email"\` is role \`textbox\` name \`Email\`, or a \`label\` locator.
+Add the step with \`workflows_patch\`, inspect again, and \`runs_create\` once the
+flow is written. \`beforeNodeId\` stops the run before an existing step instead,
+showing the page that step acts on: the way to check a locator you are
+repairing. \`page: null\` means no browser step had run: add a \`navigate\`
+first (there is no \`url\` mode). \`browser_inspect\` sends real traffic and
+records a run, like \`runs_create\`. Its wait is bounded (\`waitMs\`, default
+10000, max 30000): \`terminal: false\` means the run has not finished, possibly
+waiting for the user's approval — pass that \`runId\` back to keep waiting, which
+starts no new run and asks for no second approval. \`deniedByUser: true\` means
+they refused or did not answer — say so, do not retry. A timeout or disconnect
+never cancels the run (only \`runs_cancel\` does).
+
+**Repair.** A failed step's evidence is in \`workflows_debugContext\`, or in
+\`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,
+Playwright's \`detail\`, the page URL and title, and the masked ARIA snapshot at
+the failure. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
+enough; the image arrives as image content. Patch only that node with
+\`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
+rerun that reaches a browser step restarts the chain from its first step.
+Decide whether the test or the app is wrong before you change an \`expect-*\`
+step, and never weaken a check to turn a run green. Runs started over MCP are
+always headless.
 
 ### assertion
 
@@ -673,7 +697,11 @@ cross this bridge on any run tool except one: \`runs_getNodeResult\` returns
 bounded evidence for up to 50 nodes of a run — selected sections, an
 extractor-grammar path within a JSON response body, and capped text previews
 with explicit truncation accounting — after the same secret-redaction pass
-every other read gets. Bodies travel as previews, never whole. Everything
+every other read gets. Bodies travel as previews, never whole. A browser
+step's URL, title, expected and actual values and masked ARIA snapshot are
+evidence of the same kind; \`screenshot: true\` also returns that step's JPEG,
+with password fields and every masked value painted over. \`browser_inspect\`
+returns the page its run left open under the same masking. Everything
 else about runs stays metadata-only; to see other payloads, open the run in
 the desktop app.
 
@@ -718,7 +746,8 @@ values — reference them as {{secrets.NAME}}, never write an observed credentia
 Focused context, cheapest first: \`workflows_search\` (summaries, never graphs;
 \`workspaces_map\` to orient in a whole workspace) -> \`workflows_get\` outline
 then nodes -> \`workflows_debugContext\` for a failure (one bounded call) ->
-\`runs_getNodeResult\` for evidence slices.
+\`runs_getNodeResult\` for evidence slices; \`browser_inspect\` returns the page
+a browser step left open, before you write the next step.
 Read ${GUIDE_URI_PREFIX}start-here before building or editing;
 \`server_info\` lists the other guides.`
 

@@ -318,15 +318,41 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
    * appears on the user's screen — and finding out launches processes. An agent
    * may start a run; it may never pop a window at the person using the machine.
    * It lives off the router (BROWSER_CHANNELS, the `__APIWEAVE_BROWSER__` world).
+   * The one browser tool, `browser_inspect`, always runs headless.
    */
   it("exposes no browser settings tools — the browser choice is not on the router", () => {
-    for (const spec of MCP_TOOLS) {
-      expect(spec.domain).not.toBe("browser")
-    }
+    expect(MCP_TOOLS.filter((spec) => spec.domain === "browser").map(toolName)).toEqual(["browser_inspect"])
     const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
     for (const channel of Object.values(BROWSER_CHANNELS)) {
       expect(published.has(channel), channel).toBe(false)
+      expect(router.getRegistration(...(channel.split(":") as [string, string])), channel).toBeUndefined()
     }
+  })
+
+  /**
+   * `browser_inspect` continues an inspection by runId instead of starting a
+   * second run: exactly one of workflowId and runId, and a runId names a run
+   * whose page is still kept.
+   */
+  it("browser_inspect takes exactly one of workflowId and runId", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const both = await client.callTool({
+      name: "browser_inspect",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: "wf", runId: "run-1" },
+    })
+    expect(both.isError).toBe(true)
+    expect(textOf(both as { content: Array<{ type: string; text?: string }> })).toContain("exactly one of workflowId")
+
+    const neither = await client.callTool({ name: "browser_inspect", arguments: { workspaceId: workspace.workspaceId } })
+    expect(neither.isError).toBe(true)
+    expect(textOf(neither as { content: Array<{ type: string; text?: string }> })).toContain("exactly one of workflowId")
+
+    // A runId that is not a kept inspection says how to start one.
+    const unknown = await client.callTool({ name: "browser_inspect", arguments: { workspaceId: workspace.workspaceId, runId: "run-1" } })
+    expect(unknown.isError).toBe(true)
+    expect(textOf(unknown as { content: Array<{ type: string; text?: string }> })).toContain("browser_inspect with a workflowId")
+    await client.close()
   })
 
   /**
@@ -867,6 +893,22 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     expect(authoring.text).toContain('"pass"')
     expect(authoring.text).toContain('"fail"')
     expect(assertions.text).toContain("response.body.id")
+    await client.close()
+  })
+
+  it("teaches the browser authoring loop, its locator order and the repair recipe", async () => {
+    const client = await connectClient()
+    const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))
+      .contents[0] as { text: string }
+
+    // The page is inspected, not guessed from source, and `selector` is never written by hand.
+    expect(authoring.text).toContain("browser_inspect")
+    expect(authoring.text).toContain("beforeNodeId")
+    expect(authoring.text).toContain('kind: "selector"')
+    expect(authoring.text).toContain('{"kind": "role", "role": "button", "name": "Sign in"}')
+    // Repair: evidence, then one patched node, then a rerun that restarts the chain.
+    expect(authoring.text).toContain("sections: [\"browser\"]")
+    expect(authoring.text).toContain("resume: { nodeId }")
     await client.close()
   })
 
@@ -2261,6 +2303,15 @@ describe("MCP prompts — /apiweave:e2e", () => {
     expect(text).toContain("Never loosen or delete an assertion")
     expect(text).toContain("{{secrets.NAME}}")
     expect(text).toContain("Do not write test scripts")
+  })
+
+  it("treats a page or user flow as a browser task and inspects the page first", () => {
+    const text = textOfPrompt("log in and check the dashboard heading")
+    expect(text).toContain("browser_inspect")
+    expect(text).toContain("beforeNodeId")
+    expect(text).toContain("{{env.BASE_URL}}")
+    expect(text).toContain("{{secrets.NAME}}")
+    expect(text).toContain("resume: { nodeId }")
   })
 
   it("is listed first and reads over an MCP client with its task", async () => {

@@ -5,7 +5,7 @@ import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunHistoryCursor } from "../repositories/RunRepository"
-import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, truncateUtf8 } from "./read_budgets"
+import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, truncateUtf8, truncateUtf8Marked } from "./read_budgets"
 import { sanitizeAgentReadValue } from "./secret_utils"
 import { assertCursorSnapshot, cursorScope, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
@@ -53,7 +53,7 @@ export function openHistoryCursor(
  * Targeted node evidence over one authorized run snapshot.
  * ------------------------------------------------------------------------- */
 
-export const EVIDENCE_SECTIONS = ["error", "assertions", "extractors", "request", "response"] as const
+export const EVIDENCE_SECTIONS = ["error", "assertions", "extractors", "request", "response", "browser"] as const
 
 export type EvidenceSection = (typeof EVIDENCE_SECTIONS)[number]
 
@@ -78,8 +78,8 @@ const ALL_SECTIONS: readonly EvidenceSection[] = EVIDENCE_SECTIONS
  * Build bounded evidence for a small node set. Selection runs here — before
  * the router's redaction pass — so masking keeps its original body, header
  * and URL context instead of selecting from an already-flattened shape.
- * Bodies are previewed, never echoed whole: every preview states its total
- * size and whether it was cut.
+ * Bodies and a browser step's ARIA snapshot are previewed, never echoed whole:
+ * every preview states its total size and whether it was cut.
  */
 export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): NodeEvidencePage {
   const wanted = new Set(selection.sections ?? ALL_SECTIONS)
@@ -136,6 +136,7 @@ function buildNodeEvidence(
     ...(wanted.has("extractors") && result.extractorOutcomes !== undefined ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
     ...(wanted.has("request") ? { request: buildRequestEvidence(result.request, bounds) } : {}),
     ...(wanted.has("response") ? { response: buildResponseEvidence(result.response, bounds) } : {}),
+    ...(wanted.has("browser") && result.browser !== undefined ? { browser: buildBrowserEvidence(result.browser, bounds) } : {}),
     omittedSections: [],
     budgetOmitted: false,
   }
@@ -157,9 +158,7 @@ function buildRequestEvidence(
   return {
     method,
     url,
-    ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-    ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-    ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
+    ...previewFields(preview),
   }
 }
 
@@ -186,9 +185,7 @@ function buildResponseEvidence(
         statusCode,
         storedTruncated,
         pathStatus: "resolved" as const,
-        ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-        ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-        ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
+        ...previewFields(preview),
       }
     }
     return { statusCode, storedTruncated, pathStatus: selected.reason }
@@ -197,9 +194,66 @@ function buildResponseEvidence(
   return {
     statusCode,
     storedTruncated,
-    ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-    ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-    ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
+    ...previewFields(preview),
+  }
+}
+
+/**
+ * The identity and compared text of a browser step, shared by the node-evidence
+ * read and the debug-context summary: both cut page text to their own byte
+ * budget and carry the same fields, so the two reads agree on a step.
+ */
+export function browserEvidenceSummary(
+  browser: NonNullable<RunResult["browser"]>,
+  maxTextBytes: number,
+): {
+  action: string
+  url?: string
+  title?: string
+  expected?: string
+  actual?: string
+} {
+  return {
+    action: browser.action,
+    ...(browser.url !== undefined ? { url: browser.url } : {}),
+    ...(browser.title !== undefined ? { title: browser.title } : {}),
+    ...(browser.expected !== undefined ? { expected: truncateUtf8Marked(browser.expected, maxTextBytes) } : {}),
+    ...(browser.actual !== undefined ? { actual: truncateUtf8Marked(browser.actual, maxTextBytes) } : {}),
+  }
+}
+
+/**
+ * One browser step's stored evidence, as an agent reads it. The ARIA snapshot
+ * goes through the same bounded, windowable text preview a response body does
+ * (a whole snapshot is up to 64 KiB, most of a page budget, and an agent
+ * repairing a locator usually needs a slice, not the document). `expected` and
+ * `actual` are page text too, so they are cut to the caller's preview cap with
+ * a visible marker rather than arriving whole. The screenshot is reported as a
+ * presence flag: its artifact id is a transport detail (the bytes are read
+ * through a different, capped route), never part of this read.
+ */
+function buildBrowserEvidence(
+  browser: NonNullable<RunResult["browser"]>,
+  bounds: EvidenceBounds,
+): NonNullable<NodeEvidence["browser"]> {
+  return {
+    ...browserEvidenceSummary(browser, bounds.maxBytes),
+    ...(browser.detail !== undefined ? { detail: truncateUtf8Marked(browser.detail, bounds.maxBytes) } : {}),
+    ...(browser.evidenceNote !== undefined ? { evidenceNote: browser.evidenceNote } : {}),
+    hasScreenshot: browser.screenshotArtifactId !== undefined,
+    ...(browser.ariaSnapshot !== undefined ? { ariaSnapshot: snapshotPreview(browser.ariaSnapshot, bounds) } : {}),
+  }
+}
+
+function snapshotPreview(
+  snapshot: string,
+  bounds: EvidenceBounds,
+): NonNullable<NonNullable<NodeEvidence["browser"]>["ariaSnapshot"]> {
+  const preview = previewText(snapshot, bounds)
+  return {
+    preview: preview.preview,
+    previewTruncated: preview.previewTruncated,
+    totalBytes: preview.totalBytes,
   }
 }
 
@@ -273,6 +327,19 @@ function previewText(
   return { preview, previewTruncated: cut, totalBytes }
 }
 
+/** The optional fields of a text preview, ready to spread into an evidence section. */
+function previewFields(preview: { preview?: string; previewTruncated?: boolean; totalBytes?: number }): {
+  preview?: string
+  previewTruncated?: boolean
+  totalBytes?: number
+} {
+  return Object.fromEntries(Object.entries(preview).filter(([, value]) => value !== undefined)) as {
+    preview?: string
+    previewTruncated?: boolean
+    totalBytes?: number
+  }
+}
+
 interface BudgetInput {
   readonly runId: string
   readonly workflowId: string
@@ -282,8 +349,9 @@ interface BudgetInput {
   readonly budgetLimitBytes: number
 }
 /**
- * Hold the page to the aggregate inline budget. Over-budget pages drop body
- * previews largest-first and mark those entries `budgetOmitted` with a stated
+ * Hold the page to the aggregate inline budget. Over-budget pages drop previews
+ * largest-first — request/response bodies and a browser step's page text and
+ * snapshot window — and mark those entries `budgetOmitted` with a stated
  * selector (refetch the node alone) — metadata and counts always survive.
  */
 // fallow-ignore-next-line complexity
@@ -303,27 +371,17 @@ function applyEvidenceBudget(page: BudgetInput): NodeEvidencePage {
   if (withoutBudget.budgetBytes <= page.budgetLimitBytes) return withoutBudget
   const sizes = page.items.map((item, index) => ({
     index,
-    bytes: Buffer.byteLength(JSON.stringify(item.request?.preview ?? ""), "utf8")
-      + Buffer.byteLength(JSON.stringify(item.response?.preview ?? ""), "utf8"),
+    bytes: droppablePreviewBytes(item),
   })).sort((left, right) => right.bytes - left.bytes)
   let omittedBodyCount = 0
   let budgetBytes = withoutBudget.budgetBytes
   for (const { index, bytes } of sizes) {
     if (budgetBytes <= page.budgetLimitBytes || bytes === 0) break
     const item = items[index]!
-    const hadRequestPreview = item.request?.preview !== undefined
-    const hadResponsePreview = item.response?.preview !== undefined
-    const freed = Buffer.byteLength(JSON.stringify(hadRequestPreview ? item.request?.preview : ""), "utf8")
-      + Buffer.byteLength(JSON.stringify(hadResponsePreview ? item.response?.preview : ""), "utf8")
-    const request = item.request === undefined ? undefined : dropRequestPreview(item.request)
-    const response = item.response === undefined ? undefined : dropResponsePreview(item.response)
-    items[index] = {
-      ...item,
-      ...(request === undefined ? {} : { request }),
-      ...(response === undefined ? {} : { response }),
-      budgetOmitted: true,
-    }
-    omittedBodyCount += (hadRequestPreview ? 1 : 0) + (hadResponsePreview ? 1 : 0)
+    const freed = droppablePreviewBytes(item)
+    const dropped = dropPreviews(item)
+    items[index] = { ...dropped.item, budgetOmitted: true }
+    omittedBodyCount += dropped.omittedBodies
     budgetBytes -= freed
   }
   return {
@@ -351,6 +409,71 @@ function dropRequestPreview(section: NonNullable<NodeEvidence["request"]>): NonN
 
 /** Copy a response section without its body preview key. */
 function dropResponsePreview(section: NonNullable<NodeEvidence["response"]>): NonNullable<NodeEvidence["response"]> {
+  const rest = { ...section }
+  delete rest.preview
+  return rest
+}
+
+/**
+ * JSON-encoded bytes of every preview one entry may lose: the request and
+ * response bodies, and a browser step's page text (compared values, detail and
+ * the snapshot window). Counted as they serialize — quotes and escapes
+ * included — so `freed` is exactly the page size that disappears.
+ */
+function droppablePreviewBytes(item: NodeEvidence): number {
+  return encodedBytes(item.request?.preview)
+    + encodedBytes(item.response?.preview)
+    + encodedBytes(item.browser?.expected)
+    + encodedBytes(item.browser?.actual)
+    + encodedBytes(item.browser?.detail)
+    + encodedBytes(item.browser?.ariaSnapshot?.preview)
+}
+
+function encodedBytes(text: string | undefined): number {
+  return text === undefined ? 0 : Buffer.byteLength(JSON.stringify(text), "utf8")
+}
+
+/**
+ * Copy one entry with its droppable previews removed. Request/response keep
+ * their truncation accounting (`previewTruncated`, `totalBytes`) and a browser
+ * step keeps its ARIA totals plus `action`/`hasScreenshot`, so a dropped
+ * preview reads as a size the caller can refetch — never as "nothing was
+ * stored". Only request and response bodies count as `omittedBodies`; a browser
+ * step's dropped text is signalled by the entry's `budgetOmitted`.
+ */
+function dropPreviews(item: NodeEvidence): { item: NodeEvidence; omittedBodies: number } {
+  const dropped = { ...item }
+  let omittedBodies = 0
+  if (dropped.request !== undefined) {
+    if (dropped.request.preview !== undefined) omittedBodies += 1
+    dropped.request = dropRequestPreview(dropped.request)
+  }
+  if (dropped.response !== undefined) {
+    if (dropped.response.preview !== undefined) omittedBodies += 1
+    dropped.response = dropResponsePreview(dropped.response)
+  }
+  if (dropped.browser !== undefined) dropped.browser = dropBrowserText(dropped.browser)
+  return { item: dropped, omittedBodies }
+}
+
+/** Copy a browser section without the page text that pushed the page over budget. */
+function dropBrowserText(section: NonNullable<NodeEvidence["browser"]>): NonNullable<NodeEvidence["browser"]> {
+  const snapshot = section.ariaSnapshot === undefined ? undefined : dropSnapshotPreview(section.ariaSnapshot)
+  const rest = { ...section }
+  delete rest.expected
+  delete rest.actual
+  delete rest.detail
+  delete rest.ariaSnapshot
+  return {
+    ...rest,
+    ...(snapshot === undefined ? {} : { ariaSnapshot: snapshot }),
+  }
+}
+
+/** Copy a snapshot preview without its window, keeping the size that states what is missing. */
+function dropSnapshotPreview(
+  section: NonNullable<NonNullable<NodeEvidence["browser"]>["ariaSnapshot"]>,
+): NonNullable<NonNullable<NodeEvidence["browser"]>["ariaSnapshot"]> {
   const rest = { ...section }
   delete rest.preview
   return rest

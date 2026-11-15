@@ -18,6 +18,7 @@
 - [How a Run Uses the Browser](#how-a-run-uses-the-browser)
 - [Graph Rules](#graph-rules)
 - [When a Step Fails](#when-a-step-fails)
+- [Agents](#agents)
 - [Settings > Browser](#settings--browser)
 - [On the CLI](#on-the-cli)
 - [Limitations](#limitations)
@@ -208,14 +209,24 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 | Page address and title | Where the page was after the step. The address keeps its path; its query string and fragment are replaced with `<REDACTED>`, because they can carry tokens |
 | Playwright's message | Playwright's own account of the failure: which element matched, which action it waited on |
 | Page structure | The page's ARIA (accessibility) tree, capped at 64 KB — what the page offered to a locator, role by role |
-| Screenshot | A JPEG of the viewport, with password fields and every field a secret was typed into painted over |
+| Screenshot | A JPEG of the viewport, with password fields, every field a secret was typed into and every element showing a masked value painted over |
 | Note | Present when part of the evidence could not be captured, for example when the page was gone before the screenshot |
 
-**Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field, and every field a fill typed a secret into, painted over — a secret typed into an ordinary text field such as an API key box is painted over too, because the pixels carry no masker.
+**Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over, every field a fill typed a secret into — an API key box, say — and every element that shows a masked value painted over too, because an image cannot be masked after it is taken.
 
 **The screenshot is stored with the run**, shown in the step's result pane, deleted when the run is deleted, and never part of an export, a JUnit report or an HTML report. It is taken only on failure, is at most 1 MB, and is dropped with a note when it is larger.
 
-**One limitation worth knowing.** Pixels cannot be masked: if the page itself displays a secret as text — an API key echoed on a settings page, a token in a confirmation — the screenshot shows it. See [Known Limitations](../reference/known-limitations.md#browser-steps).
+**One limitation worth knowing.** Pixels are covered, not masked. Password fields, and any element showing a value the run masks — a secret, a typed password, an OAuth token — are painted over before the JPEG is taken. Other sensitive text the page displays is not, and the covering reaches the main frame only, so a secret shown inside an iframe stays visible. See [Known Limitations](../reference/known-limitations.md#browser-steps).
+
+## Agents
+
+An agent connected over MCP can build and repair browser steps by looking at the page, instead of guessing locators from the frontend code.
+
+- **`browser_inspect`** runs the workflow headless up to a browser step — or the whole workflow when no step is given — and returns the page it left open: address, title and the page's accessibility tree, with secrets masked. The agent reads role and label locators from that tree, which is the same one Playwright's own recorder picks locators from. It sends real traffic and records a run, like `runs_create`, and asks before sending secrets (`deniedByUser: true` when the user refuses, which the agent must report without retrying). The wait is bounded (`waitMs`, default 10 s, max 30 s): on deadline it returns `terminal: false` with the run id, and another call with `runId` keeps waiting without starting a run or asking again; a timeout or disconnect never cancels the run. There is no way to open an arbitrary address: add an **Open a page** step and inspect after it.
+- **Failure evidence** reaches the agent from `workflows_debugContext` and from `runs_getNodeResult` with `sections: ["browser"]`: the expected and found values, Playwright's message, the page address and title, and the masked accessibility snapshot at the failure. The screenshot is opt-in (`screenshot: true` with one step) and arrives as an image rather than text.
+- **The loop.** Write the page address and the login steps, inspect the page, add the next steps from what it shows, and run. On a failure, patch only the failing step and rerun: a rerun that reaches a browser step replays the chain from its first step.
+
+Agent runs are always headless, and a run that sends secrets is confined to the hosts the user approved for it — see [Agent runs](#settings--browser) and [MCP Integration](mcp-integration.md).
 
 ## Settings > Browser
 
@@ -254,7 +265,7 @@ The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chr
 - **No visual diffs.** Steps compare text, values and visibility, not pixels.
 - **No saved login state.** Every run starts signed out, so sign in with steps, ideally once, in a sub-workflow called through **Call Workflow**.
 - **Network settings do not apply.** `Settings > Network`'s proxy, CA certificates and client certificates are not used by browser steps; the browser uses the machine's own network configuration.
-- **No recorder yet.** Steps are written by hand in the node editor or the JSON editor (recording by clicking is planned), and an agent cannot look at the page yet (a `browser_inspect` tool is planned).
+- **No recorder yet.** Recording steps by clicking through the page is planned, not available: steps are written by hand in the node editor or the JSON editor, or by an agent over MCP. An agent can inspect the page and read a failed step's evidence (see [Agents](#agents)).
 
 The [Known Limitations](../reference/known-limitations.md#browser-steps) page keeps the same list with the rest of the product's boundaries.
 

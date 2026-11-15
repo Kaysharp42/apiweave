@@ -3,6 +3,7 @@ import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
+import { rememberSecretField, within } from "./capture"
 import { buildLocator } from "./locator"
 import { pollUntil } from "./poll"
 import { BROWSER_STEP_PREFIX } from "./session"
@@ -11,10 +12,6 @@ export const DEFAULT_STEP_TIMEOUT_MS = 10_000
 export const DEFAULT_NAVIGATE_TIMEOUT_MS = 30_000
 /** Playwright's own failure text kept on the result. */
 const DETAIL_MAX_CHARS = 2_000
-/** The ARIA snapshot kept on a failed step's result. */
-export const ARIA_SNAPSHOT_MAX_CHARS = 64 * 1024
-/** A failed step's screenshot is dropped above this. */
-export const SCREENSHOT_MAX_BYTES = 1024 * 1024
 /** The longest a single read inside a polling `expect-*` waits before the next try. */
 const POLL_READ_MAX_MS = 1_000
 
@@ -112,41 +109,6 @@ function seconds(ms: number): string {
 
 /** A dialog answer armed by an earlier step and not used yet, removed when the next step starts. */
 const pendingDialogs = new WeakMap<Page, (dialog: Dialog) => void>()
-
-/**
- * The locators a fill typed a secret into, per page. The run's masker scrubs
- * the stored result but cannot reach the pixels, so a failure's screenshot
- * paints these over. Each is re-resolved at screenshot time, which is what we
- * want: a field that is gone needs no paint, and one that is still there may
- * hold the value.
- */
-const secretFields = new WeakMap<Page, Locator[]>()
-
-function rememberSecretField(page: Page, element: Locator): void {
-  const known = secretFields.get(page)
-  if (known === undefined) secretFields.set(page, [element])
-  else known.push(element)
-}
-
-/**
- * The remembered secret fields that still match, for the screenshot's `mask`.
- * Playwright masks with `strict: false`, so a locator that matches nothing is
- * skipped rather than failing; a locator whose frame is gone cannot be
- * resolved at all, and is dropped here so neither costs the run its screenshot.
- */
-async function secretFieldMasks(page: Page): Promise<Locator[]> {
-  const remembered = secretFields.get(page) ?? []
-  const present = await Promise.all(
-    remembered.map(async (element) => {
-      try {
-        return (await element.count()) > 0 ? [element] : []
-      } catch {
-        return []
-      }
-    }),
-  )
-  return present.flat()
-}
 
 /**
  * Answer the next JavaScript dialog the way the step says. The answer stays
@@ -448,15 +410,6 @@ function detailOf(error: unknown): string | undefined {
   return plain.length > DETAIL_MAX_CHARS ? `${plain.slice(0, DETAIL_MAX_CHARS)}…` : plain
 }
 
-/** Resolves to `fallback` if `promise` takes longer than `ms`, so evidence never hangs a failed run. */
-function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<T>((resolve) => {
-    timer = setTimeout(() => resolve(fallback), ms)
-  })
-  return Promise.race([promise.catch(() => fallback), timeout]).finally(() => clearTimeout(timer))
-}
-
 /** Where the page is after the step. */
 async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
   const url = page.url()
@@ -498,41 +451,5 @@ export async function runBrowserStep(page: Page, config: BrowserNodeData, ctx: B
     }
   } finally {
     page.off("popup", onPopup)
-  }
-}
-
-/** A failed step's evidence: the page's ARIA snapshot and a JPEG of the viewport with password fields painted over. */
-export interface FailureEvidence {
-  readonly ariaSnapshot?: string
-  readonly screenshot?: Buffer
-  readonly note?: string
-}
-
-/**
- * What the page looked like when a step failed. Best effort and bounded in
- * time: a page that is gone or stuck yields what could be taken, with a note.
- * The ARIA snapshot shows typed field values, passwords included: it must go
- * through the run's masker, which also knows every password a fill typed. The
- * screenshot cannot, so password fields and the fields a fill typed a secret
- * into are painted over instead.
- */
-export async function captureFailureEvidence(page: Page): Promise<FailureEvidence> {
-  const notes: string[] = []
-  const snapshot = await within(page.locator("body").ariaSnapshot({ timeout: 2_000 }), 3_000, "")
-  if (snapshot === "") notes.push("The ARIA snapshot could not be taken.")
-  const masks = [page.locator('input[type="password" i]'), ...(await within(secretFieldMasks(page), 2_000, []))]
-  const screenshot = await within<Buffer | null>(
-    page.screenshot({ type: "jpeg", quality: 70, timeout: 5_000, mask: masks }),
-    6_000,
-    null,
-  )
-  if (screenshot === null) notes.push("The screenshot could not be taken.")
-  else if (screenshot.length > SCREENSHOT_MAX_BYTES) notes.push("The screenshot was larger than 1 MB and was not kept.")
-  return {
-    ...(snapshot !== ""
-      ? { ariaSnapshot: snapshot.length > ARIA_SNAPSHOT_MAX_CHARS ? `${snapshot.slice(0, ARIA_SNAPSHOT_MAX_CHARS)}\n… (truncated)` : snapshot }
-      : {}),
-    ...(screenshot !== null && screenshot.length <= SCREENSHOT_MAX_BYTES ? { screenshot } : {}),
-    ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
   }
 }

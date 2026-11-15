@@ -60,7 +60,8 @@ import type { Page } from "playwright-core"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
 import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
 import { BROWSER_STEP_PREFIX, BrowserSession, BrowserSessionError, type BrowserLaunchSettings } from "./browser/session"
-import { captureFailureEvidence, runBrowserStep, type BrowserStepContext } from "./browser/step"
+import { runBrowserStep, type BrowserStepContext } from "./browser/step"
+import { capturePage } from "./browser/capture"
 
 /**
  * Workflow executor.
@@ -214,6 +215,12 @@ export interface ExecutorDeps {
   readonly oauthTokens?: OAuthTokenCache
   /** Adds a value the run obtained itself (an OAuth token) to what its masker scrubs. */
   readonly maskValue?: (value: string) => void
+  /**
+   * Every value the run's masker scrubs so far, read when a screenshot is
+   * taken: an image cannot be masked afterwards, so it paints over them as it
+   * is taken. Absent: the run's secrets.
+   */
+  readonly maskedValues?: () => readonly string[]
   /** Writes a refreshed OAuth token set back to the secret it was read from. */
   readonly saveSecret?: (name: string, value: string) => Promise<void>
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
@@ -1234,7 +1241,7 @@ export class WorkflowExecutor {
 
   /** A failed step's ARIA snapshot and stored screenshot, or a note saying what is missing. */
   private async browserEvidence(page: Page, nodeId: string): Promise<Pick<BrowserStepResult, "ariaSnapshot" | "screenshotArtifactId" | "evidenceNote">> {
-    const evidence = await captureFailureEvidence(page)
+    const evidence = await capturePage(page, this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}))
     const notes = evidence.note !== undefined ? [evidence.note] : []
     let screenshotArtifactId: string | undefined
     if (evidence.screenshot !== undefined && this.deps.saveArtifact !== undefined) {
