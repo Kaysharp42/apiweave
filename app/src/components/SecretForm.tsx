@@ -23,8 +23,9 @@ export function SecretForm({
   onCreated,
   existingSecretId,
   className = "",
+  defaultName = "",
 }: SecretFormProps) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(defaultName);
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

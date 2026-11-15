@@ -12,6 +12,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
+import { Badge } from "../atoms/Badge";
+import { secretNameOf } from "../node-modal/SecretNameField";
+import { useSecretNamesInScope } from "../../hooks/useSecretNamesInScope";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import { browserStepSummary, draftFromConfig } from "../../utils/browserStep";
 import type { BrowserAction } from "@shared/types/BrowserAction";
@@ -35,8 +38,13 @@ const ACTION_ICONS: Readonly<Record<BrowserAction, LucideIcon>> = {
 
 /** One browser step on the canvas: what it does at rest, and where the page was after it ran. */
 function BrowserNode({ id, data, selected }: BrowserNodeProps) {
-  const action = draftFromConfig(data.config).action;
+  const draft = draftFromConfig(data.config);
+  const action = draft.action;
   const summary = browserStepSummary(data.config);
+  const { names } = useSecretNamesInScope();
+  // A recorded password that matched no stored secret is `{{secrets.UNSET_PASSWORD_1}}` until the user sets it.
+  const secret = action === "fill" ? secretNameOf(draft.value) : "";
+  const needsSecret = secret !== "" && names !== null && !names.includes(secret);
   const status = data.executionStatus ?? "idle";
   const page = data.executionResult?.browser?.title ?? data.executionResult?.browser?.url;
   const Icon = ACTION_ICONS[action];
@@ -54,7 +62,16 @@ function BrowserNode({ id, data, selected }: BrowserNodeProps) {
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={false}
-      typeChip={<span className="rounded-node-chip bg-method-head/10 px-1.5 py-0.5 font-mono text-2xs text-method-head">WEB</span>}
+      typeChip={
+        <>
+          {needsSecret && (
+            <Badge variant="warning" size="sm" className="shrink-0" title={`The secret ${secret} is not set: a run fails this step`}>
+              needs secret
+            </Badge>
+          )}
+          <span className="rounded-node-chip bg-method-head/10 px-1.5 py-0.5 font-mono text-2xs text-method-head">WEB</span>
+        </>
+      }
       restLine={summary}
       activityLine={summary}
       {...(page === undefined ? {} : { resultSummary: { operation: "on", argument: page } })}

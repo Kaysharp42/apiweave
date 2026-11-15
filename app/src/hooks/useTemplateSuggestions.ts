@@ -1,14 +1,13 @@
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useContext, useMemo } from "react";
 import { DYNAMIC_FUNCTIONS } from "@shared/constants/dynamicFunctions";
 import WorkflowContext from "../contexts/WorkflowContext";
-import WorkspaceContext from "../contexts/WorkspaceContext";
-import useEnvironmentStore, {
-  getSelectedEnvironment,
-} from "../stores/EnvironmentStore";
+import useEnvironmentStore from "../stores/EnvironmentStore";
 import { resolveInheritedVariables } from "../utils/environmentInheritance";
 import { previewValue } from "../utils/previewValue";
-import { listScopedSecrets } from "./useSecretValues";
+import { useSecretNamesInScope } from "./useSecretNamesInScope";
 import type { TemplateSuggestion } from "../types/TemplateSuggestion";
+
+const NO_NAMES: readonly string[] = [];
 
 /**
  * Everything `{{…}}` can name here, as one list: workflow variables, the
@@ -62,46 +61,6 @@ const FUNCTION_SUGGESTIONS: readonly TemplateSuggestion[] =
   });
 
 /**
- * ponytail: module cache, one request per workspace+environment pair for the
- * life of the window. A secret added in another tab shows up after a reload.
- * Move it into a store if that becomes the complaint.
- */
-const secretNamesByScope = new Map<string, Promise<readonly string[]>>();
-
-function fetchSecretNames(
-  workspaceId: string,
-  environmentId: string | null,
-): Promise<readonly string[]> {
-  const key = `${workspaceId}::${environmentId ?? ""}`;
-  const cached = secretNamesByScope.get(key);
-  if (cached) return cached;
-
-  const pending = Promise.all([
-    listScopedSecrets("workspace", workspaceId, workspaceId),
-    environmentId
-      ? listScopedSecrets("environment", environmentId, workspaceId)
-      : Promise.resolve([]),
-  ])
-    .then(([workspaceSecrets, environmentSecrets]) =>
-      [
-        ...new Set(
-          [...workspaceSecrets, ...environmentSecrets].map(
-            (secret) => secret.name,
-          ),
-        ),
-      ].sort(),
-    )
-    .catch(() => {
-      // Don't cache a failure: the next field to open its list retries.
-      secretNamesByScope.delete(key);
-      return [];
-    });
-
-  secretNamesByScope.set(key, pending);
-  return pending;
-}
-
-/**
  * The two contexts are read through `useContext` rather than their `useX`
  * hooks so a field carrying this can be rendered anywhere — a shared control
  * like `KeyValueEditor` appears both inside a workflow and in isolation, and
@@ -109,34 +68,10 @@ function fetchSecretNames(
  * complete. Outside a workflow the list is just the functions.
  */
 export function useTemplateSuggestions(): readonly TemplateSuggestion[] {
-  const workflow = useContext(WorkflowContext);
-  const workspace = useContext(WorkspaceContext);
-  const workflowId = workflow?.workflowId;
-  const variables = workflow?.variables;
-  // fallow-ignore-next-line code-duplication
-  const workspaceId = workspace?.currentWorkspace?.workspaceId ?? null;
+  const variables = useContext(WorkflowContext)?.variables;
   const environments = useEnvironmentStore((state) => state.environments);
-  const selectedEnvMap = useEnvironmentStore(
-    (state) => state.selectedEnvironmentByWorkflow,
-  );
-  const [secretNames, setSecretNames] = useState<readonly string[]>([]);
-
-  const environmentId = useMemo(
-    () => (workflowId ? getSelectedEnvironment(workflowId) : null),
-    // The resolver reads the store imperatively; this is what re-runs it.
-    [workflowId, selectedEnvMap],
-  );
-
-  useEffect(() => {
-    if (!workspaceId) return undefined;
-    let active = true;
-    void fetchSecretNames(workspaceId, environmentId).then((names) => {
-      if (active) setSecretNames(names);
-    });
-    return () => {
-      active = false;
-    };
-  }, [workspaceId, environmentId]);
+  const { names, environmentId } = useSecretNamesInScope();
+  const secretNames = names ?? NO_NAMES;
 
   return useMemo(() => {
     const environment = environments.find(

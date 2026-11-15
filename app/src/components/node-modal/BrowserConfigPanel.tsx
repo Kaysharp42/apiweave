@@ -7,6 +7,8 @@ import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { BrowserLocatorEditor } from "../molecules/BrowserLocatorEditor";
+import { MissingSecretNotice } from "../molecules/MissingSecretNotice";
+import { secretNameOf } from "./SecretNameField";
 import {
   BROWSER_ACTIONS,
   actionNeedsLocator,
@@ -80,6 +82,7 @@ function ActionFields({ draft, update }: { draft: BrowserStepDraft; update: (pat
       return (
         <FormField label="Text to type" hint="Replaces what the field holds. For a password, use a secret: {{secrets.NAME}}. Never type it here.">
           <TemplateInput value={draft.value} onValueChange={(value) => update({ value })} placeholder="{{env.TEST_EMAIL}}" />
+          {secretNameOf(draft.value) !== "" && <MissingSecretNotice name={secretNameOf(draft.value)} />}
         </FormField>
       );
     case "click":
