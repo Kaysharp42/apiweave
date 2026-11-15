@@ -1,7 +1,14 @@
 import type { Browser, BrowserContext, Page } from "playwright-core"
 import { within } from "./capture"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
-import { RecordingConverter, readRecorderAction, type RecorderAction } from "./recorded"
+import {
+  RecordingConverter,
+  readRecorderAction,
+  readRecorderSignal,
+  readsField,
+  type ConverterOutput,
+  type RecorderAction,
+} from "./recorded"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, launchBrowser, PAGE_VIEWPORT, type BrowserLaunchSettings } from "./session"
 
@@ -16,6 +23,7 @@ interface RecordingContext {
     sink: {
       readonly actionAdded: (page: Page, action: unknown) => void
       readonly actionUpdated: (page: Page, action: unknown) => void
+      readonly signalAdded: (page: Page, signal: unknown) => void
     },
   ): Promise<void>
   _stopRecording(): Promise<void>
@@ -90,11 +98,17 @@ export class BrowserRecording {
       const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
       recording = new BrowserRecording(browser, context, options)
       const started = recording
+      // With nobody listening, Playwright cancels every dialog, and a confirm()
+      // flow would be recorded on a page where the user's confirmation never
+      // happened. OK is what a test of that flow usually means; the step
+      // records it (`dialog: "accept"`), and the panel can switch it to Cancel.
+      context.on("dialog", (dialog) => void dialog.accept().catch(() => undefined))
       await (context as unknown as RecordingContext)._startRecording(
         { language: "javascript" },
         {
           actionAdded: (page, action) => started.receive("added", page, action),
           actionUpdated: (page, action) => started.receive("updated", page, action),
+          signalAdded: (page, signal) => started.receiveSignal(page, signal),
         },
       )
       const page = await context.newPage()
@@ -171,10 +185,22 @@ export class BrowserRecording {
     this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage)).catch(() => undefined)
   }
 
+  /** A signal (`dialog`…) goes through the same queue, so it follows the action Playwright sent it after. */
+  private receiveSignal(page: Page, raw: unknown): void {
+    if (!this.accepting) return
+    const name = readRecorderSignal(raw)
+    if (name === null) return
+    const onMainPage = page === this.mainPage
+    this.queue = this.queue.then(() => this.report(this.converter.signal(name, onMainPage))).catch(() => undefined)
+  }
+
   private async handle(kind: "added" | "updated", page: Page, action: RecorderAction, onMainPage: boolean): Promise<void> {
     const isPassword =
-      action.name === "fill" && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
-    const output = this.converter.apply({ kind, action, onMainPage, ...(isPassword === undefined ? {} : { isPassword }) })
+      readsField(action) && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
+    this.report(this.converter.apply({ kind, action, onMainPage, ...(isPassword === undefined ? {} : { isPassword }) }))
+  }
+
+  private report(output: ConverterOutput): void {
     for (const warning of output.warnings) this.listener.warning(warning)
     for (const step of output.steps) this.send(step)
   }

@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
+import type { Locator, Page } from "playwright-core"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
@@ -21,6 +22,12 @@ const LOGIN_PAGE = `<!doctype html><title>Sign in</title>
   <button type="submit">Sign in</button>
 </form>`
 const DASHBOARD_PAGE = `<!doctype html><title>Dashboard</title><h1>Dashboard</h1>`
+/** A delete that asks for confirmation, and fields for the recorder toolbar's checks. */
+const ORDERS_PAGE = `<!doctype html><title>Orders</title>
+<h1>Orders</h1>
+<ul><li>Order 42 <button onclick="if (confirm('Delete order 42?')) { this.closest('li').remove(); document.getElementById('msg').textContent = 'Order 42 deleted' }">Delete</button></li></ul>
+<p id="msg">1 order</p>
+<label for="ref">Reference</label><input id="ref" value="ACME-7">`
 
 let channel: BrowserChannel | undefined
 let server: Server
@@ -32,6 +39,7 @@ beforeAll(async () => {
     if (path === "/") response.writeHead(302, { location: "/login" }).end()
     else if (path === "/login") response.writeHead(200, { "content-type": "text/html" }).end(LOGIN_PAGE)
     else if (path === "/dashboard") response.writeHead(200, { "content-type": "text/html" }).end(DASHBOARD_PAGE)
+    else if (path === "/orders") response.writeHead(200, { "content-type": "text/html" }).end(ORDERS_PAGE)
     else response.writeHead(404).end()
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -69,6 +77,54 @@ async function recordLogin(values: RecordingValues): Promise<{ sent: RecordedBro
   const steps = new Map<string, BrowserNodeData>()
   for (const step of sent) steps.set(step.stepId, step.config)
   return { sent, steps: [...steps.values()], ended }
+}
+
+/** Fills `{{env.*}}` and `{{secrets.*}}` the way a run would, for replaying recorded steps. */
+function replayContext(env: Readonly<Record<string, string>>, secrets: Readonly<Record<string, string>>): BrowserStepContext {
+  return {
+    resolve: (text, allowSecrets) =>
+      text.replace(/\{\{(env|secrets)\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g, (whole, scope: string, name: string) =>
+        (scope === "env" ? env[name] : allowSecrets ? secrets[name] : undefined) ?? whole,
+      ),
+    assertHostAllowed: () => undefined,
+    maskValue: () => undefined,
+    regexTest: async (pattern, text) => new RegExp(pattern).test(text),
+    setVariable: () => undefined,
+  }
+}
+
+/** Run `steps` in a fresh browser, as a workflow run would; the first failure's message, if any. */
+async function replay(steps: readonly BrowserNodeData[], ctx: BrowserStepContext): Promise<string | undefined> {
+  const session = new BrowserSession({ headless: true, ...(channel === undefined ? {} : { channel }) })
+  try {
+    for (const step of steps) {
+      const outcome = await session.run((page) => runBrowserStep(page, step, ctx))
+      if (outcome.error !== undefined) return outcome.error
+    }
+    return undefined
+  } finally {
+    await session.close()
+  }
+}
+
+type RecorderWindow = Window & { __pw_recorderSetMode(mode: string): void }
+
+/**
+ * Use one of the recorder toolbar's check modes on `target`, as a user does:
+ * pick the mode and click the element. A text check opens an in-page box with
+ * the element's text, confirmed with its ✓ or Ctrl+Enter (Enter is a new
+ * line). `__pw_recorderSetMode` is what the toolbar's buttons call.
+ */
+async function checkWithToolbar(page: Page, mode: "assertingVisibility" | "assertingText" | "assertingValue", target: Locator): Promise<void> {
+  await page.evaluate((next) => (window as unknown as RecorderWindow).__pw_recorderSetMode(next), mode)
+  await page.waitForTimeout(150)
+  await target.click()
+  await page.waitForTimeout(250)
+  if (mode === "assertingText") {
+    await page.keyboard.press("Control+Enter")
+    await page.waitForTimeout(250)
+  }
+  await page.evaluate(() => (window as unknown as RecorderWindow).__pw_recorderSetMode("recording"))
 }
 
 describe("BrowserRecording", () => {
@@ -116,28 +172,59 @@ describe("BrowserRecording", () => {
       const env: Record<string, string> = { BASE_URL: base, TEST_EMAIL: EMAIL }
       const secrets: Record<string, string> = { TEST_PASSWORD: PASSWORD }
       const { steps } = await recordLogin({ env, secrets })
-      const ctx: BrowserStepContext = {
-        resolve: (text, allowSecrets) =>
-          text.replace(/\{\{(env|secrets)\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g, (whole, scope: string, name: string) =>
-            (scope === "env" ? env[name] : allowSecrets ? secrets[name] : undefined) ?? whole,
-          ),
-        assertHostAllowed: () => undefined,
-        maskValue: () => undefined,
-        regexTest: async (pattern, text) => new RegExp(pattern).test(text),
-        setVariable: () => undefined,
-      }
-      const session = new BrowserSession({ headless: true, ...(channel === undefined ? {} : { channel }) })
-      try {
-        const check: BrowserNodeData = { action: "expect-text", locator: { kind: "role", role: "heading" }, text: "Dashboard", match: "equals" }
-        for (const step of [...steps, check]) {
-          const outcome = await session.run((page) => runBrowserStep(page, step, ctx))
-          expect(outcome.error, step.action).toBeUndefined()
-        }
-      } finally {
-        await session.close()
-      }
+      const check: BrowserNodeData = { action: "expect-text", locator: { kind: "role", role: "heading" }, text: "Dashboard", match: "equals" }
+      expect(await replay([...steps, check], replayContext(env, secrets))).toBeUndefined()
     },
     BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    "records the toolbar's checks and a confirmed dialog, and the steps pass when run",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const sent: RecordedBrowserStep[] = []
+      const warnings: string[] = []
+      let next = 0
+      const env = { BASE_URL: base }
+      const recording = await BrowserRecording.start({
+        launch: { headless: true, ...(channel === undefined ? {} : { channel }) },
+        startUrl: `${base}/orders`,
+        values: { env, secrets: {} },
+        takenSecretNames: new Set(),
+        newStepId: () => `browser-test-${++next}`,
+        listener: { step: (step) => sent.push(step), warning: (message) => warnings.push(message), ended: () => undefined },
+        throttleMs: 20,
+      })
+      const page = recording.page
+      if (page === null) throw new Error("no page")
+      await page.getByRole("button", { name: "Delete" }).click()
+      // The recording clicked OK: the delete went through, as the user meant it to.
+      await page.getByText("Order 42 deleted").waitFor()
+      await checkWithToolbar(page, "assertingVisibility", page.getByRole("heading", { name: "Orders" }))
+      await checkWithToolbar(page, "assertingText", page.locator("#msg"))
+      await checkWithToolbar(page, "assertingValue", page.getByLabel("Reference"))
+      await recording.stop()
+
+      const byId = new Map<string, BrowserNodeData>()
+      for (const step of sent) byId.set(step.stepId, step.config)
+      const steps = [...byId.values()]
+      expect(steps.map((step) => step.action)).toEqual(["navigate", "click", "expect-visible", "expect-text", "expect-value"])
+      expect(steps[0]).toEqual({ action: "navigate", url: "{{env.BASE_URL}}/orders" })
+      expect(steps[1]).toEqual({ action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept" })
+      expect(steps[2]).toMatchObject({ locator: { kind: "role", role: "heading", name: "Orders" } })
+      expect(steps[3]).toEqual({ action: "expect-text", locator: { kind: "css", value: "#msg" }, text: "Order 42 deleted", match: "contains" })
+      expect(steps[4]).toMatchObject({ locator: { kind: "role", role: "textbox", name: "Reference" }, value: "ACME-7" })
+      expect(warnings).toEqual([expect.stringContaining("The page showed a dialog")])
+
+      expect(await replay(steps, replayContext(env, {}))).toBeUndefined()
+      // Cancelling the dialog instead leaves the order, so the text check fails: the dialog field is what made it pass.
+      const cancelled = steps.map((step): BrowserNodeData => {
+        if (step.action === "click") return { ...step, dialog: "dismiss" }
+        return step.action === "expect-text" ? { ...step, timeoutMs: 1_000 } : step
+      })
+      expect(await replay(cancelled, replayContext(env, {}))).toMatch(/locator\('#msg'\) did not contain the expected text/)
+    },
+    2 * BROWSER_TEST_TIMEOUT_MS,
   )
 
   it(
