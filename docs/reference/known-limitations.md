@@ -180,11 +180,12 @@ page or through the CLI flags.
 - **The network settings do not apply.** The proxy, trusted CAs and client
   certificates of **Settings → Network** are used by HTTP nodes, not by browser
   steps, which use the machine's own network configuration.
-- **A screenshot cannot mask what the page displays.** Password fields are
-  painted over, and every secret and typed password is masked as `<SECRET>` in
-  the stored result, but text the page itself renders — an echoed API key, a token
-  in a confirmation — is visible in the screenshot. Screenshots are taken only on
-  failure, are stored with the run and are never exported.
+- **A screenshot cannot mask what the page displays.** Password fields, and every
+  field a secret was typed into, are painted over, and every secret and typed
+  password is masked as `<SECRET>` in the stored result, but text the page itself
+  renders — an echoed API key, a token in a confirmation — is visible in the
+  screenshot. Screenshots are taken only on failure, are stored with the run and
+  are never exported.
 - **Steps are written by hand.** Recording steps by clicking through the page is
   not available yet, and an agent cannot look at a page to pick a locator yet.
   An agent reading a failed run gets the step's error, not its ARIA snapshot or

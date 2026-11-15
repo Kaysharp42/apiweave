@@ -161,7 +161,7 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 | `{{secrets.*}}` | The local secret store. **Only in a fill's value** | `{{secrets.TEST_PASSWORD}}` |
 
 - **A secret anywhere else fails the step** before the page is touched: `{{secrets.*}} is only allowed in a fill step's value`. A page address, a locator or an expected text cannot reference one.
-- **An unresolved placeholder fails the step** instead of being typed or navigated to: `{{env.TEST_EMAIL}} is not set`.
+- **An unresolved placeholder fails the step** instead of being typed or navigated to, whatever its namespace — an environment variable, a workflow variable, `{{prev.*}}`, a direct node reference such as `{{order.response.body.id}}`, or a function the run does not know: `{{env.TEST_EMAIL}} is not set`.
 - **A password belongs in a secret.** A literal typed into a password field is masked in the run's stored results anyway, and password boxes are painted over in screenshots, but a literal in the node travels in `.aweproject` exports and git.
 - **`extract` is how a page value reaches the rest of the workflow.** `Save a value` writes `{{variables.<variable>}}`, which a later HTTP node, assertion or `expect-text` reads like any other variable. It also counts as that variable's producer, so the graph check does not report it missing.
 
@@ -204,10 +204,10 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 | Page address and title | Where the page was after the step. The address keeps its path; its query string and fragment are replaced with `<REDACTED>`, because they can carry tokens |
 | Playwright's message | Playwright's own account of the failure: which element matched, which action it waited on |
 | Page structure | The page's ARIA (accessibility) tree, capped at 64 KB — what the page offered to a locator, role by role |
-| Screenshot | A JPEG of the viewport, with password fields painted over |
+| Screenshot | A JPEG of the viewport, with password fields and every field a secret was typed into painted over |
 | Note | Present when part of the evidence could not be captured, for example when the page was gone before the screenshot |
 
-**Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over.
+**Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field, and every field a fill typed a secret into, painted over — a secret typed into an ordinary text field such as an API key box is painted over too, because the pixels carry no masker.
 
 **The screenshot is stored with the run**, shown in the step's result pane, deleted when the run is deleted, and never part of an export, a JUnit report or an HTML report. It is taken only on failure, is at most 1 MB, and is dropped with a note when it is larger.
 
@@ -224,7 +224,7 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 
 If the chosen browser is missing, the step fails with a message naming it: `Microsoft Edge was not found on this machine. Choose another browser in Settings → Browser, or pass --browser to apiweave run.`
 
-**Agent runs.** A run an agent starts over MCP is always headless, whatever this setting says, so no window opens on your screen. Such a run is also confined to the hosts you approved for it: a `navigate` step to another host, or a secret typed into a page on another host, fails with `… was refused: this run may only reach the hosts approved for it`.
+**Agent runs.** A run an agent starts over MCP is always headless, whatever this setting says, so no window opens on your screen. Such a run is also confined to the hosts you approved for it: a `navigate` step to another host, or a secret typed into a page — or into an iframe — on another host, fails with `… was refused: this run may only reach the hosts approved for it`.
 
 ## On the CLI
 
@@ -259,7 +259,7 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 - **If a step fails with `no supported browser was found on this machine`**, install Google Chrome or Microsoft Edge, or run `npx playwright install chromium`, then pick it in **Settings > Browser**.
 - **If a step fails with `… was not found on this machine`**, the chosen browser is not installed. Choose another one, **Automatic**, or pass `--browser` on the CLI.
 - **If a step fails with `matches N elements; add hasText, nth or within to pick one`**, the locator is not specific enough. Add the visible text with `hasText`, pick one with `nth`, or scope it to a parent with `within`.
-- **If a step fails with `{{env.X}} is not set`**, the run's environment has no such variable. Select the right environment in the toolbar, or add the key.
+- **If a step fails with `{{…}} is not set`**, that placeholder could not be resolved: the run's environment or the workflow has no such variable, the node a direct reference names has not run yet, or the function is unknown. Check the spelling and the namespace it reads from.
 - **If a step fails with `{{secrets.*}} is only allowed in a fill step's value`**, the secret is in a URL, a locator or a check. Move the value into a fill, or read the page's value with an `extract` step instead.
 - **If a click times out because another element covers it**, a banner, a cookie notice or a modal is on top. Add the step that dismisses it before the click.
 - **If `browser_parallel_branches` appears**, two browser steps are on branches that never meet. Join them into one chain.

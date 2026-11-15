@@ -48,8 +48,25 @@ class StepFailure extends Error {
   }
 }
 
-const UNRESOLVED_RE = /\{\{\s*(?:env\.|variables\.|data\.|prev\b|secrets\.)[^}]*\}\}/
+/**
+ * Any `{{...}}` a resolution left in place. The executor leaves one it cannot
+ * fill whatever its namespace, so a direct node reference or an unknown
+ * function call reaches here as literally as `{{env.X}}` does.
+ */
+const UNRESOLVED_RE = /\{\{[^{}]+\}\}/
 const SECRET_RE = /\{\{\s*secrets\./
+
+/**
+ * The error for a placeholder still in `value`, or undefined when none is. It
+ * names the placeholder only when the step's own text contains it: a resolved
+ * value that itself carries braces — a secret's own text, say — must not have
+ * part of itself quoted back in an error.
+ */
+export function unresolvedPlaceholderFailure(value: string, source: string): string | undefined {
+  const left = UNRESOLVED_RE.exec(value)?.[0]
+  if (left === undefined) return undefined
+  return source.includes(left) ? `${left} is not set` : "a placeholder could not be resolved"
+}
 
 /**
  * A config value with its placeholders filled. A placeholder left unresolved
@@ -67,8 +84,8 @@ function resolveValue(ctx: BrowserStepContext, text: string, allowSecrets: boole
     // The executor's own refusals (a rerun reading a value masked in its source run) name placeholders, never values.
     throw new StepFailure(error instanceof Error ? error.message.replace(/^Error: /, "") : String(error))
   }
-  const left = UNRESOLVED_RE.exec(value)
-  if (left !== null) throw new StepFailure(`${left[0]} is not set`)
+  const unresolved = unresolvedPlaceholderFailure(value, text)
+  if (unresolved !== undefined) throw new StepFailure(unresolved)
   return value
 }
 
@@ -95,6 +112,41 @@ function seconds(ms: number): string {
 
 /** A dialog answer armed by an earlier step and not used yet, removed when the next step starts. */
 const pendingDialogs = new WeakMap<Page, (dialog: Dialog) => void>()
+
+/**
+ * The locators a fill typed a secret into, per page. The run's masker scrubs
+ * the stored result but cannot reach the pixels, so a failure's screenshot
+ * paints these over. Each is re-resolved at screenshot time, which is what we
+ * want: a field that is gone needs no paint, and one that is still there may
+ * hold the value.
+ */
+const secretFields = new WeakMap<Page, Locator[]>()
+
+function rememberSecretField(page: Page, element: Locator): void {
+  const known = secretFields.get(page)
+  if (known === undefined) secretFields.set(page, [element])
+  else known.push(element)
+}
+
+/**
+ * The remembered secret fields that still match, for the screenshot's `mask`.
+ * Playwright masks with `strict: false`, so a locator that matches nothing is
+ * skipped rather than failing; a locator whose frame is gone cannot be
+ * resolved at all, and is dropped here so neither costs the run its screenshot.
+ */
+async function secretFieldMasks(page: Page): Promise<Locator[]> {
+  const remembered = secretFields.get(page) ?? []
+  const present = await Promise.all(
+    remembered.map(async (element) => {
+      try {
+        return (await element.count()) > 0 ? [element] : []
+      } catch {
+        return []
+      }
+    }),
+  )
+  return present.flat()
+}
 
 /**
  * Answer the next JavaScript dialog the way the step says. The answer stays
@@ -132,6 +184,20 @@ function requireHost(ctx: BrowserStepContext, host: string, what: string): void 
     ctx.assertHostAllowed(host)
   } catch {
     throw new StepFailure(`${what} ${host || "this page"} was refused: this run may only reach the hosts approved for it`)
+  }
+}
+
+/**
+ * The host of the frame that actually owns `element`. A locator with `frame`
+ * can reach into an iframe from another host than the page around it, so the
+ * page's host alone does not say where a value goes.
+ */
+async function ownerHost(element: Locator, timeout: number): Promise<string> {
+  const handle = await element.elementHandle({ timeout })
+  try {
+    return hostOf((await handle.ownerFrame())?.url() ?? "")
+  } finally {
+    await handle.dispose().catch(() => undefined)
   }
 }
 
@@ -228,11 +294,19 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
     case "fill": {
       const value = resolveValue(ctx, config.value, true)
       const element = locate(config.locator)
-      if (SECRET_RE.test(config.value)) requireHost(ctx, hostOf(page.url()), "typing a secret into")
+      const secret = SECRET_RE.test(config.value)
+      if (secret) {
+        requireHost(ctx, hostOf(page.url()), "typing a secret into")
+        requireHost(ctx, await ownerHost(element, timeout), "typing a secret into")
+      }
       const type = await element.getAttribute("type", { timeout })
+      const password = type?.toLowerCase() === "password"
       // A password typed as a literal never reaches the masker through the
-      // run's secrets, and the page's ARIA snapshot shows field values.
-      if (type?.toLowerCase() === "password" && value !== "") ctx.maskValue(value)
+      // run's secrets, and the page's ARIA snapshot shows field values. The
+      // screenshot cannot be masked by the masker at all, so both kinds of
+      // field are remembered for it.
+      if (value !== "" && (secret || password)) rememberSecretField(page, element)
+      if (password && value !== "") ctx.maskValue(value)
       await element.fill(value, { timeout })
       return {}
     }
@@ -438,14 +512,17 @@ export interface FailureEvidence {
  * What the page looked like when a step failed. Best effort and bounded in
  * time: a page that is gone or stuck yields what could be taken, with a note.
  * The ARIA snapshot shows typed field values, passwords included: it must go
- * through the run's masker, which also knows every password a fill typed.
+ * through the run's masker, which also knows every password a fill typed. The
+ * screenshot cannot, so password fields and the fields a fill typed a secret
+ * into are painted over instead.
  */
 export async function captureFailureEvidence(page: Page): Promise<FailureEvidence> {
   const notes: string[] = []
   const snapshot = await within(page.locator("body").ariaSnapshot({ timeout: 2_000 }), 3_000, "")
   if (snapshot === "") notes.push("The ARIA snapshot could not be taken.")
+  const masks = [page.locator('input[type="password" i]'), ...(await within(secretFieldMasks(page), 2_000, []))]
   const screenshot = await within<Buffer | null>(
-    page.screenshot({ type: "jpeg", quality: 70, timeout: 5_000, mask: [page.locator('input[type="password" i]')] }),
+    page.screenshot({ type: "jpeg", quality: 70, timeout: 5_000, mask: masks }),
     6_000,
     null,
   )
