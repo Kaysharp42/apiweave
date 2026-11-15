@@ -5,7 +5,7 @@ import path from "node:path"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
-import { findTestBrowser } from "../../runner/__tests__/browser_test_channel"
+import { BROWSER_SEARCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, findTestBrowser } from "../../runner/__tests__/browser_test_channel"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 
 const PASSWORD = "cli-pass-4821"
@@ -16,8 +16,8 @@ let baseUrl: string
 let heading = "Dashboard"
 let dir: string
 
+// The server comes first so `afterAll` always has one to close.
 beforeAll(async () => {
-  channel = await findTestBrowser()
   server = http.createServer((request, response) => {
     if (request.url === "/login") {
       response.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><title>Sign in</title>
@@ -30,7 +30,8 @@ beforeAll(async () => {
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
+  channel = await findTestBrowser()
+}, BROWSER_SEARCH_TIMEOUT_MS)
 
 afterAll(async () => {
   await new Promise((resolve) => server.close(resolve))
@@ -84,7 +85,7 @@ describe("apiweave run with browser steps", () => {
     expect(result.stderr).toContain("--browser must be chrome, msedge or chromium")
   })
 
-  it("passes, then fails with exit 1 once the page changes", async (context) => {
+  it("passes, then fails with exit 1 once the page changes", { timeout: BROWSER_TEST_TIMEOUT_MS }, async (context) => {
     if (channel === undefined) context.skip()
     const argv = ["run", "web.json", "--browser", channel!, "--var", `BASE_URL=${baseUrl}`, "--var", "TEST_EMAIL=ada@example.com"]
 

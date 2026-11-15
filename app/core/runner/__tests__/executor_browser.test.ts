@@ -9,7 +9,7 @@ import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 import { BrowserSession } from "../browser/session"
-import { findTestBrowser } from "./browser_test_channel"
+import { BROWSER_SEARCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, findTestBrowser } from "./browser_test_channel"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 import type { Run } from "@shared/types/Run"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
@@ -50,8 +50,9 @@ let base: string
 /** What the dashboard greets with; a test changes it to make a check fail and then pass. */
 let greeting = "Welcome"
 
+// The server comes first so `afterAll` always has one to close. Finding a
+// browser launches up to three, which is slow on a loaded CI runner.
 beforeAll(async () => {
-  channel = await findTestBrowser()
   server = createServer((request, response) => {
     const path = (request.url ?? "/").split("?")[0]
     if (path === "/api/profile") {
@@ -66,7 +67,8 @@ beforeAll(async () => {
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-})
+  channel = await findTestBrowser()
+}, BROWSER_SEARCH_TIMEOUT_MS)
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -96,7 +98,7 @@ function executorDeps(extra: Partial<ExecutorDeps> = {}): ExecutorDeps {
   return { clock, rng, http: new SafeHttp(), functions: new DynamicFunctions(clock, rng), browser: { channel: channel!, headless: true }, ...extra }
 }
 
-describe("browser steps in a real browser", () => {
+describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }, () => {
   let db: InitializedDatabase
   let workflows: WorkflowRepository
   let runs: RunRepository
