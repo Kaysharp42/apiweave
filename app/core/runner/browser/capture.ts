@@ -167,16 +167,19 @@ async function clearMarks(frames: readonly Frame[]): Promise<void> {
  */
 function readShownText(mark: string): string[] {
   const texts: string[] = []
+  // A field's value, or an element's own text nodes. Kept apart from the walk
+  // so the traversal below is a loop, a text check and a descend, not a nest.
+  const shownText = (element: Element): string => {
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return element.value
+    let text = ""
+    for (const child of Array.from(element.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) text += child.textContent ?? ""
+    }
+    return text
+  }
   const walk = (root: ParentNode): void => {
     for (const element of Array.from(root.querySelectorAll("*"))) {
-      let text = ""
-      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        text = element.value
-      } else {
-        for (const child of Array.from(element.childNodes)) {
-          if (child.nodeType === Node.TEXT_NODE) text += child.textContent ?? ""
-        }
-      }
+      const text = shownText(element)
       if (text.trim() !== "") {
         element.setAttribute(mark, String(texts.length))
         texts.push(text)
@@ -195,14 +198,20 @@ function readShownText(mark: string): string[] {
  */
 function applyMarks({ mark, indexes }: { mark: string; indexes: number[] | null }): boolean {
   const keep = indexes === null ? null : new Set(indexes.map(String))
-  const walk = (root: ParentNode): void => {
-    for (const element of Array.from(root.querySelectorAll(`[${mark}]`))) {
-      if (keep === null || !keep.has(element.getAttribute(mark) ?? "")) element.removeAttribute(mark)
-    }
+  const marked = `[${mark}]`
+  const forget = (element: Element): void => {
+    if (keep === null || !keep.has(element.getAttribute(mark) ?? "")) element.removeAttribute(mark)
+  }
+  // An explicit stack rather than recursion: every open shadow root is pushed
+  // and drained here, so the walk keeps one branch for "descend" and one for
+  // "forget", not a nested closure whose depth repeats the same decisions.
+  const roots: ParentNode[] = [document]
+  while (roots.length > 0) {
+    const root = roots.pop()!
+    Array.from(root.querySelectorAll(marked)).forEach(forget)
     for (const element of Array.from(root.querySelectorAll("*"))) {
-      if (element.shadowRoot !== null) walk(element.shadowRoot)
+      if (element.shadowRoot !== null) roots.push(element.shadowRoot)
     }
   }
-  walk(document)
   return true
 }

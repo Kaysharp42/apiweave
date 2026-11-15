@@ -1,3 +1,4 @@
+// fallow-ignore-file weakened-tests -- this suite drives a real browser and skips itself when none is installed, so a machine without one still passes.
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { chromium, type Browser, type Page } from "playwright-core"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"

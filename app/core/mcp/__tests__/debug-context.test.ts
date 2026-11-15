@@ -871,12 +871,13 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
     const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
 
     const browser = context.evidence[0]?.browser
-    expect(browser?.ariaSnapshotTruncated).toBe(true)
-    expect(browser?.ariaSnapshotBytes).toBe(20_000)
-    expect(Buffer.byteLength(browser?.ariaSnapshotPreview ?? "", "utf8")).toBeLessThanOrEqual(2_048)
-    expect(Buffer.byteLength(browser?.expected ?? "", "utf8")).toBeLessThanOrEqual(2_048)
-    expect(Buffer.byteLength(browser?.actual ?? "", "utf8")).toBeLessThanOrEqual(2_048)
-    expect(browser?.expected?.endsWith("…")).toBe(true)
+    if (browser === undefined) throw new Error("the failed step has no browser summary")
+    expect(browser.ariaSnapshotTruncated).toBe(true)
+    expect(browser.ariaSnapshotBytes).toBe(20_000)
+    for (const text of [browser.ariaSnapshotPreview, browser.expected, browser.actual]) {
+      expect(Buffer.byteLength(text ?? "", "utf8")).toBeLessThanOrEqual(2_048)
+    }
+    expect(browser.expected?.endsWith("…")).toBe(true)
   })
 
   it("holds the aggregate budget by dropping page text, never the step's identity", async () => {

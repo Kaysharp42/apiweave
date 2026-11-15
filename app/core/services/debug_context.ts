@@ -15,8 +15,8 @@ import {
   DEBUG_CONTEXT_MAX_NODE_DETAILS,
   INLINE_RESULT_BUDGET_BYTES,
   truncateUtf8,
-  truncateUtf8Marked,
 } from "./read_budgets"
+import { browserEvidenceSummary } from "./run_evidence"
 import type { EnvironmentService } from "./environment_service"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
@@ -438,11 +438,7 @@ function summarizeBrowser(
   const snapshotBytes = snapshot === undefined ? 0 : Buffer.byteLength(snapshot, "utf8")
   const snapshotTruncated = snapshotBytes > DEBUG_CONTEXT_BROWSER_TEXT_BYTES
   return {
-    action: browser.action,
-    ...(browser.url !== undefined ? { url: browser.url } : {}),
-    ...(browser.title !== undefined ? { title: browser.title } : {}),
-    ...(browser.expected !== undefined ? { expected: truncateUtf8Marked(browser.expected, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) } : {}),
-    ...(browser.actual !== undefined ? { actual: truncateUtf8Marked(browser.actual, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) } : {}),
+    ...browserEvidenceSummary(browser, DEBUG_CONTEXT_BROWSER_TEXT_BYTES),
     hasScreenshot: browser.screenshotArtifactId !== undefined,
     ...(snapshot === undefined ? {} : { ariaSnapshotPreview: snapshotTruncated ? truncateUtf8(snapshot, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) : snapshot }),
     ariaSnapshotTruncated: snapshotTruncated,

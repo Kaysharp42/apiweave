@@ -1,3 +1,4 @@
+// fallow-ignore-file weakened-tests -- this suite drives a real browser and skips itself when none is installed, so a machine without one still passes.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -200,7 +201,9 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
 
   it("returns the page as it was before a step, with what was typed masked, and records the run", async () => {
     const workflowId = create(loginFlow("Welcome"))
-    const { isError, content, result } = await call("browser_inspect", { workflowId, beforeNodeId: "submit" })
+    // A cold browser on a loaded CI runner can take longer than the tool's 10 s
+    // default to finish the run, so every terminal expectation waits the cap.
+    const { isError, content, result } = await call("browser_inspect", { workflowId, beforeNodeId: "submit", waitMs: 30_000 })
     expect(isError).toBe(false)
     const inspection = result as BrowserInspection
     expect(inspection.status).toBe("completed")
@@ -228,7 +231,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
   it("reports a refusal as deniedByUser, and tells the agent not to inspect again", async () => {
     approval = "deny"
     const workflowId = create(loginFlow("Welcome"))
-    const { isError, result } = await call("browser_inspect", { workflowId })
+    const { isError, result } = await call("browser_inspect", { workflowId, waitMs: 30_000 })
     expect(isError).toBe(false)
     const inspection = result as BrowserInspection
     expect(inspection).toMatchObject({ status: "failed", terminal: true, deniedByUser: true, page: null })
@@ -239,7 +242,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
 
   it("runs the whole workflow, masks a secret the page shows, and sends the screenshot as image content", async () => {
     const workflowId = create(loginFlow("Welcome"))
-    const { content, result } = await call("browser_inspect", { workflowId, screenshot: true })
+    const { content, result } = await call("browser_inspect", { workflowId, screenshot: true, waitMs: 30_000 })
     const inspection = result as BrowserInspection
     expect(inspection.status).toBe("completed")
     expect(inspection.stoppedBeforeNodeId).toBeUndefined()
@@ -259,7 +262,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
       step("open", { action: "navigate", url: `${base}/slow` }),
       step("continue", { action: "click", locator: { kind: "role", role: "button", name: "Continue" } }),
     ])
-    const { result } = await call("browser_inspect", { workflowId })
+    const { result } = await call("browser_inspect", { workflowId, waitMs: 30_000 })
     const inspection = result as BrowserInspection
     expect(inspection.page?.url).toBe(`${base}/dashboard`)
     expect(inspection.page?.title).toBe("Dashboard")
@@ -267,7 +270,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
 
   it("says no page was open when no browser step ran before the node", async () => {
     const workflowId = create(loginFlow("Welcome"))
-    const { result } = await call("browser_inspect", { workflowId, beforeNodeId: "open" })
+    const { result } = await call("browser_inspect", { workflowId, beforeNodeId: "open", waitMs: 30_000 })
     const inspection = result as BrowserInspection
     expect(inspection.page).toBeNull()
     expect(inspection.note).toMatch(/no page was open/i)

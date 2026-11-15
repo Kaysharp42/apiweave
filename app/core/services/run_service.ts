@@ -68,6 +68,18 @@ interface KeptInspection {
   consumed: boolean
 }
 
+/** What `browser.inspect` starts a run with; `runId` selects an earlier inspection instead. */
+interface BrowserInspectInput {
+  readonly workflowId?: string
+  readonly runId?: string
+  readonly beforeNodeId?: string
+  readonly selectedEnvironmentId?: string | null
+  readonly variables?: Readonly<Record<string, JsonValue>>
+  readonly screenshot: boolean
+  readonly maxBytes: number
+  readonly waitMs?: number
+}
+
 /**
  * Workspace-scoped run history + the field-level write surface the executor
  * drives.
@@ -370,16 +382,7 @@ export class RunService {
    */
   async inspectBrowser(
     workspaceId: string,
-    input: {
-      readonly workflowId?: string
-      readonly runId?: string
-      readonly beforeNodeId?: string
-      readonly selectedEnvironmentId?: string | null
-      readonly variables?: Readonly<Record<string, JsonValue>>
-      readonly screenshot: boolean
-      readonly maxBytes: number
-      readonly waitMs?: number
-    },
+    input: BrowserInspectInput,
     options: { readonly agent?: string; readonly signal?: AbortSignal } = {},
   ): Promise<BrowserInspection> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
@@ -388,10 +391,20 @@ export class RunService {
       if (input.workflowId !== undefined) throw new ValidationError("Pass workflowId or runId, not both.")
       return this.continueInspection(workspaceId, input.runId, input.maxBytes, waitMs, options)
     }
+    if (options.signal?.aborted === true) throw abortError("inspect cancelled")
+    const { runId, kept } = this.startInspection(workspaceId, input, options)
+    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, input.maxBytes)
+  }
+
+  /** Validate a new inspection and enqueue its run, recording the entry its page lands in. */
+  private startInspection(
+    workspaceId: string,
+    input: BrowserInspectInput,
+    options: { readonly agent?: string; readonly signal?: AbortSignal },
+  ): { readonly runId: string; readonly kept: KeptInspection } {
     if (input.workflowId === undefined) throw new ValidationError("Pass a workflowId to inspect, or a runId to keep waiting on an inspection.")
     const trigger = this.trigger
     if (trigger === undefined) throw new Error("No run scheduler is available")
-    if (options.signal?.aborted === true) throw abortError("inspect cancelled")
     const kept: KeptInspection = {
       workspaceId,
       page: undefined,
@@ -403,8 +416,6 @@ export class RunService {
       workspaceId,
       workflowId: input.workflowId,
       ...(input.variables !== undefined ? { variables: input.variables } : {}),
-      ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
-      ...(options.agent !== undefined ? { agent: options.agent } : {}),
       inspect: {
         ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
         screenshot: input.screenshot,
@@ -413,10 +424,12 @@ export class RunService {
           kept.storedAt = Date.now()
         },
       },
+      ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+      ...(options.agent !== undefined ? { agent: options.agent } : {}),
     })
     this.inspections.set(runId, kept)
     this.pruneInspections()
-    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, input.maxBytes)
+    return { runId, kept }
   }
 
   /** Wait on an earlier inspection by its run id; never enqueues anything. */

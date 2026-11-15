@@ -158,9 +158,7 @@ function buildRequestEvidence(
   return {
     method,
     url,
-    ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-    ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-    ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
+    ...previewFields(preview),
   }
 }
 
@@ -187,9 +185,7 @@ function buildResponseEvidence(
         statusCode,
         storedTruncated,
         pathStatus: "resolved" as const,
-        ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-        ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-        ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
+        ...previewFields(preview),
       }
     }
     return { statusCode, storedTruncated, pathStatus: selected.reason }
@@ -198,9 +194,31 @@ function buildResponseEvidence(
   return {
     statusCode,
     storedTruncated,
-    ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-    ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-    ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
+    ...previewFields(preview),
+  }
+}
+
+/**
+ * The identity and compared text of a browser step, shared by the node-evidence
+ * read and the debug-context summary: both cut page text to their own byte
+ * budget and carry the same fields, so the two reads agree on a step.
+ */
+export function browserEvidenceSummary(
+  browser: NonNullable<RunResult["browser"]>,
+  maxTextBytes: number,
+): {
+  action: string
+  url?: string
+  title?: string
+  expected?: string
+  actual?: string
+} {
+  return {
+    action: browser.action,
+    ...(browser.url !== undefined ? { url: browser.url } : {}),
+    ...(browser.title !== undefined ? { title: browser.title } : {}),
+    ...(browser.expected !== undefined ? { expected: truncateUtf8Marked(browser.expected, maxTextBytes) } : {}),
+    ...(browser.actual !== undefined ? { actual: truncateUtf8Marked(browser.actual, maxTextBytes) } : {}),
   }
 }
 
@@ -219,11 +237,7 @@ function buildBrowserEvidence(
   bounds: EvidenceBounds,
 ): NonNullable<NodeEvidence["browser"]> {
   return {
-    action: browser.action,
-    ...(browser.url !== undefined ? { url: browser.url } : {}),
-    ...(browser.title !== undefined ? { title: browser.title } : {}),
-    ...(browser.expected !== undefined ? { expected: truncateUtf8Marked(browser.expected, bounds.maxBytes) } : {}),
-    ...(browser.actual !== undefined ? { actual: truncateUtf8Marked(browser.actual, bounds.maxBytes) } : {}),
+    ...browserEvidenceSummary(browser, bounds.maxBytes),
     ...(browser.detail !== undefined ? { detail: truncateUtf8Marked(browser.detail, bounds.maxBytes) } : {}),
     ...(browser.evidenceNote !== undefined ? { evidenceNote: browser.evidenceNote } : {}),
     hasScreenshot: browser.screenshotArtifactId !== undefined,
@@ -311,6 +325,19 @@ function previewText(
   const windowCut = start > 0 || (bounds.end !== undefined && bounds.end < totalBytes)
   const cut = windowCut || Buffer.byteLength(preview, "utf8") < Buffer.byteLength(window, "utf8")
   return { preview, previewTruncated: cut, totalBytes }
+}
+
+/** The optional fields of a text preview, ready to spread into an evidence section. */
+function previewFields(preview: { preview?: string; previewTruncated?: boolean; totalBytes?: number }): {
+  preview?: string
+  previewTruncated?: boolean
+  totalBytes?: number
+} {
+  return Object.fromEntries(Object.entries(preview).filter(([, value]) => value !== undefined)) as {
+    preview?: string
+    previewTruncated?: boolean
+    totalBytes?: number
+  }
 }
 
 interface BudgetInput {
@@ -415,30 +442,30 @@ function encodedBytes(text: string | undefined): number {
  * step's dropped text is signalled by the entry's `budgetOmitted`.
  */
 function dropPreviews(item: NodeEvidence): { item: NodeEvidence; omittedBodies: number } {
-  const request = item.request === undefined ? undefined : dropRequestPreview(item.request)
-  const response = item.response === undefined ? undefined : dropResponsePreview(item.response)
-  const browser = item.browser === undefined ? undefined : dropBrowserText(item.browser)
-  const omittedBodies = (item.request?.preview !== undefined ? 1 : 0) + (item.response?.preview !== undefined ? 1 : 0)
-  return {
-    item: {
-      ...item,
-      ...(request === undefined ? {} : { request }),
-      ...(response === undefined ? {} : { response }),
-      ...(browser === undefined ? {} : { browser }),
-    },
-    omittedBodies,
+  const dropped = { ...item }
+  let omittedBodies = 0
+  if (dropped.request !== undefined) {
+    if (dropped.request.preview !== undefined) omittedBodies += 1
+    dropped.request = dropRequestPreview(dropped.request)
   }
+  if (dropped.response !== undefined) {
+    if (dropped.response.preview !== undefined) omittedBodies += 1
+    dropped.response = dropResponsePreview(dropped.response)
+  }
+  if (dropped.browser !== undefined) dropped.browser = dropBrowserText(dropped.browser)
+  return { item: dropped, omittedBodies }
 }
 
 /** Copy a browser section without the page text that pushed the page over budget. */
 function dropBrowserText(section: NonNullable<NodeEvidence["browser"]>): NonNullable<NodeEvidence["browser"]> {
   const snapshot = section.ariaSnapshot === undefined ? undefined : dropSnapshotPreview(section.ariaSnapshot)
+  const rest = { ...section }
+  delete rest.expected
+  delete rest.actual
+  delete rest.detail
+  delete rest.ariaSnapshot
   return {
-    action: section.action,
-    ...(section.url !== undefined ? { url: section.url } : {}),
-    ...(section.title !== undefined ? { title: section.title } : {}),
-    ...(section.evidenceNote !== undefined ? { evidenceNote: section.evidenceNote } : {}),
-    hasScreenshot: section.hasScreenshot,
+    ...rest,
     ...(snapshot === undefined ? {} : { ariaSnapshot: snapshot }),
   }
 }
