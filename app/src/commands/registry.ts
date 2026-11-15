@@ -1,4 +1,5 @@
 import { shortcutLabel } from "../constants/keyboardShortcuts";
+import { configFromDraft, emptyDraft } from "../utils/browserStep";
 import type {
   CanvasCommand,
   CanvasCommandActions,
@@ -38,6 +39,11 @@ const nodeCommands: readonly CanvasNodeTemplate[] = [
     config: { maxMessages: 1, timeout: 30 },
   },
   { type: "grpc", label: "gRPC Call" },
+  {
+    type: "browser",
+    label: "Browser step",
+    config: configFromDraft(emptyDraft("navigate")),
+  },
   { type: "assertion", label: "Assertion" },
   { type: "delay", label: "Delay" },
   { type: "merge", label: "Merge" },

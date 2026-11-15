@@ -12,6 +12,7 @@ it.*
 - [Git Sync](#git-sync)
 - [Imports](#imports)
 - [Network](#network)
+- [Browser Steps](#browser-steps)
 - [Execution](#execution)
 - [MCP and Agents](#mcp-and-agents)
 - [Secrets and Local Data](#secrets-and-local-data)
@@ -156,6 +157,39 @@ page or through the CLI flags.
   method is refused, and a server stream is a bounded probe: it captures at most
   1 MiB of decoded responses and closes on the finish rules, the response limit,
   the deadline or the server ending the stream.
+
+## Browser Steps
+
+- **One browser per run, and one page for all its steps.** The first browser
+  step launches it, every browser step of the run shares that page, Call Workflow
+  children included, and the run closes it at the end. Because the steps share a
+  page they must form a single ordered chain: steps on parallel branches are
+  reported as `browser_parallel_branches`, and a load run refuses a workflow with
+  browser steps.
+- **Chromium family only.** Runs drive an installed Chrome or Edge, or
+  Playwright's own Chromium. Firefox and WebKit are not supported.
+- **One page at a time.** Popups and new tabs are not supported: a step that opens
+  one closes it and fails with "the step opened a new tab or window".
+- **No file upload, download or drag and drop.** None of the three has a step.
+- **No visual diffs.** A step compares text, field values and visibility; there
+  is no pixel comparison and no baseline image.
+- **Every run starts signed out.** The browser opens a fresh, empty profile, so
+  the user's own browsing data, logins and extensions are never touched, and
+  there is no saved login state to reuse. Sign in with steps, ideally once, in a
+  sub-workflow called through Call Workflow.
+- **The network settings do not apply.** The proxy, trusted CAs and client
+  certificates of **Settings → Network** are used by HTTP nodes, not by browser
+  steps, which use the machine's own network configuration.
+- **A screenshot cannot mask what the page displays.** Password fields, and every
+  field a secret was typed into, are painted over, and every secret and typed
+  password is masked as `<SECRET>` in the stored result, but text the page itself
+  renders — an echoed API key, a token in a confirmation — is visible in the
+  screenshot. Screenshots are taken only on failure, are stored with the run and
+  are never exported.
+- **Steps are written by hand.** Recording steps by clicking through the page is
+  not available yet, and an agent cannot look at a page to pick a locator yet.
+  An agent reading a failed run gets the step's error, not its ARIA snapshot or
+  screenshot.
 
 ## Execution
 

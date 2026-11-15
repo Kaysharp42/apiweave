@@ -38,6 +38,7 @@ import HTTPRequestNode from "./nodes/HTTPRequestNode";
 import SseNode from "./nodes/SseNode";
 import WebsocketNode from "./nodes/WebsocketNode";
 import GrpcNode from "./nodes/GrpcNode";
+import BrowserNode from "./nodes/BrowserNode";
 import AssertionNode from "./nodes/AssertionNode";
 import DelayNode from "./nodes/DelayNode";
 import StartNode from "./nodes/StartNode";
@@ -185,6 +186,7 @@ const nodeTypes: NodeTypes = {
   sse: withNodeBoundary(SseNode, "sse") as NodeTypes[string],
   websocket: withNodeBoundary(WebsocketNode, "websocket") as NodeTypes[string],
   grpc: withNodeBoundary(GrpcNode, "grpc") as NodeTypes[string],
+  browser: withNodeBoundary(BrowserNode, "browser") as NodeTypes[string],
   assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
   delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
   start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
@@ -2250,7 +2252,9 @@ function WorkflowCanvas({
               type: modalNode.type as
                 | "http-request"
                 | "sse"
+                | "websocket"
                 | "grpc"
+                | "browser"
                 | "assertion"
                 | "delay"
                 | "merge"

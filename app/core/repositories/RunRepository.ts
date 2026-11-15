@@ -402,9 +402,9 @@ export class RunRepository {
   }
 
   /**
-   * Delete one finished run of a workspace, with its node results and
-   * side-table bodies (FK cascade). A run still pending or running is left
-   * alone: the scheduler is writing to it.
+   * Delete one finished run of a workspace, with its node results, side-table
+   * bodies and evidence artifacts (FK cascade). A run still pending or running
+   * is left alone: the scheduler is writing to it.
    */
   public delete(runId: string, workspaceId: string): boolean {
     return this.store.delete(`DELETE FROM runs WHERE id = ? AND workspace_id = ? AND ${TERMINAL_SQL}`, [runId, workspaceId])
@@ -437,14 +437,18 @@ export class RunRepository {
   }
 
   /**
-   * Drop one run's per-node results and side-table bodies, leaving the run row
-   * itself (status, timings, failed nodes) intact. Load mode calls this on each
-   * finished iteration so a load run of thousands of iterations retains only
-   * aggregate statistics plus the first failure per node, not every response.
+   * Drop one run's per-node results, side-table bodies and evidence artifacts,
+   * leaving the run row itself (status, timings, failed nodes) intact. Load mode
+   * calls this on each finished iteration so a load run of thousands of
+   * iterations retains only aggregate statistics plus the first failure per
+   * node, not every response or screenshot.
    */
   public clearNodeResults(runId: string): void {
-    this.store.delete("DELETE FROM run_node_results WHERE run_id = ?", [runId])
-    this.store.delete("DELETE FROM run_responses WHERE run_id = ?", [runId])
+    this.store.transaction((tx) => {
+      tx.delete("DELETE FROM run_node_results WHERE run_id = ?", [runId])
+      tx.delete("DELETE FROM run_responses WHERE run_id = ?", [runId])
+      tx.delete("DELETE FROM run_artifacts WHERE run_id = ?", [runId])
+    })
   }
 
   public getNodeBody(runId: string, nodeId: string): Buffer | undefined {

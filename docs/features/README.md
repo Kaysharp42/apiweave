@@ -17,6 +17,7 @@ The in-app guide to the rest of the product, readable offline and independent of
 These guides cover the canvas itself, the data that flows between steps on a run, and the tools for running and debugging it.
 
 - [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — including the Call Workflow node that runs another workflow as one step and the expected-status control for negative tests — canvas actions, and keyboard shortcuts.
+- [Browser Steps](browser-steps.md): drive a web page in a real Chrome or Edge as part of a workflow — the thirteen actions, locators, secrets, the one-browser-per-run rule and the evidence a failed step leaves.
 - [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors, and manage workflow-level variables.
 - [Scripting](scripting.md): pre-request and post-response JavaScript on an HTTP Request node, run in a sandbox, to sign requests, transform values into variables and write custom tests.
 - [Load Runs](load-runs.md): run a workflow many times in parallel and report per-step latency percentiles, throughput and threshold gates, in the app or with `apiweave run --concurrency`.

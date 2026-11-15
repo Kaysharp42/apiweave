@@ -106,6 +106,28 @@ project adheres to [Semantic Versioning](https://semver.org/).
   **Accept snapshot**; the CLI reads and writes `.apiweave-snapshots.json`
   (`--snapshots`, `--update-snapshots`) so CI can commit it.
 
+- **Browser steps.** A new `browser` node is one step in a web page, driven in a
+  real Chrome, Edge or Playwright Chromium on this machine: open a page, click,
+  type, press a key, choose an option, tick a box, hover, check that something is
+  visible or that text, a value or the page address matches, or save a value into
+  a workflow variable. The browser steps of a run share one page and must form a
+  single ordered chain, so a workflow can log in to a dev environment and check
+  what the page shows in the same run as its API requests. Values come from
+  `{{env.*}}`, `{{variables.*}}` and `{{prev.*}}`; a password comes from
+  `{{secrets.NAME}}`, which only a fill accepts. See
+  [Browser Steps](docs/features/browser-steps.md).
+- **What a failed browser step leaves behind.** The page's address (query string
+  and fragment redacted) and title, its ARIA (accessibility) snapshot, and a JPEG
+  screenshot of the viewport with password fields painted over, all stored with
+  the run and shown in the step's result pane. Secrets and every value typed into
+  a password field are masked as `<SECRET>` in the stored result; screenshots are
+  taken only on failure and are never exported.
+- **Choosing the browser, and browser steps in CI.** **Settings → Browser** picks
+  Chrome, Edge, Playwright Chromium, or the first of them that starts on the
+  machine, and can show the browser window during runs (off by default; a run an
+  agent starts always stays hidden). `apiweave run` takes
+  `--browser chrome|msedge|chromium` and `--headed`.
+
 ### Changed
 
 - **SSE and WebSocket share one stream-listener lifecycle.** The executor's

@@ -44,6 +44,9 @@ import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
+import type { BrowserBridge } from "@shared/types/BrowserBridge";
+import type { BrowserChannel } from "@shared/types/BrowserChannel";
+import type { BrowserSettings } from "@shared/types/BrowserSettings";
 import type { GitAccountList } from "@shared/types/GitAccountList";
 import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
@@ -82,6 +85,7 @@ import type { DryRunResult } from "../types/DryRunResult";
 import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
 import type { ImportResult } from "../types/ImportResult";
 import type { Run } from "../types/Run";
+import type { RunArtifact } from "@shared/types/RunArtifact";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { SecretMetadata } from "../types/SecretMetadata";
 import type { SecretPublicKey } from "../types/SecretPublicKey";
@@ -162,6 +166,7 @@ declare global {
     __APIWEAVE_AGENTS__?: AgentsBridge;
     __APIWEAVE_OAUTH__?: OAuthBridge;
     __APIWEAVE_NETWORK__?: NetworkBridge;
+    __APIWEAVE_BROWSER__?: BrowserBridge;
     __APIWEAVE_GIT__?: GitBridge;
     apiweave?: typeof apiweave;
   }
@@ -181,6 +186,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_AGENTS__?: AgentsBridge;
   __APIWEAVE_OAUTH__?: OAuthBridge;
   __APIWEAVE_NETWORK__?: NetworkBridge;
+  __APIWEAVE_BROWSER__?: BrowserBridge;
   __APIWEAVE_GIT__?: GitBridge;
 };
 
@@ -661,6 +667,12 @@ export const apiweave = {
       invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "get", { workspaceId, runId }),
+    /** A stored screenshot's bytes for the evidence tab, as base64. */
+    getArtifact: (workspaceId: string, artifactId: string) =>
+      invoke<RunArtifact>("runs", "getArtifact", {
+        workspaceId,
+        artifactId,
+      }),
     listByWorkflow: (workspaceId: string, workflowId: string) =>
       invoke<ListResult<IpcRun>>("runs", "listByWorkflow", {
         workspaceId,
@@ -1303,6 +1315,31 @@ export const network = {
   chooseFile: (): Promise<string | null> =>
     getNetworkBridge()?.chooseFile().catch(unwrapRemoteError) ??
     networkDesktopOnly(),
+} as const;
+
+function getBrowserBridge(): BrowserBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_BROWSER__ ??
+    globalApiweave.__APIWEAVE_BROWSER__
+  );
+}
+
+const browserDesktopOnly = (): Promise<never> =>
+  Promise.reject(
+    new Error("Browser settings are only available in the desktop app"),
+  );
+
+/** Settings > Browser. A sibling of `network`, off the router facade: see `BrowserBridge`. */
+export const browser = {
+  getSettings: (): Promise<BrowserSettings> =>
+    getBrowserBridge()?.getSettings().catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  setSettings: (settings: BrowserSettings): Promise<BrowserSettings> =>
+    getBrowserBridge()?.setSettings(settings).catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  listInstalled: (): Promise<readonly BrowserChannel[]> =>
+    getBrowserBridge()?.listInstalled().catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
 } as const;
 
 function getGitBridge(): GitBridge | undefined {

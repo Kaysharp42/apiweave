@@ -39,6 +39,7 @@ describe("database migrations", () => {
         "environments",
         "node_presets",
         "project_runs",
+        "run_artifacts",
         "run_node_results",
         "run_responses",
         "runs",
@@ -320,6 +321,8 @@ describe("database migrations", () => {
           workspace_merge_pick: [],
           // Snapshot baselines start empty: the fixture predates the table.
           snapshots: [],
+          // Artifacts start empty for the same reason.
+          run_artifacts: [],
         })
       } finally {
         upgraded.close()
@@ -348,7 +351,11 @@ describe("database migrations", () => {
       const { upgraded, indexesBefore, triggersBefore } = upgradeCloudFixture()
       try {
         expect(schemaObjects(upgraded, "index")).toEqual(
-          indexesBefore.filter((name) => !name.startsWith("idx_cloud_") && name !== "idx_scoped_keys_scope"),
+          [
+            ...indexesBefore.filter((name) => !name.startsWith("idx_cloud_") && name !== "idx_scoped_keys_scope"),
+            // Created after the fixture's version.
+            "idx_run_artifacts_run",
+          ].sort(),
         )
         expect(schemaObjects(upgraded, "trigger")).toEqual(triggersBefore.filter((name) => name !== "scoped_keys_touch"))
       } finally {
@@ -382,6 +389,7 @@ describe("database migrations", () => {
         "runs",
         "run_responses",
         "run_node_results",
+        "run_artifacts",
         "project_runs",
         "node_presets",
         "agent_definitions",
@@ -397,8 +405,12 @@ describe("database migrations", () => {
       expect(new Set([...cascaded, "workspaces", "agent_local_paths", "app_settings"])).toEqual(CONTENT_TABLES)
       const { upgraded, before } = upgradeCloudFixture()
       try {
-        // The fixture predates the git tables, so the rows they must cascade are written here.
+        // The fixture predates the git and artifact tables, so the rows they
+        // must cascade are written here.
         upgraded.kvStore.set("INSERT INTO workspace_git (workspace_id) VALUES (?)", ["ws-cloud"])
+        upgraded.kvStore.set("INSERT INTO run_artifacts (id, run_id, node_id, kind, mime, body, size) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+          "artifact-1", "run-1", "browser-1", "screenshot", "image/jpeg", Buffer.from("jpeg"), 4,
+        ])
         upgraded.kvStore.set(
           "INSERT INTO workspace_merge (workspace_id, base_commit, our_commit, their_commit) VALUES (?, ?, ?, ?)",
           ["ws-cloud", "base", "ours", "theirs"],

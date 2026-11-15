@@ -56,6 +56,9 @@ const common = {
   // - electron-updater: runs as the plain CommonJS package electron-builder
   //   expects, sharing the one hoisted builder-util-runtime that wrote
   //   latest.yml at build time.
+  // - playwright-core: resolves its own injected scripts, driver files and
+  //   browser registry relative to its package directory at runtime. It loads
+  //   unchanged from inside app.asar and under plain Node (the CLI).
   external: ["electron", ...Object.keys(dependencies)],
   // jsonc-parser's `main` is a UMD build whose factory requires its own
   // `./impl/*` files at runtime, which esbuild cannot follow: the bundle then
@@ -63,6 +66,10 @@ const common = {
   // imports them statically and bundles whole.
   alias: { "jsonc-parser": "jsonc-parser/lib/esm/main.js" },
   format: "cjs",
+  // A lazy `await import("pkg")` of an external package becomes a `require`,
+  // the loader a CommonJS bundle and app.asar are known to work with, instead
+  // of a real ESM import() resolved by Node's or Electron's ESM loader.
+  supported: { "dynamic-import": false },
   logLevel: "info",
   platform: "node",
   sourcemap: true,

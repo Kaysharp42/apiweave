@@ -54,6 +54,29 @@ export function resumeEntries(edges: readonly WorkflowEdge[], ids: readonly stri
   return unique.filter((id) => !unique.some((other) => other !== id && downstreamOf(edges, [other]).has(id)))
 }
 
+/**
+ * The nodes a rerun asked for, plus the start of the browser chain when the
+ * rerun would run any browser step. A page cannot be seeded from the source
+ * run, so a rerun that reaches a step of the chain replays the chain from its
+ * first step. `drivesBrowser` says whether a node acts on the run's page: a
+ * `browser` node, or a Call Workflow node whose target has browser steps.
+ * Browser steps form one ordered chain (the analyzer's
+ * `browser_parallel_branches`), so its first step is the one no other reaches.
+ */
+export function withBrowserChainStart(
+  nodes: readonly WorkflowNode[],
+  edges: readonly WorkflowEdge[],
+  requested: readonly string[],
+  drivesBrowser: (node: WorkflowNode) => boolean,
+): string[] {
+  const chain = nodes.filter(drivesBrowser).map((node) => node.nodeId)
+  const scope = downstreamOf(edges, resumeEntries(edges, requested))
+  if (!chain.some((id) => scope.has(id))) return [...requested]
+  const first = chain.find((id) => !chain.some((other) => other !== id && downstreamOf(edges, [other]).has(id)))
+  // Already in scope: the rerun replays the chain from its start anyway.
+  return first === undefined || scope.has(first) ? [...requested] : [...requested, first]
+}
+
 /** True when a stored value was masked, wholly or in part. */
 export function isMasked(value: unknown): boolean {
   return JSON.stringify(value)?.includes(SECRET_PLACEHOLDER) === true

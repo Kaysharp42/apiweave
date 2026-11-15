@@ -13,6 +13,7 @@ import type { WorkflowAnalysisService } from "../../services/workflow_analysis_s
 import type { GrpcDiscoveryService } from "../../services/grpc_discovery_service"
 import type { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import type { SnapshotRepository } from "../../repositories/SnapshotRepository"
+import type { RunArtifactRepository } from "../../repositories/RunArtifactRepository"
 import { NotFoundError } from "../errors"
 import type { AppHandlerDeps } from "./app"
 
@@ -40,6 +41,8 @@ export interface HandlerDeps {
   readonly projectRuns?: ProjectRunService
   /** Snapshot baselines, for accepting the response a run just produced. Absent: the route refuses. */
   readonly snapshots?: SnapshotRepository
+  /** Screenshots and other run evidence. Absent: the artifact read refuses. */
+  readonly runArtifacts?: RunArtifactRepository
   /**
    * The running app's versions, platform and data folder, and the file-manager
    * action About offers. Absent where there is no Electron app to describe — a

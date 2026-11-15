@@ -12,6 +12,7 @@ export type {
 export { WorkflowRevisionRepository } from "./WorkflowRevisionRepository"
 export type { WorkflowWriteSource } from "./WorkflowRevisionRepository"
 export { RunRepository } from "./RunRepository"
+export { RunArtifactRepository } from "./RunArtifactRepository"
 export type {
   RunCreate,
   RunUpdate,

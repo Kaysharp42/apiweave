@@ -122,6 +122,7 @@ rejected config names its node's list index and field in the error path.
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`websocket\` | opens a bounded WebSocket, sends its messages, captures what comes back | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`grpc\` | calls one unary gRPC method | 1 in, 1 out |
+| \`browser\` | one step in a web page, in a real Chrome or Edge | 1 in, 1 out; all browser steps share one ordered chain |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
@@ -231,6 +232,35 @@ and API-key \`auth\` become metadata. The result has \`response.body\` (int64 as
 bytes as base64), \`response.status\` (code name), \`response.statusCode\`, \`response.statusMessage\`,
 \`response.headers\` and \`response.trailers\`. Any non-OK status fails the node unless it equals
 \`expectedStatus\` (a code name such as \`"NOT_FOUND"\`): that is how to write a negative test.
+
+### browser
+
+One action per \`browser\` node — \`navigate\`, \`click\`, \`fill\`, \`press\`,
+\`check\`/\`uncheck\`, \`select\`, \`hover\`, \`expect-visible\`, \`expect-text\`,
+\`expect-value\`, \`expect-url\` or \`extract\`; \`workflows_nodeSchema\` lists each
+one's fields. Every step that acts on an element takes \`locator\`.
+
+All browser steps of a workflow share one page and must form **one ordered
+chain**: start it with a \`navigate\` and never put two steps on parallel
+branches (\`browser_parallel_branches\` is an error; the two sides of one
+assertion are fine). A Call Workflow child shares the page.
+
+\`locator\` is structured, never a selector string:
+\`{"kind": "role", "role": "button", "name": "Sign in"}\` first, then \`label\`,
+then \`testId\`, then \`placeholder\`/\`text\`/\`alt\`/\`title\`; \`css\` last, and
+never \`kind: "selector"\` (recorder output; it raises an analyzer notice).
+Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`.
+
+\`{{secrets.NAME}}\` is allowed **only in a fill's value**, and a password is
+always that reference, never a literal; \`{{env.*}}\` for the URL and the test
+account. An unresolved placeholder fails the step.
+
+A failed step's node result has a \`browser\` member — \`expected\`, \`actual\`,
+the masked \`ariaSnapshot\` and Playwright's \`detail\`; \`runs_getNodeResult\`
+returns the step's \`error\`, and the app's result pane shows the rest. Fix that
+one node with \`workflows_patch\` and rerun — a rerun that reaches a browser step
+restarts the chain from its first step. Runs started over MCP are always
+headless.
 
 ### assertion
 

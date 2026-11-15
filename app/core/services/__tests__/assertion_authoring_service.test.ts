@@ -211,4 +211,26 @@ describe("AssertionAuthoringService", () => {
     expect(validated.valid).toBe(true)
     expect(validated.issues.map((issue) => issue.code)).not.toContain("expected_required")
   })
+
+  // A browser step has a result of its own but no HTTP response, so it can
+  // neither be an assertion's evidence source nor stand upstream of one.
+  it("does not treat a browser step as a response source", async () => {
+    const workspaceId = workspaces.create({ name: "Browser", slug: "browser" }).workspaceId
+    const workflow = await workflowService.create(workspaceId, {
+      name: "Page check",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { nodeId: "open", type: "browser", position: { x: 100, y: 0 }, config: { action: "navigate", url: "https://example.test" } },
+        { nodeId: "assert", type: "assertion", position: { x: 200, y: 0 }, config: { assertions: [] } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "open" },
+        { edgeId: "e2", source: "open", target: "assert" },
+      ],
+    })
+
+    await expect(authoring.validate(workspaceId, workflow.workflowId, "open", [])).rejects.toMatchObject({ code: "not_found" })
+    await expect(authoring.apply(workspaceId, workflow.workflowId, workflow.rev, "assert", "append", []))
+      .rejects.toMatchObject({ code: "validation", message: "assertion node has no upstream response source" })
+  })
 })

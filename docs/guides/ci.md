@@ -100,6 +100,8 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--ca-cert <file>` | Also trust this CA certificate (PEM). Repeatable. |
 | `--use-system-ca` | Also trust the operating system's certificate store. |
 | `--client-cert <spec>` | Present a client certificate (mTLS) to a host. Repeatable. See [Network](#network-proxy-and-certificates). |
+| `--browser <chrome\|msedge\|chromium>` | Drive browser steps with this browser. Default: the first of `chrome`, `msedge` and `chromium` that starts on the machine. See [Browser steps](#browser-steps). |
+| `--headed` | Show the browser window while browser steps run. |
 | `-h, --help` | Print the usage text and exit `0`. |
 
 `--env-file`, `--var` and secret values stay in memory for the run. Nothing is written to disk except the reports you ask for.
@@ -201,6 +203,17 @@ apiweave run api.aweproject --env Staging \
 - **Client certificates.** `--client-cert host=cert.pem,key.pem[,SECRET]` or `--client-cert host=client.pfx[,SECRET]`. The host may be `*.example.com` and may end in `:port`; the first matching flag is used. `SECRET` names the secret holding the key's or PFX's passphrase, supplied like any other secret (`APIWEAVE_SECRET_<NAME>`, `--secret`, `--secrets-file`), so it is masked in the output.
 
 A file that cannot be read, a key that does not match its certificate or a wrong passphrase exits `2` before any request is sent.
+
+## Browser steps
+
+A workflow with `browser` nodes runs headless with the same one-browser-per-run rules as the app. Against a machine with Chrome, Edge or Playwright's Chromium installed, a full run needs no extra flags:
+
+```bash
+apiweave run api.aweproject --env Staging                       # first browser that starts
+apiweave run api.aweproject --env Staging --browser msedge --headed
+```
+
+`--browser chrome|msedge|chromium` picks the browser; `--headed` opens its window so you can watch a run locally. A CI machine needs one of Google Chrome, Microsoft Edge, or Playwright's Chromium (`npx playwright install chromium`); the CLI does not install a browser itself, and no display is needed when headless. A step that cannot start its browser fails, so the run exits `1` with the browser named in the error. A failed browser step's screenshot is stored with the in-memory run and is not part of the console, JUnit or HTML report yet. See [Browser Steps](../features/browser-steps.md).
 
 ## Run a workspace repository
 

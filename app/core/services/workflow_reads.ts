@@ -1,5 +1,6 @@
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
 import type { NodeReferenceUse } from "@shared/types/NodeReferenceUse"
 import type { WorkflowNodeMatch } from "@shared/types/WorkflowNodeMatch"
@@ -7,7 +8,7 @@ import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type { WorkflowSummaryFilters, WorkflowSummaryCursor } from "../repositories/WorkflowRepository"
 import { WORKFLOW_OUTLINE_DEFAULT_LIMIT } from "./read_budgets"
-import { nodeEndpoint, nodeReferences } from "./node_facts"
+import { nodeEndpoint, nodeReferences, urlPathTemplate } from "./node_facts"
 import { ConflictError, ValidationError } from "../ipc/errors"
 import { assertCursorSnapshot, cursorScope, openCursor, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
@@ -361,5 +362,33 @@ function matchNodeFields(node: WorkflowNode, query: string): string[] {
   if (node.type === "workflow" && typeof node.config?.targetWorkflowId === "string") {
     if (node.config.targetWorkflowId.toLowerCase().includes(query)) matchedOn.push("target")
   }
+  if (node.type === "browser") matchBrowserFields(node, query, matchedOn)
   return matchedOn
+}
+
+/**
+ * A browser step's searchable fields, under the config keys they came from so a
+ * match says what to read or patch. A navigate's URL is already covered by
+ * {@link nodeEndpoint}; `expect-url` is not a request and is compared here.
+ * Locator text is searched inside `within`, the way the locator itself resolves.
+ */
+function matchBrowserFields(node: WorkflowNode, query: string, matchedOn: string[]): void {
+  if (node.type !== "browser" || node.config === undefined) return
+  const config = node.config
+  if (config.action === "expect-url" && urlPathTemplate(config.url).toLowerCase().includes(query)) matchedOn.push("urlPath")
+  if (config.action === "expect-text" && config.text.toLowerCase().includes(query)) matchedOn.push("text")
+  if ((config.action === "fill" || config.action === "expect-value") && config.value.toLowerCase().includes(query)) matchedOn.push("value")
+  if (config.action === "extract" && config.variable.toLowerCase().includes(query)) matchedOn.push("variable")
+  if (config.description?.toLowerCase().includes(query) === true) matchedOn.push("description")
+  if (config.action !== "navigate" && config.action !== "expect-url" && config.locator !== undefined && locatorMatches(config.locator, query)) {
+    matchedOn.push("locator")
+  }
+}
+
+/** Role locators name the element, the rest match on a value; both may nest. */
+function locatorMatches(locator: BrowserLocator, query: string): boolean {
+  const text = locator.kind === "role" ? locator.name : locator.value
+  if (text?.toLowerCase().includes(query) === true) return true
+  if (locator.hasText?.toLowerCase().includes(query) === true) return true
+  return locator.within !== undefined && locatorMatches(locator.within, query)
 }

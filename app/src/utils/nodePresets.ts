@@ -11,6 +11,7 @@ export const PRESETABLE_NODE_TYPES: readonly NodePresetNodeType[] = [
   "sse",
   "websocket",
   "grpc",
+  "browser",
   "assertion",
   "delay",
   "merge",

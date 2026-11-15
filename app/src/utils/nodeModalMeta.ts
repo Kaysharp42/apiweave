@@ -3,6 +3,7 @@ export const NODE_MODAL_TYPE_LABELS: Record<string, string> = {
   sse: "SSE Stream",
   websocket: "WebSocket",
   grpc: "gRPC Call",
+  browser: "Browser step",
   assertion: "Assertion",
   delay: "Delay",
   merge: "Merge",

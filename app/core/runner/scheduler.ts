@@ -19,10 +19,11 @@ import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps,
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVariables, type ResumeSeed } from "./resume"
+import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVariables, withBrowserChainStart, type ResumeSeed } from "./resume"
 import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
+import { BROWSER_STEP_PREFIX, type BrowserLaunchSettings } from "./browser/session"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
@@ -119,6 +120,15 @@ export interface SchedulerDeps {
   /** Records every snapshot baseline again instead of comparing (the CLI's `--update-snapshots`). */
   readonly updateSnapshots?: boolean
   /**
+   * How a run starts its browser for `browser` nodes (Settings → Browser, the
+   * CLI's flags), read as each run starts. A run an agent started is headless
+   * whatever this says, so an agent never opens a window on the user's screen.
+   * Absent: headless, the first installed of Chrome, Edge and Chromium.
+   */
+  readonly browser?: () => BrowserLaunchSettings
+  /** Stores a failed browser step's screenshot (the run_artifacts table). Absent: screenshots are not kept. */
+  readonly saveArtifact?: ExecutorDeps["saveArtifact"]
+  /**
    * Writes a secret back into the scope it resolved from — a refreshed OAuth
    * token set replacing the one it was refreshed from. Absent: never written.
    */
@@ -184,6 +194,13 @@ export class RunScheduler {
     if (count <= this.cap) return
     this.cap = count
     void this.drain()
+  }
+
+  /** Whether the workflow, or any workflow it calls, has browser steps. */
+  // fallow-ignore-next-line unused-class-member -- implements LoadScheduler; load runs call it through the interface.
+  public hasBrowserSteps(workflowId: string, workspaceId: string): boolean {
+    const workflow = this.deps.workflows.getByIdInWorkspace(workflowId, workspaceId)
+    return workflow ? this.reachableWorkflows(workflowId, workflow, workspaceId).nodes.some((node) => node.type === "browser") : false
   }
 
   public getActiveCount(): number {
@@ -445,6 +462,10 @@ export class RunScheduler {
         ...(this.deps.updateSnapshots === true ? { updateSnapshots: true } : {}),
         oauthTokens: this.deps.oauthTokens ?? new Map(),
         maskValue,
+        ...(this.deps.browser !== undefined
+          ? { browser: agent !== undefined ? { ...this.deps.browser(), headless: true } : this.deps.browser() }
+          : {}),
+        ...(this.deps.saveArtifact !== undefined ? { saveArtifact: this.deps.saveArtifact } : {}),
         ...(saveSecret
           ? {
               saveSecret: async (name: string, value: string) => {
@@ -595,7 +616,10 @@ export class RunScheduler {
       requested = (source.failedNodes ?? []).filter((id) => nodes.some((node) => node.nodeId === id))
       if (requested.length === 0) throw new ValidationError(`Run ${source.runId} has no failed step to rerun`)
     }
-    const entries = resumeEntries(edges, requested)
+    const entries = resumeEntries(
+      edges,
+      withBrowserChainStart(nodes, edges, requested, (node) => this.drivesBrowser(node, workflow.workspaceId)),
+    )
     const scope = downstreamOf(edges, entries)
     const { variables, masked } = seedVariables(source.variables, workflow.variables, nodes, scope)
     const needed = maskedVariablesRead(nodes, scope, masked).filter((name) => !(name in given))
@@ -609,6 +633,15 @@ export class RunScheduler {
       )
     }
     return { sourceRunId: source.runId, entries, variables }
+  }
+
+  /** Whether `node` acts on the run's page: a browser step, or a call into a workflow that has one. */
+  private drivesBrowser(node: WorkflowGraph["nodes"][number], workspaceId: string): boolean {
+    if (node.type === "browser") return true
+    const targetId = node.type === "workflow" ? node.config?.["targetWorkflowId"] : undefined
+    if (typeof targetId !== "string") return false
+    const target = this.deps.workflows.getByIdInWorkspace(targetId, workspaceId)
+    return target ? this.reachableWorkflows(targetId, target, workspaceId).nodes.some((reached) => reached.type === "browser") : false
   }
 
   /**
@@ -940,6 +973,8 @@ function runnerDiagnosis(error: string): string | undefined {
   // A rerun refusing a seeded value names the placeholder and node, never the value.
   const unwrapped = error.replace(/^Error: /, "")
   if (unwrapped.startsWith(RERUN_REFUSED)) return unwrapped
+  // A browser step's own diagnosis names the action and the locator as written; what the page showed is in the result's `browser`.
+  if (error.startsWith(BROWSER_STEP_PREFIX)) return error
   // A responseSchemas verdict names only the status key; the violations are in the result's assertions.
   if (/^Response does not match the schema for status (?:[1-5](?:\d\d|XX)|default)$/.test(error)) return error
   return undefined

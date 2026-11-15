@@ -829,3 +829,160 @@ describe("analyzeWorkflowGraph — gRPC node", () => {
     expect(codes(grpcWorkflow({ x: "response.nonsense" }))).toContain("extractor_path_invalid")
   })
 })
+
+describe("browser steps", () => {
+  const nav = { action: "navigate", url: "https://app.example.test/login" }
+  const click = (name: string) => ({ action: "click", locator: { kind: "role", role: "button", name } })
+  function browserWorkflow(
+    nodes: ReadonlyArray<{ nodeId: string; type: string; config?: Record<string, unknown> }>,
+    edges: ReadonlyArray<[string, string, string?]>,
+  ): Workflow {
+    return WorkflowSchema.parse({
+      workflowId: "workflow-browser",
+      workspaceId: "workspace-1",
+      name: "Web",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        ...nodes.map((node) => ({ position: { x: 0, y: 0 }, ...node })),
+        { nodeId: "end", type: "end", position: { x: 0, y: 0 }, config: {} },
+      ],
+      edges: edges.map(([source, target, sourceHandle], index) => ({ edgeId: `e${index}`, source, target, ...(sourceHandle ? { sourceHandle } : {}) })),
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+  const diagnose = (workflow: Workflow) => analyzeWorkflowGraph(workflow).diagnostics
+  /** The same check, with the Call Workflow targets the caller could read that have browser steps. */
+  const diagnoseWithCalls = (workflow: Workflow, browserStepWorkflowIds: readonly string[]) =>
+    analyzeWorkflowGraph({ ...workflow, browserStepWorkflowIds }).diagnostics
+
+  it("accepts one ordered chain that opens a page first", () => {
+    const workflow = browserWorkflow(
+      [{ nodeId: "open", type: "browser", config: nav }, { nodeId: "save", type: "browser", config: click("Save") }],
+      [["start", "open"], ["open", "save"], ["save", "end"]],
+    )
+    expect(diagnose(workflow).map((item) => item.code).filter((code) => code.startsWith("browser_"))).toEqual([])
+  })
+
+  it("rejects browser steps on parallel branches", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "left", type: "browser", config: click("A") },
+        { nodeId: "right", type: "browser", config: click("B") },
+      ],
+      [["start", "open"], ["open", "left"], ["open", "right"], ["left", "end"], ["right", "end"]],
+    )
+    const parallel = diagnose(workflow).find((item) => item.code === "browser_parallel_branches")
+    expect(parallel).toMatchObject({ severity: "error", nodeIds: ["left", "right"], remediation: { kind: "chain_browser_steps", nodeId: "left" } })
+  })
+
+  it("allows browser steps on the pass and fail sides of one assertion", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/flag" } },
+        { nodeId: "check", type: "assertion", config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] } },
+        { nodeId: "on", type: "browser", config: nav },
+        { nodeId: "off", type: "browser", config: nav },
+      ],
+      [["start", "api"], ["api", "check"], ["check", "on", "pass"], ["check", "off", "fail"], ["on", "end"], ["off", "end"]],
+    )
+    expect(diagnose(workflow).map((item) => item.code)).not.toContain("browser_parallel_branches")
+  })
+
+  // A Call Workflow node into a workflow with browser steps drives the same
+  // page as a browser step, so the chain rule covers it too. The target ids a
+  // caller can read are named by `browserStepWorkflowIds`.
+  it("rejects two called workflows with browser steps on parallel branches", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "login-a", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "login-b", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+      ],
+      [["start", "login-a"], ["start", "login-b"], ["login-a", "end"], ["login-b", "end"]],
+    )
+    const parallel = diagnoseWithCalls(workflow, ["login-flow"]).find((item) => item.code === "browser_parallel_branches")
+    expect(parallel).toMatchObject({ severity: "error", nodeIds: ["login-a", "login-b"] })
+  })
+
+  it("rejects a called workflow with browser steps parallel to a browser step", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "open", type: "browser", config: nav },
+      ],
+      [["start", "login"], ["start", "open"], ["login", "end"], ["open", "end"]],
+    )
+    expect(diagnoseWithCalls(workflow, ["login-flow"]).find((item) => item.code === "browser_parallel_branches")).toMatchObject({
+      severity: "error",
+      nodeIds: ["login", "open"],
+    })
+  })
+
+  it("allows a called workflow and a browser step on the pass and fail sides of one assertion", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/flag" } },
+        { nodeId: "check", type: "assertion", config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] } },
+        { nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "open", type: "browser", config: nav },
+      ],
+      [["start", "api"], ["api", "check"], ["check", "login", "pass"], ["check", "open", "fail"], ["login", "end"], ["open", "end"]],
+    )
+    expect(diagnoseWithCalls(workflow, ["login-flow"]).map((item) => item.code)).not.toContain("browser_parallel_branches")
+  })
+
+  it("ignores a call into a workflow without browser steps", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } },
+        { nodeId: "report", type: "workflow", config: { targetWorkflowId: "report-flow" } },
+      ],
+      [["start", "login"], ["start", "report"], ["login", "end"], ["report", "end"]],
+    )
+    expect(diagnoseWithCalls(workflow, ["login-flow"]).map((item) => item.code)).not.toContain("browser_parallel_branches")
+  })
+
+  it("warns when the chain does not open a page first, unless a called workflow may have", () => {
+    const bare = browserWorkflow([{ nodeId: "save", type: "browser", config: click("Save") }], [["start", "save"], ["save", "end"]])
+    expect(diagnose(bare).find((item) => item.code === "browser_chain_starts_without_navigate")).toMatchObject({
+      severity: "warning",
+      nodeIds: ["save"],
+      remediation: { kind: "add_navigate_step", nodeId: "save" },
+    })
+
+    const afterLogin = browserWorkflow(
+      [{ nodeId: "login", type: "workflow", config: { targetWorkflowId: "login-flow" } }, { nodeId: "save", type: "browser", config: click("Save") }],
+      [["start", "login"], ["login", "save"], ["save", "end"]],
+    )
+    expect(diagnose(afterLogin).map((item) => item.code)).not.toContain("browser_chain_starts_without_navigate")
+  })
+
+  it("notes a raw recorded selector, also inside a parent locator", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "raw", type: "browser", config: { action: "click", locator: { kind: "role", role: "button", within: { kind: "selector", value: "internal:role=row >> nth=1" } } } },
+      ],
+      [["start", "open"], ["open", "raw"], ["raw", "end"]],
+    )
+    expect(diagnose(workflow).find((item) => item.code === "browser_selector_fallback")).toMatchObject({ severity: "notice", nodeIds: ["raw"] })
+  })
+
+  it("counts an extract step as the producer of its variable", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "read", type: "browser", config: { action: "extract", locator: { kind: "testId", value: "order" }, from: "attribute", attribute: "data-id", variable: "orderId" } },
+        { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/orders/{{variables.orderId}}" } },
+      ],
+      [["start", "open"], ["open", "read"], ["read", "api"], ["api", "end"]],
+    )
+    expect(analyzeVariableProvenance(workflow.nodes)["orderId"]?.producers).toEqual([{ nodeId: "read", nodeLabel: "read", path: "page.attribute.data-id" }])
+    expect(diagnose(workflow).map((item) => item.code)).not.toContain("variable_source_missing")
+  })
+})

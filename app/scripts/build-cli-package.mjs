@@ -1,7 +1,7 @@
 // Build the standalone CLI package that CI installs, so a pipeline does not
 // need a checkout of this repository or its build toolchain. The desktop app's
 // package is private and pulls Electron; this package contains only the
-// bundled CLI, its worker, the migrations and the two runtime dependencies the
+// bundled CLI, its worker, the migrations and the runtime dependencies the
 // bundle actually requires.
 import { execFileSync } from "node:child_process"
 import fs from "node:fs"
@@ -37,6 +37,7 @@ const packageJson = {
   engines: { node: ">=22.12.0" },
   dependencies: {
     "better-sqlite3": appPackage.dependencies["better-sqlite3"],
+    "playwright-core": appPackage.dependencies["playwright-core"],
     zod: appPackage.dependencies["zod"],
   },
   repository: {

@@ -73,6 +73,16 @@
         "count": 1
       }
     },
+    "core/runner/browser/locator.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/browser/step.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
     "core/runner/digest_auth.ts": {
       "complexity_moderate": {
         "count": 1
@@ -86,7 +96,7 @@
         "count": 6
       },
       "complexity_moderate": {
-        "count": 2
+        "count": 3
       },
       "crap_critical": {
         "count": 7
@@ -95,7 +105,7 @@
         "count": 13
       },
       "crap_moderate": {
-        "count": 18
+        "count": 19
       }
     },
     "core/runner/grpc_schema.ts": {
@@ -175,7 +185,7 @@
         "count": 2
       },
       "crap_moderate": {
-        "count": 2
+        "count": 3
       }
     },
     "core/runner/script_sandbox.ts": {
@@ -258,6 +268,11 @@
         "count": 1
       }
     },
+    "core/services/node_facts.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
     "core/services/oauth_service.ts": {
       "crap_moderate": {
         "count": 2
@@ -298,6 +313,11 @@
     },
     "core/services/secret_utils.ts": {
       "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/workflow_reads.ts": {
+      "crap_high": {
         "count": 1
       }
     },
@@ -356,17 +376,22 @@
         "count": 2
       },
       "complexity_high": {
-        "count": 2
+        "count": 3
       },
       "complexity_moderate": {
-        "count": 2
+        "count": 3
       },
       "crap_critical": {
         "count": 2
       },
       "crap_high": {
-        "count": 3
+        "count": 4
       },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "shared/browser/describe_locator.ts": {
       "crap_moderate": {
         "count": 1
       }
@@ -457,16 +482,13 @@
     },
     "src/components/NodeModal.tsx": {
       "complexity_critical": {
-        "count": 1
+        "count": 2
       },
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
+      "crap_critical": {
+        "count": 2
       },
       "crap_moderate": {
-        "count": 1
+        "count": 2
       }
     },
     "src/components/OpenAPIImport.tsx": {
@@ -590,7 +612,20 @@
         "count": 1
       }
     },
+    "src/components/molecules/BrowserLocatorEditor.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
     "src/components/molecules/ResponseInspector.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/components/node-modal/BrowserOutputPanel.tsx": {
       "complexity_high": {
         "count": 1
       },
@@ -626,10 +661,10 @@
       }
     },
     "src/components/node-modal/NodeModalHeader.tsx": {
-      "complexity_high": {
+      "complexity_critical": {
         "count": 1
       },
-      "crap_high": {
+      "crap_critical": {
         "count": 1
       }
     },
@@ -675,6 +710,11 @@
         "count": 1
       }
     },
+    "src/components/nodes/BrowserNode.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
     "src/components/nodes/GrpcNode.tsx": {
       "crap_high": {
         "count": 1
@@ -704,6 +744,11 @@
     },
     "src/components/organisms/BackgroundSettingsPanel.tsx": {
       "crap_high": {
+        "count": 1
+      }
+    },
+    "src/components/organisms/BrowserSettingsPanel.tsx": {
+      "complexity_moderate": {
         "count": 1
       }
     },
@@ -761,7 +806,7 @@
     },
     "src/hooks/useCanvasDrop.ts": {
       "crap_moderate": {
-        "count": 1
+        "count": 2
       }
     },
     "src/hooks/useNodeBranchCounts.ts": {
@@ -830,6 +875,14 @@
         "count": 1
       }
     },
+    "src/utils/browserStep.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
     "src/utils/environmentImport.ts": {
       "complexity_moderate": {
         "count": 1
@@ -860,58 +913,61 @@
     "src/components/node-modal/httpRequestConfigCompat.ts:high impact",
     "core/services/workspace_repo_import.ts:high impact",
     "core/git/git_sync_service.ts:hidden coupling",
+    "shared/analysis/workflow_graph_analyzer.ts:high impact",
     "core/services/workflow_service.ts:complexity",
     "electron/git_sync.ts:hidden coupling",
-    "shared/analysis/workflow_graph_analyzer.ts:high impact",
     "src/components/node-modal/HttpRequestOutputPanel.tsx:complexity",
     "src/components/node-modal/GrpcConfigPanel.tsx:complexity",
     "core/git/__tests__/git_sync_harness.ts:hidden coupling",
     "shared/conflict-diff/diff.ts:high impact",
+    "src/utils/browserStep.ts:high impact",
     "src/__tests__/setup.ts:high impact",
+    "core/services/node_facts.ts:high impact",
     "src/components/organisms/CreateWorkspaceModal.tsx:complexity",
-    "src/__tests__/gitFixtures.ts:high impact",
     "core/runner/grpc_schema.ts:high impact",
     "src/hooks/useWorkspaceTabs.ts:high impact",
+    "src/__tests__/gitFixtures.ts:high impact",
     "shared/iteration-data/iterationData.ts:high impact",
-    "core/services/node_facts.ts:high impact",
     "src/components/WorkflowExportImport.tsx:complexity",
-    "src/components/WorkflowCanvas.tsx:complexity",
+    "core/cli/cli.ts:high impact",
     "src/components/organisms/AgentLaunchButton.tsx:complexity",
+    "src/components/WorkflowCanvas.tsx:complexity",
+    "core/runner/resume.ts:high impact",
     "src/pages/WorkspaceEnvironmentsPage.tsx:complexity",
-    "core/runner/oauth.ts:complexity",
     "electron/main.ts:hidden coupling",
+    "core/runner/oauth.ts:complexity",
+    "src/components/node-modal/BrowserOutputPanel.tsx:complexity",
     "src/components/node-modal/copyAsCurl.ts:high impact",
-    "core/cli/cli.ts:untested risk",
     "core/runner/dynamic_functions.ts:high impact",
     "core/runner/reporters.ts:high impact",
     "src/hooks/useSwaggerRefresh.ts:complexity",
-    "shared/env-file/envFile.ts:high impact",
     "src/components/node-modal/nodeModalUtils.ts:high impact",
+    "shared/env-file/envFile.ts:high impact",
     "core/runner/network.ts:high impact",
     "core/git/git_service.ts:hidden coupling",
     "core/services/import_parsers.ts:high impact",
     "core/mcp/tools.ts:hidden coupling",
-    "core/runner/resume.ts:high impact",
-    "electron/preload.ts:hidden coupling",
     "shared/extractors/xmlDocument.ts:high impact",
     "src/pages/WorkspaceProjectPage.tsx:complexity",
     "core/ipc/handlers/workflows.ts:hidden coupling",
+    "core/runner/browser/step.ts:complexity",
     "src/components/atoms/flow/BaseNode.tsx:complexity",
     "core/mcp/harness/measurements.ts:high impact",
     "core/repositories/WorkspaceGitRepository.ts:hidden coupling",
+    "electron/preload.ts:hidden coupling",
     "shared/workspace-repo/paths.ts:high impact",
     "src/components/layout/Sidebar.tsx:complexity",
     "electron/__tests__/git_sync.test.ts:hidden coupling",
     "src/hooks/useWorkflowPolling.ts:complexity",
-    "core/mcp/bridge.ts:hidden coupling",
     "core/runner/__tests__/auth_test_servers.ts:high impact",
+    "core/mcp/bridge.ts:hidden coupling",
     "core/mcp/token-file.ts:high impact",
     "src/components/molecules/ResponseInspector.tsx:complexity",
     "src/components/organisms/CanvasToolbar.tsx:complexity",
     "src/utils/environmentInheritance.ts:high impact",
     "src/components/CollectionExportImport.tsx:complexity",
-    "src/components/NodeModal.tsx:complexity",
     "core/ipc/opaque_cursor.ts:high impact",
+    "src/components/NodeModal.tsx:complexity",
     "src/components/HARImport.tsx:hidden coupling",
     "src/components/organisms/MergeView.tsx:complexity",
     "core/services/postman_import.ts:high impact",
@@ -924,8 +980,9 @@
     "src/components/ImportToNodesPanel.tsx:hidden coupling",
     "src/hooks/useRunCamera.ts:hidden coupling",
     "src/components/node-modal/httpRequestConfigCompat.test.ts:hidden coupling",
-    "core/ipc/channels.ts:hidden coupling",
+    "src/commands/registry.ts:hidden coupling",
     "core/git/__tests__/git_sync_cycle.test.ts:hidden coupling",
+    "core/ipc/channels.ts:hidden coupling",
     "core/services/__tests__/secret_utils.test.ts:hidden coupling",
     "core/git/__tests__/git_sync_remote.test.ts:hidden coupling",
     "src/utils/__tests__/runCamera.test.ts:hidden coupling"

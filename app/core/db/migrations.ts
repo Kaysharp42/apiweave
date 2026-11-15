@@ -30,6 +30,7 @@ export const CONTENT_TABLES: ReadonlySet<string> = new Set([
   "runs",
   "run_responses",
   "run_node_results",
+  "run_artifacts",
   "project_runs",
   "node_presets",
   "agent_definitions",

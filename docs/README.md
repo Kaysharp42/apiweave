@@ -34,7 +34,8 @@ Start with installation, build your first workflow, then read the concepts gloss
 
 Jump straight to the feature guide. Each one is self-contained: concepts, prerequisites, worked examples, and troubleshooting for that feature.
 
-- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the eight executable node types plus note and group annotations, toolbar actions, keyboard shortcuts.
+- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, every executable node type plus note and group annotations, toolbar actions, keyboard shortcuts.
+- [Browser Steps](features/browser-steps.md): log in, click and check what a page shows in a real Chrome or Edge, one node per step, beside your API nodes.
 - [Variables and Extractors](features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
 - [Scripting](features/scripting.md): sandboxed pre-request and post-response JavaScript for signing, transforming values and custom checks.
 - [Load Runs](features/load-runs.md): many parallel iterations with latency percentiles and CI thresholds.
@@ -73,6 +74,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 - [Features Index](features/README.md)
 - [In-App Tutorials](features/tutorials.md): the bundled offline learning library, search, progress, and follow-along.
 - [Workflows and Nodes](features/workflows-and-nodes.md): build, edit, and run workflows on the canvas.
+- [Browser Steps](features/browser-steps.md): drive a web page in a real browser as part of a workflow.
 - [Variables and Extractors](features/variables-and-extractors.md): pass data between steps with the four placeholder namespaces.
 - [Node Presets](features/node-presets.md): a saved, workspace-wide library of reusable node configurations.
 - [Visualization and Debugging](features/visualization-and-debugging.md): timeline, provenance, secret confidence, and the run camera.

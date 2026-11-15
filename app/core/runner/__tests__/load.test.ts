@@ -37,6 +37,7 @@ function fakeScheduler(delayMs: number, failIndexes: ReadonlySet<number> = new S
     ensureConcurrency: (count) => {
       state.cap = count
     },
+    hasBrowserSteps: (workflowId) => workflowId === "browser-flow",
   }
   return { scheduler, state }
 }
@@ -100,5 +101,13 @@ describe("startLoadRun", () => {
     [{ iterations: 1_000_000, concurrency: 1 }],
   ])("rejects bad options %j", (options) => {
     expect(() => startLoadRun(fakeScheduler(1).scheduler, { workspaceId: "w", workflowId: "f" }, [{}], options, [], info)).toThrow(/load run needs/)
+  })
+
+  it("refuses a workflow with browser steps before launching anything", () => {
+    const { scheduler, state } = fakeScheduler(1)
+    expect(() =>
+      startLoadRun(scheduler, { workspaceId: "w", workflowId: "browser-flow" }, [{}], { iterations: 2, concurrency: 2 }, [], info),
+    ).toThrow(/browser steps/)
+    expect(state.enqueued).toHaveLength(0)
   })
 })

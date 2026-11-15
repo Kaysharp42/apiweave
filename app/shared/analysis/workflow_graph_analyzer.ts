@@ -82,6 +82,18 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
       }
     }
 
+    // A browser `extract` step writes the variable it names.
+    if (node.type === "browser" && config?.["action"] === "extract" && typeof config["variable"] === "string") {
+      const variableName = config["variable"]
+      const from = typeof config["from"] === "string" ? config["from"] : "text"
+      const path = from === "attribute" && typeof config["attribute"] === "string" ? `page.attribute.${config["attribute"]}` : `page.${from}`
+      const entry = ensure(variableName)
+      map[variableName] = {
+        producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
+        consumers: entry.consumers,
+      }
+    }
+
     const references = new Map<string, Set<string>>()
     forEachConfigString(config, (rootKey, value) => {
       VARIABLE_REF_RE.lastIndex = 0
@@ -740,6 +752,137 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
 }
 
+/** Whether a locator, or a parent it is searched within, is a raw recorder selector. */
+function usesSelectorFallback(locator: unknown): boolean {
+  if (locator === null || typeof locator !== "object") return false
+  const record = locator as Readonly<Record<string, unknown>>
+  return record["kind"] === "selector" || usesSelectorFallback(record["within"])
+}
+
+/**
+ * The ids of the nodes that drive the run's page and lie on parallel branches,
+ * sorted; empty when they form one ordered chain.
+ *
+ * Two page drivers are on parallel branches when neither reaches the other and
+ * one run can take both. Steps on the pass and fail sides of one assertion
+ * cannot, because a run takes one side, so they count as ordered. `drivesBrowser`
+ * says which nodes act on the page: a `browser` step, and a Call Workflow node
+ * whose target has browser steps. The analyzer and the runner pass their own
+ * equivalent predicates so the graph check and the run agree.
+ */
+export function browserParallelNodeIds<N extends { readonly nodeId: string; readonly type: string }>(
+  nodes: readonly N[],
+  edges: readonly { readonly source: string; readonly target: string; readonly sourceHandle?: string | null | undefined }[],
+  drivesBrowser: (node: N) => boolean,
+): string[] {
+  const drivers = [...new Set(nodes.filter(drivesBrowser).map((node) => node.nodeId))]
+  if (drivers.length < 2) return []
+  const successors = successorMap(edges)
+  const downstream = new Map(drivers.map((nodeId) => [nodeId, traverse([nodeId], successors)]))
+  // What only an assertion's pass edges reach, and what only its fail edges
+  // reach: one run takes one side, so nodes on opposite sides never overlap.
+  const exclusiveSides = nodes
+    .filter((node) => node.type === "assertion")
+    .map((assertion) => {
+      const side = (handle: string): Set<string> =>
+        traverse(edges.filter((edge) => edge.source === assertion.nodeId && edge.sourceHandle === handle).map((edge) => edge.target), successors)
+      const pass = side("pass")
+      const fail = side("fail")
+      return {
+        pass: new Set([...pass].filter((id) => !fail.has(id))),
+        fail: new Set([...fail].filter((id) => !pass.has(id))),
+      }
+    })
+  const exclusive = (left: string, right: string): boolean =>
+    exclusiveSides.some(({ pass, fail }) => (pass.has(left) && fail.has(right)) || (fail.has(left) && pass.has(right)))
+  const ordered = (left: string, right: string): boolean =>
+    downstream.get(left)!.has(right) || downstream.get(right)!.has(left) || exclusive(left, right)
+
+  const parallel = new Set<string>()
+  for (const [index, left] of drivers.entries()) {
+    for (const right of drivers.slice(index + 1)) {
+      if (!ordered(left, right)) {
+        parallel.add(left)
+        parallel.add(right)
+      }
+    }
+  }
+  return [...parallel].sort()
+}
+
+/**
+ * Browser steps share one page, so they must run one after another:
+ *  - two nodes that drive the page neither of which reaches the other would act
+ *    on it at the same time (an error: the run's outcome would depend on timing);
+ *  - the first step of the chain should open a page, unless a Call Workflow
+ *    node before it may have (a login sub-workflow);
+ *  - a raw recorder selector works but breaks easily, and is worth replacing.
+ *
+ * A Call Workflow node into a workflow with browser steps drives the same page,
+ * so it is part of the chain: `browserStepWorkflowIds` names those targets,
+ * which only a caller that can read other workflows knows.
+ */
+function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
+  const steps = workflow.nodes.filter((node): node is Extract<WorkflowNode, { type: "browser" }> => node.type === "browser")
+  if (steps.length === 0 && !workflow.nodes.some((node) => node.type === "workflow")) return
+  const browserStepWorkflowIds = new Set(workflow.browserStepWorkflowIds ?? [])
+  const drivesBrowser = (node: WorkflowNode): boolean => {
+    if (node.type === "browser") return true
+    if (node.type !== "workflow") return false
+    const targetId = node.config?.["targetWorkflowId"]
+    return typeof targetId === "string" && browserStepWorkflowIds.has(targetId)
+  }
+
+  const parallel = browserParallelNodeIds(workflow.nodes, workflow.edges, drivesBrowser)
+  if (parallel.length > 0) {
+    diagnostics.push(diagnostic(
+      "browser_parallel_branches",
+      "error",
+      "topology",
+      parallel,
+      "Browser steps share one page, so they must form a single chain; these nodes are on parallel branches.",
+      { count: parallel.length },
+      { kind: "chain_browser_steps", nodeId: parallel[0]! },
+    ))
+  }
+
+  if (steps.length === 0) return
+  const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
+  const downstream = new Map(steps.map((step) => [step.nodeId, traverse([step.nodeId], successors)]))
+
+  // The chain's first steps: those no other browser step reaches.
+  const firsts = steps.filter((step) => !steps.some((other) => other !== step && downstream.get(other.nodeId)!.has(step.nodeId)))
+  for (const first of firsts) {
+    if (first.config?.action === "navigate" || first.config === undefined) continue
+    const upstream = traverse([first.nodeId], predecessors)
+    const calledBefore = [...upstream].some((id) => id !== first.nodeId && nodesById.get(id)?.type === "workflow")
+    if (calledBefore) continue
+    diagnostics.push(diagnostic(
+      "browser_chain_starts_without_navigate",
+      "warning",
+      "execution",
+      [first.nodeId],
+      "The first browser step is not a navigate, so it runs on an empty page.",
+      { action: first.config.action },
+      { kind: "add_navigate_step", nodeId: first.nodeId },
+    ))
+  }
+
+  for (const step of steps) {
+    const config = step.config
+    if (config === undefined || !("locator" in config) || !usesSelectorFallback(config.locator)) continue
+    diagnostics.push(diagnostic(
+      "browser_selector_fallback",
+      "notice",
+      "execution",
+      [step.nodeId],
+      "This step finds its element with a raw recorded selector, which breaks easily; prefer a role, label or test id locator.",
+      { action: config.action },
+      { kind: "replace_locator", nodeId: step.nodeId },
+    ))
+  }
+}
+
 /** Flag `{{someFunction(...)}}` placeholders that don't name a real dynamic function — they'd go out as literal text. */
 function addUnknownFunctionDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   for (const node of workflow.nodes) {
@@ -1017,6 +1160,7 @@ export function analyzeWorkflowGraph(input: WorkflowGraphInput, run?: Run): Work
   addExpectedStatusMigrationDiagnostics(workflow, diagnostics)
   addDataflowDiagnostics(workflow, diagnostics)
   addUnknownFunctionDiagnostics(workflow, diagnostics)
+  addBrowserDiagnostics(workflow, diagnostics)
   if (run !== undefined) addRunDiagnostics(workflow, run, diagnostics)
 
   diagnostics.sort((left, right) =>

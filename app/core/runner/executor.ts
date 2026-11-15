@@ -53,9 +53,14 @@ import { findSoapFault } from "@shared/extractors/xmlDocument"
 import type { SoapBody } from "@shared/types/SoapBody"
 import type { SoapFault } from "@shared/types/SoapFault"
 import { compareSnapshot, describeSnapshotDifference, snapshotValue, type SnapshotStore } from "./snapshots"
-import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
+import { findCycles, successorMap, browserParallelNodeIds } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
+import type { Page } from "playwright-core"
+import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
+import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
+import { BROWSER_STEP_PREFIX, BrowserSession, BrowserSessionError, type BrowserLaunchSettings } from "./browser/session"
+import { captureFailureEvidence, runBrowserStep, type BrowserStepContext } from "./browser/step"
 
 /**
  * Workflow executor.
@@ -69,7 +74,7 @@ import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition"
 
 export interface WorkflowNode {
   readonly nodeId: string
-  readonly type: "http-request" | "sse" | "websocket" | "grpc" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
+  readonly type: "http-request" | "sse" | "websocket" | "grpc" | "browser" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
   readonly label?: string | null
   readonly config?: Record<string, unknown>
 }
@@ -194,6 +199,17 @@ export interface ExecutorDeps {
    * its caller's, so a login sub-workflow leaves the caller signed in.
    */
   readonly cookieJar?: CookieJar
+  /** How this run starts its browser for `browser` nodes. Absent: headless, first installed of Chrome, Edge, Chromium. */
+  readonly browser?: BrowserLaunchSettings
+  /**
+   * The run's browser. Absent: the executor makes its own and closes it when
+   * the run ends. A Call Workflow child always shares its caller's, so a login
+   * sub-workflow leaves the caller's page signed in. A caller that passes one
+   * closes it itself (and can read the page after the run, see `stopBeforeNodeId`).
+   */
+  readonly browserSession?: BrowserSession
+  /** Stores a failed browser step's screenshot and returns its artifact id. Absent: screenshots are not kept. */
+  readonly saveArtifact?: (artifact: RunArtifactInput) => string | undefined
   /** OAuth 2.0 tokens fetched so far — shared across runs when the caller keeps one. Absent: per executor. */
   readonly oauthTokens?: OAuthTokenCache
   /** Adds a value the run obtained itself (an OAuth token) to what its masker scrubs. */
@@ -214,6 +230,15 @@ export interface ExecutorDeps {
     begin(workflowId: string): { readonly runId: string; readonly deps: ExecutorDeps }
     finish(runId: string, output: ExecutorOutput | undefined): void
   }
+}
+
+/** A file a run produced as evidence, such as a failed browser step's screenshot. */
+export interface RunArtifactInput {
+  readonly runId: string
+  readonly nodeId: string
+  readonly kind: "screenshot"
+  readonly mime: "image/jpeg"
+  readonly body: Buffer
 }
 
 const PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g
@@ -372,6 +397,12 @@ export interface ExecuteOptions {
   readonly cancelSignal?: AbortSignal
   /** A rerun: what the source run already settled. `startNodeIds` are its entries. */
   readonly resume?: ResumeSeed
+  /**
+   * Run every node up to this one and stop there, without running it or
+   * anything after it. With a caller-owned `browserSession`, the page is then
+   * left as that node would find it.
+   */
+  readonly stopBeforeNodeId?: string
 }
 
 /** How every refusal to read a rerun's seeded value starts; the scheduler passes it through to history. */
@@ -417,6 +448,8 @@ export interface NodeResult {
   readonly attempts?: readonly HttpAttempt[]
   /** What the node's pre-request and post-response scripts did, in the order they ran. */
   readonly scripts?: readonly ScriptOutcome[]
+  /** A browser node's step: the page after it, compared values, and on failure its evidence. */
+  readonly browser?: BrowserStepResult
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
     readonly workflowId: string
@@ -571,6 +604,12 @@ export class WorkflowExecutor {
   private rpcId = 0
   private readonly oauthTokens: OAuthTokenCache
   private readonly cookieJar: CookieJar
+  /** The run's browser; launched by the first `browser` node, so a run without one never starts it. */
+  private readonly browserSession: BrowserSession
+  /** Whether this executor made `browserSession`, and so closes it when the run ends. */
+  private readonly ownsBrowserSession: boolean
+  /** Set by `stopBeforeNodeId`: the run stops before this node. */
+  private stopBeforeNodeId: string | undefined
   /** Loaded on the first rule that needs it (see `prepareRules`); `matches` and `matchesSchema` are synchronous after that. */
   private regex: RegexSandbox | null = null
   /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
@@ -594,6 +633,8 @@ export class WorkflowExecutor {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
     this.oauthTokens = deps.oauthTokens ?? new Map()
     this.cookieJar = deps.cookieJar ?? new CookieJar()
+    this.ownsBrowserSession = deps.browserSession === undefined
+    this.browserSession = deps.browserSession ?? new BrowserSession(deps.browser ?? { headless: true })
   }
 
   public async executeWorkflow(
@@ -605,6 +646,7 @@ export class WorkflowExecutor {
     const startedAt = this.deps.clock.isoNow()
     this.activeRunId = options.runId ?? "harness"
     this.cancelSignal = options.cancelSignal
+    this.stopBeforeNodeId = options.stopBeforeNodeId
 
     if (workflow.variables) {
       for (const [key, value] of Object.entries(workflow.variables)) {
@@ -644,6 +686,28 @@ export class WorkflowExecutor {
         this.updateNodeStatus(id, "failed", { status: "error", error: message })
       }
       return this.buildOutput(caseName, startedAt, seed, "failed")
+    }
+
+    // Browser steps of a run share one page (a Call Workflow child included),
+    // so they must form one ordered chain. Two of them on parallel branches
+    // would interleave — A navigates, B navigates, A fills on B's page — and
+    // the run's outcome would depend on timing. Refuse before any node runs;
+    // the analyzer reports the same graph as `browser_parallel_branches`.
+    if (workflow.nodes.some((node) => node.type === "browser" || node.type === "workflow")) {
+      const parallelNodeIds = browserParallelNodeIds(workflow.nodes, edges, (node) => this.drivesBrowser(node))
+      if (parallelNodeIds.length > 0) {
+        const names = parallelNodeIds.map((id) => nodes.get(id)?.label || id)
+        const message =
+          `${BROWSER_STEP_PREFIX} these nodes drive the run's page but are on parallel branches, ` +
+          `so their steps would interleave: ${names.join(", ")}; chain them one after another`
+        this.hasFailures = true
+        this.firstErrorMessage = message
+        for (const id of parallelNodeIds) {
+          this.failedNodes.add(id)
+          this.updateNodeStatus(id, "failed", { status: "error", error: message })
+        }
+        return this.buildOutput(caseName, startedAt, seed, "failed")
+      }
     }
 
     let entryNodeIds: string[] = []
@@ -701,6 +765,8 @@ export class WorkflowExecutor {
       // this is a no-op in the normal case.
       this.abortStreamListeners()
       await this.waitForStreamTasks()
+      // Same for the browser: a failed, cancelled or crashed run never leaves one open.
+      if (this.ownsBrowserSession) await this.browserSession.close()
     }
   }
 
@@ -800,6 +866,7 @@ export class WorkflowExecutor {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
+    if (nodeId === this.stopBeforeNodeId) return
 
     if (node.type === "merge" || node.type === "start") {
       return this.traverseFromNode(node, nodes, edges, cancelSignal)
@@ -1017,6 +1084,8 @@ export class WorkflowExecutor {
         result = await this.executeHttpRequestNode(node, cancelSignal)
       } else if (nodeType === "grpc") {
         result = await this.executeGrpc(node, cancelSignal)
+      } else if (nodeType === "browser") {
+        result = await this.executeBrowser(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -1106,6 +1175,118 @@ export class WorkflowExecutor {
     this.results.set(nodeId, cancelled)
     this.updateNodeStatus(nodeId, "skipped", cancelled)
     return cancelled
+  }
+
+  // -------------------- Browser --------------------
+
+  /**
+   * One step on the run's page. The step module never throws for a failure of
+   * the step itself; what lands here is a browser that could not start or
+   * died under the step. Cancelling the run closes the browser, which ends the
+   * Playwright call in flight.
+   */
+  private async executeBrowser(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const parsed = BrowserNodeDataSchema.safeParse(node.config ?? {})
+    if (!parsed.success) {
+      const field = parsed.error.issues[0]?.path.join(".") ?? ""
+      return { status: "error", duration: 0, error: `${BROWSER_STEP_PREFIX} the step's configuration is invalid${field ? ` at ${field}` : ""}` }
+    }
+    const config = parsed.data
+    const context: BrowserStepContext = {
+      resolve: (text, allowSecrets) => this.substituteVariables(text, { allowSecrets }),
+      assertHostAllowed: (host) => this.deps.http.assertHostAllowed(host),
+      maskValue: (value) => this.deps.maskValue?.(value),
+      regexTest: async (pattern, text) => {
+        this.regex ??= await RegexSandbox.load()
+        return this.regex.test(pattern, text)
+      },
+      setVariable: (name, value) => {
+        this.workflowVariables[name] = value
+      },
+    }
+    const startTime = Date.now()
+    const closeOnCancel = (): void => {
+      void this.browserSession.close()
+    }
+    cancelSignal?.addEventListener("abort", closeOnCancel, { once: true })
+    try {
+      return await this.browserSession.run(async (page): Promise<NodeResult> => {
+        const outcome = await runBrowserStep(page, config, context)
+        const evidence = outcome.passed || cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId)
+        return {
+          status: outcome.passed ? "success" : "error",
+          duration: Date.now() - startTime,
+          ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+          browser: { ...outcome.result, ...evidence },
+        }
+      })
+    } catch (error) {
+      return {
+        status: "error",
+        duration: Date.now() - startTime,
+        error: error instanceof BrowserSessionError ? error.message : `${BROWSER_STEP_PREFIX} the browser stopped unexpectedly`,
+        browser: { action: config.action },
+      }
+    } finally {
+      cancelSignal?.removeEventListener("abort", closeOnCancel)
+    }
+  }
+
+  /** A failed step's ARIA snapshot and stored screenshot, or a note saying what is missing. */
+  private async browserEvidence(page: Page, nodeId: string): Promise<Pick<BrowserStepResult, "ariaSnapshot" | "screenshotArtifactId" | "evidenceNote">> {
+    const evidence = await captureFailureEvidence(page)
+    const notes = evidence.note !== undefined ? [evidence.note] : []
+    let screenshotArtifactId: string | undefined
+    if (evidence.screenshot !== undefined && this.deps.saveArtifact !== undefined) {
+      try {
+        screenshotArtifactId = this.deps.saveArtifact({
+          runId: this.activeRunId,
+          nodeId,
+          kind: "screenshot",
+          mime: "image/jpeg",
+          body: evidence.screenshot,
+        })
+      } catch {
+        notes.push("The screenshot could not be stored.")
+      }
+    }
+    return {
+      ...(evidence.ariaSnapshot !== undefined ? { ariaSnapshot: evidence.ariaSnapshot } : {}),
+      ...(screenshotArtifactId !== undefined ? { screenshotArtifactId } : {}),
+      ...(notes.length > 0 ? { evidenceNote: notes.join(" ") } : {}),
+    }
+  }
+
+  /** Whether `node` acts on the run's page: a browser step, or a call into a workflow that has one. */
+  private drivesBrowser(node: WorkflowNode): boolean {
+    if (node.type === "browser") return true
+    const targetId = node.type === "workflow" ? node.config?.["targetWorkflowId"] : undefined
+    return typeof targetId === "string" && this.workflowReachesBrowser(targetId)
+  }
+
+  /**
+   * Whether `workflowId`, or any workflow it calls, has a `browser` node.
+   *
+   * Visited workflows are tracked by *id*, not by the object `resolveWorkflow`
+   * returns: a resolver may hand back a fresh snapshot per call, and a call
+   * cycle (which a target edited after the caller was saved can introduce)
+   * would then be walked for ever.
+   */
+  private workflowReachesBrowser(workflowId: string): boolean {
+    const seen = new Set<string>()
+    const pending = [workflowId]
+    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      const workflow = this.deps.resolveWorkflow?.(id)
+      if (workflow === undefined) continue
+      for (const node of workflow.nodes) {
+        if (node.type === "browser") return true
+        const calledId = node.type === "workflow" ? node.config?.["targetWorkflowId"] : undefined
+        if (typeof calledId === "string") pending.push(calledId)
+      }
+    }
+    return false
   }
 
   // -------------------- HTTP request --------------------
@@ -2634,6 +2815,13 @@ export class WorkflowExecutor {
       WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY,
     )
     const stopOnFailure = forEach.stopOnFailure ?? true
+    // Iterations share the run's one page, so concurrent ones would drive it at once.
+    if (concurrency > 1 && this.workflowReachesBrowser(targetWorkflowId)) {
+      return {
+        status: "error",
+        error: `${BROWSER_STEP_PREFIX} a for-each with concurrency above 1 cannot call a workflow with browser steps; set concurrency to 1`,
+      }
+    }
 
     // The input mapping is resolved once in the caller's context: it does not
     // depend on the item, which arrives through the item/index variables.
@@ -2741,7 +2929,11 @@ export class WorkflowExecutor {
     cancelSignal?: AbortSignal,
   ): Promise<{ output: ExecutorOutput; runId?: string }> {
     const sub = this.deps.subRun?.begin(targetWorkflowId)
-    const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
+    const childExecutor = new WorkflowExecutor({
+      ...(sub?.deps ?? this.deps),
+      cookieJar: this.cookieJar,
+      browserSession: this.browserSession,
+    })
     childExecutor.callDepth = this.callDepth + 1
     let output: ExecutorOutput | undefined
     try {
@@ -3714,6 +3906,7 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
       : {}),
     ...buildRunResultDiagnostics(result),
     ...(result.attempts ? { attempts: result.attempts.map((attempt) => ({ ...attempt })) } : {}),
+    ...(result.browser ? { browser: { ...result.browser } } : {}),
     request: buildRunResultRequest(result),
     response: buildRunResultResponse(result),
     error: typeof result.error === "string" ? result.error : null,
