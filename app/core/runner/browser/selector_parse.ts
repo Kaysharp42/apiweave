@@ -144,36 +144,59 @@ function readNth(part: string): number | null {
   return nth >= -1 && nth <= 1_000 ? nth : null
 }
 
+/** A chain read so far: the iframe it entered, and the locator built up to here. */
+interface Chain {
+  readonly frame?: string
+  readonly current?: BrowserLocator
+}
+
+const HAS_TEXT = "internal:has-text="
+
+/** `… >> internal:control=enter-frame`: one iframe, named by plain CSS. Nested frames have no field here. */
+function enterFrame(chain: Chain): Chain | null {
+  const { frame, current } = chain
+  if (frame !== undefined || current?.kind !== "css") return null
+  if (current.within !== undefined || current.hasText !== undefined || current.nth !== undefined) return null
+  return { frame: current.value }
+}
+
+/** `… >> internal:has-text="…"i`: a case-insensitive substring, applied before `nth`. */
+function addHasText(chain: Chain, part: string): Chain | null {
+  const quoted = readJsonQuoted(part.slice(HAS_TEXT.length))
+  const { current } = chain
+  if (quoted === null || quoted.exact || current === undefined || current.hasText !== undefined || current.nth !== undefined) return null
+  return { ...chain, current: { ...current, hasText: quoted.value } }
+}
+
+function addNth(chain: Chain, part: string): Chain | null {
+  const nth = readNth(part)
+  const { current } = chain
+  if (nth === null || current === undefined || current.nth !== undefined) return null
+  return { ...chain, current: { ...current, nth } }
+}
+
+/** `A >> B`: B searched inside A. */
+function addElement(chain: Chain, part: string): Chain | null {
+  const element = readElement(part)
+  if (element === null) return null
+  return { ...chain, current: chain.current === undefined ? element : { ...element, within: chain.current } }
+}
+
+function readPart(chain: Chain, part: string): Chain | null {
+  if (part === ENTER_FRAME) return enterFrame(chain)
+  if (part.startsWith(HAS_TEXT)) return addHasText(chain, part)
+  if (part.startsWith("nth=")) return addNth(chain, part)
+  return addElement(chain, part)
+}
+
 /** The chain as one structured locator, or null when any part has no structured equivalent. */
 function readChain(parts: readonly string[]): BrowserLocator | null {
-  let frame: string | undefined
-  let current: BrowserLocator | undefined
+  let chain: Chain | null = {}
   for (const part of parts) {
-    if (part === ENTER_FRAME) {
-      // One iframe, named by plain CSS. Nested frames have no field here.
-      if (frame !== undefined || current?.kind !== "css") return null
-      if (current.within !== undefined || current.hasText !== undefined || current.nth !== undefined) return null
-      frame = current.value
-      current = undefined
-      continue
-    }
-    if (part.startsWith("internal:has-text=")) {
-      const quoted = readJsonQuoted(part.slice("internal:has-text=".length))
-      // `hasText` is a case-insensitive substring and is applied before `nth`.
-      if (quoted === null || quoted.exact || current === undefined || current.hasText !== undefined || current.nth !== undefined) return null
-      current = { ...current, hasText: quoted.value }
-      continue
-    }
-    if (part.startsWith("nth=")) {
-      const nth = readNth(part)
-      if (nth === null || current === undefined || current.nth !== undefined) return null
-      current = { ...current, nth }
-      continue
-    }
-    const element = readElement(part)
-    if (element === null) return null
-    current = current === undefined ? element : { ...element, within: current }
+    chain = readPart(chain, part)
+    if (chain === null) return null
   }
+  const { frame, current } = chain
   if (current === undefined) return null
   return frame === undefined ? current : { ...current, frame }
 }

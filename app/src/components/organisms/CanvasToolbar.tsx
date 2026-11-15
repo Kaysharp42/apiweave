@@ -212,7 +212,7 @@ export function CanvasToolbar({
 
         <CanvasToolbarDivider />
 
-        {recording && <CanvasToolbarRecordControl {...recording} showLabel={showLabels} />}
+        <CanvasToolbarRecordControl {...recording} showLabel={showLabels} />
 
         <CanvasToolbarRunControls
           onRun={onRun}

@@ -41,5 +41,5 @@ export interface CanvasToolbarProps {
   resumeOptions?: Array<{ nodeId: string; label: string }>;
   isResumeLoading?: boolean;
   /** Record browser steps into this workflow. */
-  recording?: Omit<CanvasToolbarRecordProps, "showLabel">;
+  recording: Omit<CanvasToolbarRecordProps, "showLabel">;
 }
