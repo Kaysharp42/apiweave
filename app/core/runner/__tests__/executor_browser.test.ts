@@ -9,6 +9,7 @@ import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 import { BrowserSession } from "../browser/session"
+import { replayToNode } from "../../services/browser_replay"
 import { BROWSER_SEARCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, findTestBrowser } from "./browser_test_channel"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 import type { Run } from "@shared/types/Run"
@@ -152,6 +153,44 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
   }
 
   const result = (stored: Run, nodeId: string) => stored.results.find((candidate) => candidate.nodeId === nodeId)
+
+  it("replays up to a step in a browser the caller keeps, and leaves its page open", async () => {
+    const workflowId = create([
+      ...loginSteps("{{secrets.TEST_PASSWORD}}"),
+      step("submit", { action: "click", locator: role("button", "Sign in") }),
+      step("greets", { action: "expect-text", locator: role("heading"), text: "Welcome", match: "contains" }),
+    ])
+    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
+    const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
+    expect(outcome.kind).toBe("page")
+    if (outcome.kind !== "page") return
+    try {
+      // Stopped before the click: still on the filled-in login form.
+      expect(outcome.page.url()).toBe(`${base}/login`)
+      await expect(outcome.page.getByLabel("Email").inputValue()).resolves.toBe("ada@example.com")
+    } finally {
+      await outcome.close()
+    }
+    expect(outcome.page.isClosed()).toBe(true)
+  })
+
+  it("closes the replay's browser and says the run failed when a step before fails", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/login` }),
+      step("missing", { action: "click", locator: role("button", "Nope"), timeoutMs: 500 }),
+      step("submit", { action: "click", locator: role("button", "Sign in") }),
+    ])
+    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
+    const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
+    expect(outcome).toMatchObject({ kind: "failed", status: "failed" })
+  })
+
+  it("reports no page when no browser step runs before the node", async () => {
+    const workflowId = create([step("open", { action: "navigate", url: `${base}/login` })])
+    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "open" }
+    const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
+    expect(outcome).toEqual({ kind: "no-page" })
+  })
 
   it("runs HTTP and browser steps in one run, sharing variables", async () => {
     const workflowId = create([

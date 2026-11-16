@@ -270,4 +270,50 @@ describe("BrowserRecording", () => {
     },
     BROWSER_TEST_TIMEOUT_MS,
   )
+
+  it(
+    "records on the page a replay left open, from the user's first action, and owns its browser",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const session = new BrowserSession({ headless: true, ...(channel === undefined ? {} : { channel }) })
+      const ctx = replayContext({}, {})
+      // The replayed steps: the second arms a Cancel for a dialog it never opens.
+      const replayed: BrowserNodeData[] = [
+        { action: "navigate", url: `${base}/orders` },
+        { action: "click", locator: { kind: "role", role: "heading", name: "Orders" }, dialog: "dismiss" },
+      ]
+      for (const step of replayed) expect((await session.run((page) => runBrowserStep(page, step, ctx))).error).toBeUndefined()
+      const page = await session.currentPage()
+      if (page === null) throw new Error("no page")
+
+      const sent: RecordedBrowserStep[] = []
+      const warnings: string[] = []
+      let ended = false
+      const recording = await BrowserRecording.attach(page, {
+        values: { env: {}, secrets: {} },
+        takenSecretNames: new Set(),
+        newStepId: () => "browser-test-1",
+        listener: { step: (step) => sent.push(step), warning: (message) => warnings.push(message), ended: () => (ended = true) },
+        throttleMs: 20,
+      })
+      await page.getByRole("button", { name: "Delete" }).click()
+      // The replayed step's Cancel was disarmed, so the recording's OK answered the confirm.
+      await page.getByText("Order 42 deleted").waitFor()
+      await recording.stop()
+
+      expect(sent.map((step) => step.config).at(-1)).toEqual({
+        action: "click",
+        locator: { kind: "role", role: "button", name: "Delete" },
+        dialog: "accept",
+      })
+      expect(new Set(sent.map((step) => step.stepId))).toEqual(new Set(["browser-test-1"]))
+      // No popup warning for the page that was already open; only the dialog note.
+      expect(warnings).toEqual([expect.stringContaining("The page showed a dialog")])
+      expect(ended).toBe(true)
+      // Stopping closed the replay's browser: the recording owns it now.
+      expect(page.isClosed()).toBe(true)
+      await session.close()
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
 })

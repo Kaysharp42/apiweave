@@ -1,4 +1,6 @@
 import type { BrowserChannel } from "./BrowserChannel"
+import type { BrowserLocator } from "./BrowserLocator"
+import type { BrowserReplayRequest } from "./BrowserReplayRequest"
 import type { BrowserRecordingEvent } from "./BrowserRecordingEvent"
 import type { BrowserRecordingRequest } from "./BrowserRecordingRequest"
 import type { BrowserRecordingStatus } from "./BrowserRecordingStatus"
@@ -21,5 +23,16 @@ export interface BrowserBridge {
   readonly stopRecording: () => Promise<void>
   /** The recording in progress, if any: a reloaded renderer picks it back up. */
   readonly recordingStatus: () => Promise<BrowserRecordingStatus | null>
+  /**
+   * Replay the workflow up to a browser step in a visible browser, then let the
+   * user pick the element that step should act on. The new locator, or null
+   * when the user stopped. Shares the one recording slot.
+   */
+  readonly repickElement: (request: BrowserReplayRequest) => Promise<BrowserLocator | null>
+  /**
+   * Replay the workflow up to a browser step, then record from there: the
+   * steps arrive as `onRecording` events. Null when the user stopped the replay.
+   */
+  readonly rerecordFrom: (request: BrowserReplayRequest) => Promise<BrowserRecordingStatus | null>
   readonly onRecording: (callback: (event: BrowserRecordingEvent) => void) => () => void
 }

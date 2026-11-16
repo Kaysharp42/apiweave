@@ -181,6 +181,17 @@ describe("RecordingConverter rules", () => {
     expect(navigate.warnings).toHaveLength(1)
   })
 
+  it("does not record a step whose locator shows the start of a secret, as Playwright shortens names to a unique prefix", () => {
+    const recording = converter({ env: {}, secrets: { TOKEN: "tok-123456" } })
+    const click = (selector: string): RecordedBrowserStep[] =>
+      [...recording.apply({ kind: "added", action: { name: "click", selector }, onMainPage: true }).steps]
+    expect(click('internal:role=button[name="Key tok-"i]')).toEqual([])
+    // Inside a raw selector the shortened name ends at its quote, not at the end of the selector.
+    expect(click('#keys >> internal:has-text="Key tok-1"i >> nth=1')).toEqual([])
+    // Three characters of it are not enough to count, as for typed text.
+    expect(click('internal:role=button[name="Key tok"i]')).toHaveLength(1)
+  })
+
   it("does not record a step whose locator shows a secret that holds a quote or a backslash", () => {
     const values: RecordingValues = { env: {}, secrets: { ODD: 'pa"ss\\word1' } }
     // A role's name and a plain CSS value: JSON escaping and the selector's own
