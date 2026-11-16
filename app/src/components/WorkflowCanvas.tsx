@@ -72,6 +72,7 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasHistory from "../hooks/useCanvasHistory";
 import { useBrowserRecording } from "../hooks/useBrowserRecording";
+import { useStepReplay } from "../hooks/useStepReplay";
 import { useTurnIntoExtract } from "../hooks/useTurnIntoExtract";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
@@ -128,7 +129,7 @@ import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
 import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
-import { Copy, Download, Files, Globe, Play, Wand2 } from "lucide-react";
+import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -1617,6 +1618,18 @@ function WorkflowCanvas({
 
   const turnIntoExtract = useTurnIntoExtract({ nodesRef, setNodes });
 
+  const stepReplay = useStepReplay({
+    workflowId,
+    workspaceId: scope.workspaceId ?? undefined,
+    environmentId: selectedEnvironment,
+    isHydrated,
+    isRunning,
+    nodesRef,
+    edgesRef,
+    setNodes,
+    saveWorkflowRef,
+  });
+
   const canvasTipContext = useMemo(() => {
     const selection = selectedIds(nodes);
     const selected = nodes.filter((node) => selection.has(node.id));
@@ -2217,6 +2230,26 @@ function WorkflowCanvas({
               label: "Run from here",
               onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
             },
+            ...(stepReplay.canRepick(stepMenu.nodeId)
+              ? [
+                  {
+                    key: "repick-element",
+                    icon: Crosshair,
+                    label: "Re-pick element",
+                    onSelect: () => stepReplay.repick(stepMenu.nodeId),
+                  },
+                ]
+              : []),
+            ...(stepReplay.canRerecord(stepMenu.nodeId)
+              ? [
+                  {
+                    key: "rerecord-from-here",
+                    icon: Circle,
+                    label: "Re-record from here",
+                    onSelect: () => stepReplay.rerecord(stepMenu.nodeId),
+                  },
+                ]
+              : []),
             ...(turnIntoExtract.canTurn(stepMenu.nodeId)
               ? [
                   {

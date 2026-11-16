@@ -379,6 +379,8 @@ export type { CanvasToolbarRecordProps } from "./CanvasToolbarRecordProps";
 export type { UseBrowserRecordingParams } from "./UseBrowserRecordingParams";
 export type { UseBrowserRecordingResult } from "./UseBrowserRecordingResult";
 export type { SecretNamesInScope } from "./SecretNamesInScope";
+export type { UseStepReplayParams } from "./UseStepReplayParams";
+export type { UseStepReplayResult } from "./UseStepReplayResult";
 export type { UseTurnIntoExtractParams } from "./UseTurnIntoExtractParams";
 export type { UseTurnIntoExtractResult } from "./UseTurnIntoExtractResult";
 export type { MissingSecretNoticeProps } from "./MissingSecretNoticeProps";

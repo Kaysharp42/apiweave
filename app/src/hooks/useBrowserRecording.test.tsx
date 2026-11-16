@@ -37,13 +37,14 @@ function recordedNode(stepId: string, url: string): CanvasNode {
  * `setNodes` writes back into the refs the way the real canvas does, so a
  * remount starts from what the previous one left behind.
  */
-function createCanvas(nodes: CanvasNode[]): {
+function createCanvas(nodes: CanvasNode[], edges: CanvasEdge[] = []): {
   params: UseBrowserRecordingParams;
   nodes: () => CanvasNode[];
+  edges: () => CanvasEdge[];
   setNodes: ReturnType<typeof vi.fn>;
   setEdges: ReturnType<typeof vi.fn>;
 } {
-  const graph: { nodes: CanvasNode[]; edges: CanvasEdge[] } = { nodes, edges: [] };
+  const graph: { nodes: CanvasNode[]; edges: CanvasEdge[] } = { nodes, edges };
   const nodesRef: MutableRefObject<CanvasNode[]> = { current: graph.nodes };
   const edgesRef: MutableRefObject<CanvasEdge[]> = { current: graph.edges };
   const setNodes = vi.fn((next: CanvasNode[]) => {
@@ -57,6 +58,7 @@ function createCanvas(nodes: CanvasNode[]): {
   return {
     params: { workflowId: "wf", workspaceId: "ws", environmentId: null, isHydrated: true, isRunning: false, nodesRef, edgesRef, setNodes, setEdges },
     nodes: () => graph.nodes,
+    edges: () => graph.edges,
     setNodes,
     setEdges,
   };
@@ -72,6 +74,8 @@ describe("useBrowserRecording placement", () => {
     vi.mocked(browser.onRecording).mockReturnValue(() => undefined);
     useBrowserRecordingStore.setState({
       phase: "idle",
+      operation: "record",
+      nodeId: null,
       workflowId: "wf",
       recordingId,
       anchorId: "start-1",
@@ -135,6 +139,36 @@ describe("useBrowserRecording placement", () => {
     mountRecording(canvas);
     expect(canvas.setNodes).toHaveBeenCalledTimes(2);
     expect(canvas.nodes().find((node) => node.id === first.stepId)?.data.config).toEqual({ action: "navigate", url: "https://dev.test/login" });
+  });
+
+  it("puts a re-record's steps in place of the step and the browser steps after it, in one edit", () => {
+    const inOldFrame = (id: string, action: string): CanvasNode => ({
+      id,
+      type: "browser",
+      position: { x: 0, y: 0 },
+      parentId: "frame-old",
+      extent: "parent",
+      data: { label: id, config: action === "navigate" ? { action, url: "https://dev.test/" } : { action, locator: { kind: "css", value: `#${id}` } } },
+    });
+    const frame: CanvasNode = { id: "frame-old", type: "group", position: { x: 0, y: 0 }, data: { label: "Recording", config: {} } };
+    const end: CanvasNode = { id: "end-1", type: "end", position: { x: 0, y: 0 }, data: { label: "End", config: {} } };
+    const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target });
+    const canvas = createCanvas(
+      [frame, startNode, inOldFrame("open", "navigate"), inOldFrame("delete", "click"), inOldFrame("confirm", "click"), end],
+      [edge("start-1", "open"), edge("open", "delete"), edge("delete", "confirm"), edge("confirm", "end-1")],
+    );
+    const recorded = { stepId: "browser-recording-1-1", config: { action: "click" as const, locator: { kind: "css" as const, value: "#remove" } } };
+    useBrowserRecordingStore.setState({ operation: "rerecord", nodeId: "delete", anchorId: null, steps: [recorded] });
+
+    mountRecording(canvas);
+
+    expect(canvas.setNodes).toHaveBeenCalledTimes(1);
+    expect(canvas.nodes().map((node) => node.id).sort()).toEqual([frameId, "browser-recording-1-1", "end-1", "frame-old", "open", "start-1"].sort());
+    expect(canvas.edges().map((e) => [e.source, e.target])).toEqual(
+      expect.arrayContaining([["start-1", "open"], ["open", "browser-recording-1-1"], ["browser-recording-1-1", "end-1"]]),
+    );
+    expect(canvas.edges()).toHaveLength(3);
+    expect(useBrowserRecordingStore.getState().anchorId).toBe("open");
   });
 
   it("leaves another workflow's canvas alone", () => {

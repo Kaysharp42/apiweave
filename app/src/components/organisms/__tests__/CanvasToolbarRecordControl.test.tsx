@@ -30,6 +30,17 @@ describe("CanvasToolbarRecordControl", () => {
     expect(onStop).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ["replaying", "Replaying the steps before…"],
+    ["picking", "Click the element in the browser"],
+  ] as const)("says what a re-pick or re-record is %s, and cancels it", async (state, text) => {
+    const onStop = vi.fn();
+    render(<CanvasToolbarRecordControl {...base} state={state} onStop={onStop} />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
   it("keeps the count, without the label, when the toolbar is narrow", () => {
     render(<CanvasToolbarRecordControl {...base} state="stopping" stepCount={1} showLabel={false} />);
     expect(screen.getByText("1 step")).toBeInTheDocument();

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { subscribeToRecording, useBrowserRecordingStore } from "../stores/BrowserRecordingStore";
 import useEnvironmentStore from "../stores/EnvironmentStore";
+import type { BrowserRecordingStatus } from "@shared/types/BrowserRecordingStatus";
+import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
 import type { RecordingPlacement } from "../types/RecordingPlacement";
 import type { UseBrowserRecordingParams } from "../types/UseBrowserRecordingParams";
@@ -8,6 +11,7 @@ import type { UseBrowserRecordingResult } from "../types/UseBrowserRecordingResu
 import { isFrameNode } from "../utils/canvasGroups";
 import { resolveInheritedVariables } from "../utils/environmentInheritance";
 import { placeRecordedStep } from "../utils/recordedSteps";
+import { removeStepsFrom } from "../utils/stepReplay";
 
 /** The selected node when exactly one is selected, else Start: where a recording's steps go after. */
 function anchorFor(nodes: readonly CanvasNode[]): string | null {
@@ -28,6 +32,24 @@ function resumedAnchor(nodes: readonly CanvasNode[], recordingId: string): strin
     .sort((a, b) => Number(a.id.slice(prefix.length)) - Number(b.id.slice(prefix.length)))
     .at(-1);
   return last?.id ?? anchorFor(nodes.map((node) => ({ ...node, selected: false })));
+}
+
+/**
+ * Before a re-record's first step: take out the steps it replaces, in the
+ * same edit as the step, so one undo puts them back, and say where its steps
+ * go. Null when this is not a re-record's first step — or its step is gone
+ * already, because a reloaded canvas placed some of them before.
+ */
+function replaceForRerecord(
+  graph: CanvasGraph,
+  operation: BrowserRecordingStatus["operation"],
+  nodeId: string | null,
+): { graph: CanvasGraph; anchorId: string } | null {
+  if (operation !== "rerecord" || nodeId === null || !graph.nodes.some((node) => node.id === nodeId)) return null;
+  const removed = removeStepsFrom(graph, nodeId);
+  if (removed !== null) return removed;
+  toast.warning("The steps around this one changed during the replay, so the new steps were added after it instead of replacing it.");
+  return { graph, anchorId: nodeId };
 }
 
 const recordingLabel = (): string =>
@@ -53,9 +75,15 @@ function usePlaceRecordedSteps(
     const placedById = new Map(store.placedSteps.map((entry) => [entry.stepId, entry] as const));
     const pending = steps.filter((step) => placedById.get(step.stepId) !== step);
     if (pending.length === 0) return;
-    const anchorId = store.anchorId ?? resumedAnchor(nodesRef.current, recordingId);
+    let graph: CanvasGraph = { nodes: nodesRef.current, edges: edgesRef.current };
+    let anchorId = store.anchorId;
+    const replaced = anchorId === null ? replaceForRerecord(graph, store.operation, store.nodeId) : null;
+    if (replaced !== null) {
+      ({ graph, anchorId } = replaced);
+      store.setAnchor(replaced.anchorId);
+    }
+    anchorId ??= resumedAnchor(graph.nodes, recordingId);
     const placement: RecordingPlacement = { anchorId: anchorId ?? "", frameId: `frame-${recordingId}`, frameLabel: store.frameLabel };
-    let graph = { nodes: nodesRef.current, edges: edgesRef.current };
     const inserted = store.placedSteps.map((entry) => entry.stepId);
     const placed = [...store.placedSteps];
     for (const step of pending) {

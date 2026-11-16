@@ -8,15 +8,32 @@ const QUIET = "h-8 whitespace-nowrap text-text-secondary dark:text-text-secondar
 const ICON = "w-4 h-4 shrink-0";
 const SPINNER = <Loader2 className={`${ICON} animate-spin motion-reduce:animate-none`} />;
 
-/** While this workflow is being recorded: the live step count, and Stop. */
-function RecordingStatus({ state, stepCount, onStop, showLabel }: CanvasToolbarRecordProps) {
+/** What the badge says: the live step count while recording, else what the user is waiting on or doing. */
+function statusText({ state, stepCount, showLabel }: CanvasToolbarRecordProps): string {
+  if (state === "replaying") return showLabel ? "Replaying the steps before…" : "Replaying…";
+  if (state === "picking") return showLabel ? "Click the element in the browser" : "Picking…";
   const steps = stepCount === 1 ? "1 step" : `${stepCount} steps`;
+  return showLabel ? `Recording — ${steps}` : steps;
+}
+
+/**
+ * While this workflow is being recorded, re-recorded or re-picked: where it
+ * stands, and Stop. Before anything is recorded — the replay, the pick — Stop
+ * reads Cancel, because it changes nothing on the canvas.
+ */
+function RecordingStatus(props: CanvasToolbarRecordProps) {
+  const { state, onStop, showLabel } = props;
   const stopping = state === "stopping";
+  const waiting = state === "replaying" || state === "picking";
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Badge variant="error" size="sm" className="shrink-0 gap-1.5" aria-live="polite">
-        <span className="h-2 w-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" aria-hidden="true" />
-        {showLabel ? `Recording — ${steps}` : steps}
+      <Badge variant={waiting ? "info" : "error"} size="sm" className="shrink-0 gap-1.5" aria-live="polite">
+        {state === "replaying" ? (
+          <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        ) : (
+          <span className="h-2 w-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+        )}
+        {statusText(props)}
       </Badge>
       <Button
         variant="ghost"
@@ -25,10 +42,10 @@ function RecordingStatus({ state, stepCount, onStop, showLabel }: CanvasToolbarR
         onClick={onStop}
         disabled={stopping}
         className="h-8 whitespace-nowrap"
-        aria-label="Stop recording"
+        aria-label={waiting ? "Cancel" : "Stop recording"}
         icon={stopping ? SPINNER : <Square className={ICON} />}
       >
-        {showLabel && <span>{stopping ? "Stopping…" : "Stop"}</span>}
+        {showLabel && <span>{stopping ? "Stopping…" : waiting ? "Cancel" : "Stop"}</span>}
       </Button>
     </div>
   );
@@ -65,7 +82,7 @@ function RecordButton({ state, disabled, onRecord, showLabel }: CanvasToolbarRec
  * and Stop while this workflow is being recorded.
  */
 export function CanvasToolbarRecordControl(props: CanvasToolbarRecordProps) {
-  const live = props.state === "recording" || props.state === "stopping";
+  const live = props.state !== "idle" && props.state !== "starting" && props.state !== "elsewhere";
   const shown = { ...props, showLabel: props.showLabel ?? true };
   return live ? <RecordingStatus {...shown} /> : <RecordButton {...shown} />;
 }
