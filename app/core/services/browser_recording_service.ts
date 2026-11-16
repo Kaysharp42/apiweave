@@ -94,11 +94,7 @@ export class BrowserRecordingService {
     const request = this.replayRequest(input)
     const config = this.browserStep(request)
     if (!("locator" in config)) throw new ValidationError("This step does not act on an element, so there is nothing to re-pick.")
-    return this.exclusively(async () => {
-      const values = await this.values(request)
-      const replayed = await this.replayed(request, "repick")
-      if (replayed === null) return null
-      const { page, close, active } = replayed
+    return this.afterReplay(request, "repick", async ({ page, close, active, values }) => {
       try {
         return pickedLocator(await (this.deps.pick ?? pickElement)(page, values))
       } finally {
@@ -116,11 +112,7 @@ export class BrowserRecordingService {
   public async rerecord(input: unknown): Promise<BrowserRecordingStatus | null> {
     const request = this.replayRequest(input)
     this.browserStep(request)
-    return this.exclusively(async () => {
-      const values = await this.values(request)
-      const replayed = await this.replayed(request, "rerecord")
-      if (replayed === null) return null
-      const { page, close, active } = replayed
+    return this.afterReplay(request, "rerecord", async ({ page, close, active, values }) => {
       const attach = this.deps.attach ?? ((target: Page, options: RecordingOptions) => BrowserRecording.attach(target, options))
       const publisher = this.publisher(active)
       try {
@@ -139,6 +131,23 @@ export class BrowserRecordingService {
   /** Stop whatever is in progress: cancel the replay, close the picking browser, or end the recording. */
   public async stop(): Promise<void> {
     await this.active?.stop()
+  }
+
+  /**
+   * As the only operation: replay up to the request's step, then hand the page
+   * it left to `then`. Null, without calling `then`, when the user stopped
+   * the replay.
+   */
+  private afterReplay<T>(
+    request: BrowserReplayRequest,
+    operation: "repick" | "rerecord",
+    then: (replayed: { page: Page; close: () => Promise<void>; active: Active; values: RecordingValues }) => Promise<T | null>,
+  ): Promise<T | null> {
+    return this.exclusively(async () => {
+      const values = await this.values(request)
+      const replayed = await this.replayed(request, operation)
+      return replayed === null ? null : then({ ...replayed, values })
+    })
   }
 
   /** Run `work` as the only operation, refusing one while another is starting or running. */

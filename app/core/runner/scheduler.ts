@@ -258,13 +258,7 @@ export class RunScheduler {
     if (!workflow) {
       throw new NotFoundError(`workflow ${request.workflowId} not found`)
     }
-    if (request.inspect !== undefined && request.replay !== undefined) {
-      throw new ValidationError("A run cannot both inspect its page and hand it over")
-    }
-    const stopBefore = request.inspect?.beforeNodeId ?? request.replay?.beforeNodeId
-    if (stopBefore !== undefined && !workflow.nodes.some((node) => node.nodeId === stopBefore)) {
-      throw new ValidationError(`node ${stopBefore} is not in workflow ${request.workflowId}`)
-    }
+    checkStopBefore(request, workflow.nodes)
     // Inherit the workflow's stored `selectedEnvironmentId` when the caller
     // omits it (an MCP agent running a workflow without a UI dropdown, or the
     // canvas's Run button before the environment picker has a value). Without
@@ -296,13 +290,36 @@ export class RunScheduler {
         ? { resumeFromRunId: resume.sourceRunId, resumeFromNodeIds: resume.entries, resumeMode: request.resume?.nodeId ? "single" : "all-failed" }
         : {}),
     })
-    if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
-    if (request.data !== undefined) this.runData.set(run.runId, request.data)
-    if (request.inspect !== undefined) this.runInspections.set(run.runId, request.inspect)
-    if (request.replay !== undefined) this.runReplays.set(run.runId, request.replay)
+    this.holdInMemory(run.runId, request)
     this.queue.push(run.runId)
     void this.drain()
     return run.runId
+  }
+
+  /** What a run needs that is never stored with it: who started it, its data row, and the page it hands back. */
+  private holdInMemory(runId: string, request: EnqueueRequest): void {
+    if (request.agent !== undefined) this.agentRuns.set(runId, request.agent)
+    if (request.data !== undefined) this.runData.set(runId, request.data)
+    if (request.inspect !== undefined) this.runInspections.set(runId, request.inspect)
+    if (request.replay !== undefined) this.runReplays.set(runId, request.replay)
+  }
+
+  /**
+   * The browser a run uses when its caller reads the page afterwards, and the
+   * node it stops before. An inspection gets a headless browser of its own,
+   * which the run closes once the page is read; a replay brings a browser the
+   * caller owns and closes. Undefined for an ordinary run: the executor
+   * launches and closes one itself.
+   */
+  private pageHandOff(runId: string): { readonly inspectSession?: BrowserSession; readonly session?: BrowserSession; readonly stopBeforeNodeId?: string } {
+    const inspection = this.runInspections.get(runId)
+    if (inspection !== undefined) {
+      // Headless whoever asked: nothing is shown to anyone.
+      const inspectSession = new BrowserSession({ ...(this.deps.browser?.() ?? {}), headless: true })
+      return { inspectSession, session: inspectSession, ...(inspection.beforeNodeId !== undefined ? { stopBeforeNodeId: inspection.beforeNodeId } : {}) }
+    }
+    const replay = this.runReplays.get(runId)
+    return replay === undefined ? {} : { session: replay.session, stopBeforeNodeId: replay.beforeNodeId }
   }
 
   /** A finished run's per-node results, for a load run to fold before clearing them. */
@@ -407,14 +424,8 @@ export class RunScheduler {
     this.deps.runs.updateStatus(runId, "running")
     this.deps.emitProgress?.(runId, { kind: "run.started", runId })
     const inspection = this.runInspections.get(runId)
-    // An inspection owns the run's browser, so the page outlives the executor
-    // long enough to be read. Headless whoever asked: nothing is shown to anyone.
-    const inspectSession = inspection !== undefined
-      ? new BrowserSession({ ...(this.deps.browser?.() ?? {}), headless: true })
-      : undefined
-    const replay = this.runReplays.get(runId)
-    const callerSession = inspectSession ?? replay?.session
-    const stopBeforeNodeId = inspection?.beforeNodeId ?? replay?.beforeNodeId
+    // The run's browser outlives the executor when someone reads its page afterwards.
+    const { inspectSession, session: callerSession, stopBeforeNodeId } = this.pageHandOff(runId)
 
     try {
       const run = this.deps.runs.getById(runId)
@@ -953,6 +964,17 @@ export function requestDestinations(
 }
 
 /** A node with a non-empty pre-request or post-response script. */
+/** An inspection or a replay stops before a node: it must be in the workflow, and a run does one or the other. */
+function checkStopBefore(request: EnqueueRequest, nodes: readonly { readonly nodeId: string }[]): void {
+  if (request.inspect !== undefined && request.replay !== undefined) {
+    throw new ValidationError("A run cannot both inspect its page and hand it over")
+  }
+  const stopBefore = request.inspect?.beforeNodeId ?? request.replay?.beforeNodeId
+  if (stopBefore !== undefined && !nodes.some((node) => node.nodeId === stopBefore)) {
+    throw new ValidationError(`node ${stopBefore} is not in workflow ${request.workflowId}`)
+  }
+}
+
 function hasScript(node: WorkflowGraph["nodes"][number]): boolean {
   const scripts = node.config?.["scripts"] as { readonly preRequest?: unknown; readonly postResponse?: unknown } | undefined
   return [scripts?.preRequest, scripts?.postResponse].some((source) => typeof source === "string" && source.trim() !== "")

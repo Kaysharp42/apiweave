@@ -51,9 +51,9 @@ import {
   NetworkSettingsService,
   BrowserSettingsService,
   BrowserRecordingService,
-  replayToNode,
   GrpcDiscoveryService,
 } from "../core/services"
+import { replayToNode } from "../core/services/browser_replay"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { detectInstalledBrowsers } from "../core/runner/browser/detect"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
