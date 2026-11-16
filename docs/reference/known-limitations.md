@@ -181,12 +181,13 @@ page or through the CLI flags.
   certificates of **Settings → Network** are used by HTTP nodes, not by browser
   steps, which use the machine's own network configuration.
 - **A screenshot covers only part of what the page displays.** Password fields
-  are painted over, and so is every field a secret was typed into and every
-  element whose text or field value contains a value the run masks — a secret, a
-  typed password, an OAuth token — because an image cannot be masked after it is
-  taken. Other sensitive text the page renders is still visible, and the
-  value-matching reaches the main frame only: an element inside an iframe that
-  shows a secret is not painted over unless a step typed the secret into it. A
+  are painted over, in every frame, and so is every field a secret was typed into
+  and every element whose text or field value contains a value the run masks — a
+  secret, a typed password, an OAuth token — because an image cannot be masked
+  after it is taken. The value-matching reads the page, its iframes and open
+  shadow roots; text inside a closed shadow root cannot be read from script, so
+  it is not painted over, and a frame that cannot be read at all means no
+  screenshot is taken. Other sensitive text the page renders is still visible. A
   failed step's screenshot is stored with the run and never exported;
   `browser_inspect` takes one only when asked, and hands it to the agent without
   storing it.

@@ -110,6 +110,16 @@ const nodeResultInput = z.object({
   }
 })
 
+/** Distinct node ids for one evidence read, in request order, held to the call's node cap. */
+function evidenceNodeIds(nodeId: string | undefined, nodeIds: readonly string[] | undefined): string[] {
+  const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
+  const ordered = [...new Set(merged)]
+  if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
+    throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
+  }
+  return ordered
+}
+
 export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { runs } = deps
 
@@ -219,13 +229,8 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     input: nodeResultInput,
     output: NodeEvidencePageSchema,
     handle: async ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end, screenshot }) => {
-      const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
-      const ordered = [...new Set(merged)]
-      if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
-        throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
-      }
       const page = await runs.getNodeEvidence(workspaceId, runId, {
-        nodeIds: ordered,
+        nodeIds: evidenceNodeIds(nodeId, nodeIds),
         ...(sections !== undefined ? { sections: sections as readonly EvidenceSection[] } : {}),
         ...(path !== undefined ? { path } : {}),
         ...(maxBytes !== undefined ? { maxBytes } : {}),

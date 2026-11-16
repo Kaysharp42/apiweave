@@ -4,12 +4,11 @@ import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
 import type { RunCreate, RunRepository, RunSummaryRow } from "../repositories"
 import { buildNodeEvidencePage, openHistoryCursor, sealHistoryCursor, type EvidenceSelection } from "./run_evidence"
-import { BROWSER_INSPECT_MAX_WAIT_MS, RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
+import { RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
 import type { BrowserInspection } from "@shared/types/BrowserInspection"
-import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { InspectedPage } from "../runner/browser/inspect"
 import { inspectionResult } from "./browser_inspection"
-import { ConflictError, NotFoundError } from "../ipc/errors"
+import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { abortError } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import { startIterations, type IterationScheduler } from "../runner/iterations"
@@ -57,6 +56,30 @@ export interface RunWaitOptions {
   readonly signal?: AbortSignal
 }
 
+/** One `browser.inspect` run's kept page, awaiting its single read (or expiry). */
+interface KeptInspection {
+  readonly workspaceId: string
+  readonly beforeNodeId?: string
+  /** Undefined until the run reads its page, and thereafter what it read: null when no browser step opened one. */
+  page: InspectedPage | null | undefined
+  /** When this entry last became useful: at enqueue, then when the page landed. Pruned after {@link BROWSER_INSPECTION_TTL_MS}. */
+  storedAt: number
+  /** True once a terminal result has been handed out, so two concurrent waits cannot both read it. */
+  consumed: boolean
+}
+
+/** What `browser.inspect` starts a run with; `runId` selects an earlier inspection instead. */
+interface BrowserInspectInput {
+  readonly workflowId?: string
+  readonly runId?: string
+  readonly beforeNodeId?: string
+  readonly selectedEnvironmentId?: string | null
+  readonly variables?: Readonly<Record<string, JsonValue>>
+  readonly screenshot: boolean
+  readonly maxBytes: number
+  readonly waitMs?: number
+}
+
 /**
  * Workspace-scoped run history + the field-level write surface the executor
  * drives.
@@ -75,6 +98,11 @@ export class RunService {
   private readonly createInflight = new Map<string, Promise<Run>>()
   /** Finished load runs by group id, newest last. In memory: the aggregates are the report, and a restart ends the session. */
   private readonly loadRuns = new Map<string, LoadRun>()
+  /**
+   * `browser.inspect` pages by run id, awaiting their one read. In memory: the
+   * page is a picture of a live browser, and a restart ends the session.
+   */
+  private readonly inspections = new Map<string, KeptInspection>()
 
   constructor(
     private readonly runs: RunRepository,
@@ -346,48 +374,119 @@ export class RunService {
 
   /**
    * `browser.inspect`: run the workflow headless up to `beforeNodeId` (all of
-   * it when absent) and return the page it left open. The run is an ordinary
-   * one — in history, and an agent's needs the user's approval to send
-   * secrets — so this waits for it to finish. A caller that goes away, or a run
-   * past {@link BROWSER_INSPECT_MAX_WAIT_MS}, cancels it: nobody would read the page.
+   * it when absent) and return the page it left open — or, with a `runId` from
+   * an earlier call, the page that inspection read. The run is an ordinary one
+   * — in history, and an agent's needs the user's approval to send secrets — so
+   * this waits for it, bounded by `waitMs`. A deadline or a caller that goes
+   * away never cancels it; the page stays keyed by its runId for a later read.
    */
   async inspectBrowser(
     workspaceId: string,
-    input: {
-      readonly workflowId: string
-      readonly beforeNodeId?: string
-      readonly selectedEnvironmentId?: string | null
-      readonly variables?: Readonly<Record<string, JsonValue>>
-      readonly screenshot: boolean
-      readonly maxBytes: number
-    },
+    input: BrowserInspectInput,
     options: { readonly agent?: string; readonly signal?: AbortSignal } = {},
   ): Promise<BrowserInspection> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    const waitMs = normalizeWaitMs(input.waitMs)
+    if (input.runId !== undefined) {
+      if (input.workflowId !== undefined) throw new ValidationError("Pass workflowId or runId, not both.")
+      return this.continueInspection(workspaceId, input.runId, input.maxBytes, waitMs, options)
+    }
+    if (options.signal?.aborted === true) throw abortError("inspect cancelled")
+    const { runId, kept } = this.startInspection(workspaceId, input, options)
+    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, input.maxBytes)
+  }
+
+  /** Validate a new inspection and enqueue its run, recording the entry its page lands in. */
+  private startInspection(
+    workspaceId: string,
+    input: BrowserInspectInput,
+    options: { readonly agent?: string; readonly signal?: AbortSignal },
+  ): { readonly runId: string; readonly kept: KeptInspection } {
+    if (input.workflowId === undefined) throw new ValidationError("Pass a workflowId to inspect, or a runId to keep waiting on an inspection.")
     const trigger = this.trigger
     if (trigger === undefined) throw new Error("No run scheduler is available")
-    if (options.signal?.aborted === true) throw abortError("inspect cancelled")
-    let page: InspectedPage | null | undefined
+    const kept: KeptInspection = {
+      workspaceId,
+      page: undefined,
+      storedAt: Date.now(),
+      consumed: false,
+      ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
+    }
     const runId = trigger.enqueue({
       workspaceId,
       workflowId: input.workflowId,
       ...(input.variables !== undefined ? { variables: input.variables } : {}),
-      ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
-      ...(options.agent !== undefined ? { agent: options.agent } : {}),
       inspect: {
         ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
         screenshot: input.screenshot,
-        done: (read) => {
-          page = read
+        done: (page) => {
+          kept.page = page
+          kept.storedAt = Date.now()
         },
       },
+      ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+      ...(options.agent !== undefined ? { agent: options.agent } : {}),
     })
-    const { status, timedOut } = await waitOrCancel(trigger, runId, options.signal)
-    return inspectionResult(await this.mustGet(workspaceId, runId), status, page, {
-      ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
-      maxBytes: input.maxBytes,
-      timedOut,
+    this.inspections.set(runId, kept)
+    this.pruneInspections()
+    return { runId, kept }
+  }
+
+  /** Wait on an earlier inspection by its run id; never enqueues anything. */
+  private async continueInspection(
+    workspaceId: string,
+    runId: string,
+    maxBytes: number,
+    waitMs: number,
+    options: RunWaitOptions,
+  ): Promise<BrowserInspection> {
+    this.pruneInspections()
+    const kept = this.inspections.get(runId)
+    if (kept === undefined || kept.workspaceId !== workspaceId || kept.consumed) {
+      throw this.inspectionGone(runId)
+    }
+    // The caller is using it: keep it alive for the next continuation.
+    kept.storedAt = Date.now()
+    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, maxBytes)
+  }
+
+  /**
+   * Shape one read of an inspection. A terminal run's page is consumed here —
+   * a screenshot is held once, never handed back twice — while a run still
+   * going keeps its entry for the next `runId` call.
+   */
+  private finishInspection(run: Run, kept: KeptInspection, maxBytes: number): BrowserInspection {
+    const result = inspectionResult(run, kept.page, {
+      ...(kept.beforeNodeId !== undefined ? { beforeNodeId: kept.beforeNodeId } : {}),
+      maxBytes,
     })
+    if (result.terminal) {
+      // Two waits on the same inspection share this entry: the first to see it
+      // finished reads the page, the second is told to inspect again.
+      if (kept.consumed) throw this.inspectionGone(run.runId)
+      kept.consumed = true
+      this.inspections.delete(run.runId)
+    }
+    return result
+  }
+
+  private inspectionGone(runId: string): NotFoundError {
+    return new NotFoundError(
+      `run ${runId} is not a browser inspection whose page is still kept: it was already read or has expired. Call browser_inspect with a workflowId to inspect again.`,
+    )
+  }
+
+  /** Drop expired inspections, then the oldest beyond the cap, so pages never accumulate. */
+  private pruneInspections(): void {
+    const now = Date.now()
+    for (const [runId, kept] of this.inspections) {
+      if (now - kept.storedAt > BROWSER_INSPECTION_TTL_MS) this.inspections.delete(runId)
+    }
+    while (this.inspections.size > MAX_BROWSER_INSPECTIONS) {
+      const oldest = this.inspections.keys().next().value
+      if (oldest === undefined) break
+      this.inspections.delete(oldest)
+    }
   }
 
   /** Active broker-wait subscriptions — exposed for tests to assert no leak. */
@@ -554,6 +653,9 @@ export class RunService {
 
 const MAX_DEDUP_ENTRIES = 500
 const MAX_LOAD_RUNS_KEPT = 20
+/** `browser.inspect` pages kept for a later `runId` read, and for how long. */
+const MAX_BROWSER_INSPECTIONS = 20
+const BROWSER_INSPECTION_TTL_MS = 10 * 60_000
 const POLL_INTERVAL_MS = 20
 
 const TERMINAL_RUN_STATUSES: ReadonlySet<Run["status"]> = new Set([
@@ -672,30 +774,3 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
-/**
- * Wait for a run to finish. A run past {@link BROWSER_INSPECT_MAX_WAIT_MS} is
- * cancelled and reported as timed out; an aborted `signal` cancels it and throws.
- */
-async function waitOrCancel(
-  trigger: RunTrigger,
-  runId: string,
-  signal: AbortSignal | undefined,
-): Promise<{ status: RunTerminalStatus; timedOut: boolean }> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let onAbort: (() => void) | undefined
-  const stopped = new Promise<"timeout" | "aborted">((resolve) => {
-    timer = setTimeout(() => resolve("timeout"), BROWSER_INSPECT_MAX_WAIT_MS)
-    onAbort = () => resolve("aborted")
-    signal?.addEventListener("abort", onAbort, { once: true })
-  })
-  try {
-    const first = await Promise.race([trigger.whenFinished(runId), stopped])
-    if (first !== "timeout" && first !== "aborted") return { status: first, timedOut: false }
-    trigger.cancel(runId)
-    if (first === "aborted") throw abortError("inspect cancelled")
-    return { status: await trigger.whenFinished(runId), timedOut: true }
-  } finally {
-    clearTimeout(timer)
-    if (onAbort !== undefined) signal?.removeEventListener("abort", onAbort)
-  }
-}

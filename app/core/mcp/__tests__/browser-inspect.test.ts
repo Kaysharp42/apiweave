@@ -1,3 +1,4 @@
+// fallow-ignore-file weakened-tests -- this suite drives a real browser and skips itself when none is installed, so a machine without one still passes.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -26,7 +27,7 @@ import { SecretService, type SecretWriteStore } from "../../services/secret_serv
 import { ProjectExportService } from "../../services/project_export_service"
 import { IpcRouter } from "../../ipc/router"
 import { registerAllHandlers } from "../../ipc/handlers"
-import { RunScheduler } from "../../runner/scheduler"
+import { RunScheduler, type AgentRunApprovalDecision } from "../../runner/scheduler"
 import { DynamicFunctions } from "../../runner/dynamic_functions"
 import { SafeHttp } from "../../runner/safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../../runner/harness/providers"
@@ -124,6 +125,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
   let workspaceId: string
   let client: Client
   let approvals: number
+  let approval: AgentRunApprovalDecision
 
   beforeEach(async (context) => {
     if (channel === undefined) context.skip()
@@ -138,6 +140,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
     const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
     const rng = new SeededRandomProvider("0xDEADBEEF")
     approvals = 0
+    approval = "once"
     scheduler = new RunScheduler({
       runs, workflows, environments, http: new SafeHttp(), functions: new DynamicFunctions(clock, rng), clock, rng,
       resolveSecret: async (name) => {
@@ -146,7 +149,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
       },
       approveAgentRun: async () => {
         approvals += 1
-        return "once"
+        return approval
       },
       browser: () => ({ channel: channel!, headless: false }),
       saveArtifact: (artifact) => artifacts.save(artifact),
@@ -198,7 +201,9 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
 
   it("returns the page as it was before a step, with what was typed masked, and records the run", async () => {
     const workflowId = create(loginFlow("Welcome"))
-    const { isError, content, result } = await call("browser_inspect", { workflowId, beforeNodeId: "submit" })
+    // A cold browser on a loaded CI runner can take longer than the tool's 10 s
+    // default to finish the run, so every terminal expectation waits the cap.
+    const { isError, content, result } = await call("browser_inspect", { workflowId, beforeNodeId: "submit", waitMs: 30_000 })
     expect(isError).toBe(false)
     const inspection = result as BrowserInspection
     expect(inspection.status).toBe("completed")
@@ -223,9 +228,21 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
     expect(run.results.some((stored) => stored.nodeId === "submit")).toBe(false)
   })
 
+  it("reports a refusal as deniedByUser, and tells the agent not to inspect again", async () => {
+    approval = "deny"
+    const workflowId = create(loginFlow("Welcome"))
+    const { isError, result } = await call("browser_inspect", { workflowId, waitMs: 30_000 })
+    expect(isError).toBe(false)
+    const inspection = result as BrowserInspection
+    expect(inspection).toMatchObject({ status: "failed", terminal: true, deniedByUser: true, page: null })
+    expect(inspection.error).toContain("not allowed to send secrets")
+    expect(inspection.note).toMatch(/do not call browser_inspect again/)
+    expect(approvals).toBe(1)
+  })
+
   it("runs the whole workflow, masks a secret the page shows, and sends the screenshot as image content", async () => {
     const workflowId = create(loginFlow("Welcome"))
-    const { content, result } = await call("browser_inspect", { workflowId, screenshot: true })
+    const { content, result } = await call("browser_inspect", { workflowId, screenshot: true, waitMs: 30_000 })
     const inspection = result as BrowserInspection
     expect(inspection.status).toBe("completed")
     expect(inspection.stoppedBeforeNodeId).toBeUndefined()
@@ -245,7 +262,7 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
       step("open", { action: "navigate", url: `${base}/slow` }),
       step("continue", { action: "click", locator: { kind: "role", role: "button", name: "Continue" } }),
     ])
-    const { result } = await call("browser_inspect", { workflowId })
+    const { result } = await call("browser_inspect", { workflowId, waitMs: 30_000 })
     const inspection = result as BrowserInspection
     expect(inspection.page?.url).toBe(`${base}/dashboard`)
     expect(inspection.page?.title).toBe("Dashboard")
@@ -253,10 +270,42 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
 
   it("says no page was open when no browser step ran before the node", async () => {
     const workflowId = create(loginFlow("Welcome"))
-    const { result } = await call("browser_inspect", { workflowId, beforeNodeId: "open" })
+    const { result } = await call("browser_inspect", { workflowId, beforeNodeId: "open", waitMs: 30_000 })
     const inspection = result as BrowserInspection
     expect(inspection.page).toBeNull()
     expect(inspection.note).toMatch(/no page was open/i)
+  })
+
+  it("returns a runId at the deadline, and resumes on it without a second approval or run", async () => {
+    const workflowId = create(loginFlow("Welcome"))
+    const first = await call("browser_inspect", { workflowId, waitMs: 0 })
+    expect(first.isError).toBe(false)
+    const pending = first.result as BrowserInspection
+    expect(pending.terminal).toBe(false)
+    expect(["pending", "running"]).toContain(pending.status)
+    expect(pending.page).toBeNull()
+    expect(pending.note).toMatch(/browser_inspect with this runId/)
+
+    const second = await call("browser_inspect", { runId: pending.runId, waitMs: 30_000 })
+    expect(second.isError).toBe(false)
+    const done = second.result as BrowserInspection
+    expect(done).toMatchObject({ runId: pending.runId, terminal: true, status: "completed" })
+    expect(done.page?.url).toBe(`${base}/dashboard?<REDACTED>`)
+    expect(done.page?.ariaSnapshot?.preview).toContain('heading "Welcome"')
+    // One run, one approval: the continuation only waits on the run it was given.
+    expect(approvals).toBe(1)
+    expect(runs.getById(pending.runId)?.status).toBe("completed")
+
+    const again = await call("browser_inspect", { runId: pending.runId })
+    expect(again.isError).toBe(true)
+    expect(JSON.stringify(again.content)).toMatch(/browser_inspect with a workflowId/)
+  })
+
+  it("refuses runId together with workflowId", async () => {
+    const workflowId = create(loginFlow("Welcome"))
+    const { isError, content } = await call("browser_inspect", { workflowId, runId: "run-1" })
+    expect(isError).toBe(true)
+    expect(JSON.stringify(content)).toMatch(/exactly one of workflowId/)
   })
 
   it("refuses a node that is not in the workflow", async () => {

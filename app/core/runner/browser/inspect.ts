@@ -5,6 +5,9 @@ import { withoutQuery } from "./step"
 /** How often, and for how long at most, inspect checks that the page has stopped changing. */
 const SETTLE_INTERVAL_MS = 500
 const SETTLE_MAX_MS = 3_000
+/** The most one ARIA snapshot read may spend: Playwright's own timeout, and the bound around it. */
+const READ_TIMEOUT_MS = 1_000
+const READ_MAX_MS = 1_500
 
 /** The page a run left open, as `browser_inspect` returns it: every string already through the run's masker. */
 export interface InspectedPage {
@@ -43,18 +46,28 @@ export async function inspectPage(
 }
 
 /**
- * Wait until the page stops changing, at most {@link SETTLE_MAX_MS}. A step
- * passes as soon as its own action is done, but a click that signs in
- * navigates a moment later, and a page fills in once its data arrives: read at
- * once, the inspection would show the page before either. Settled means two
- * ARIA snapshots {@link SETTLE_INTERVAL_MS} apart agree.
+ * Wait until the page stops changing, at most {@link SETTLE_MAX_MS} of wall
+ * clock. A step passes as soon as its own action is done, but a click that
+ * signs in navigates a moment later, and a page fills in once its data
+ * arrives: read at once, the inspection would show the page before either.
+ * Settled means two ARIA snapshots {@link SETTLE_INTERVAL_MS} apart agree.
+ * Every call is bounded by what is left of the deadline, so a slow load or a
+ * hanging read cannot stretch the wait past it.
  */
 async function settle(page: Page): Promise<void> {
-  const read = (): Promise<string> => within(page.locator("body").ariaSnapshot({ timeout: 1_000 }), 1_500, "")
+  const deadline = Date.now() + SETTLE_MAX_MS
+  /** Time left of the deadline, never below 1 ms: Playwright refuses a timeout of zero. */
+  const left = (): number => Math.max(1, deadline - Date.now())
+  const read = (): Promise<string> => {
+    const budget = left()
+    return within(page.locator("body").ariaSnapshot({ timeout: Math.min(READ_TIMEOUT_MS, budget) }), Math.min(READ_MAX_MS, budget), "")
+  }
   let previous = await read()
-  for (let waited = 0; waited < SETTLE_MAX_MS; waited += SETTLE_INTERVAL_MS) {
-    await page.waitForTimeout(SETTLE_INTERVAL_MS).catch(() => undefined)
-    await within(page.waitForLoadState("load", { timeout: SETTLE_MAX_MS }), SETTLE_MAX_MS, undefined)
+  while (deadline > Date.now()) {
+    await page.waitForTimeout(Math.min(SETTLE_INTERVAL_MS, left())).catch(() => undefined)
+    if (deadline <= Date.now()) return
+    const budget = left()
+    await within(page.waitForLoadState("load", { timeout: budget }), budget, undefined)
     const next = await read()
     if (next === previous) return
     previous = next

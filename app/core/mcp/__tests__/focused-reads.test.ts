@@ -1418,9 +1418,7 @@ describe("Phase 2 — browser step evidence", () => {
     const capped = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"], maxBytes: 100 })
     const preview = capped.items[0]?.browser?.ariaSnapshot
     expect(Buffer.byteLength(preview?.preview ?? "", "utf8")).toBeLessThanOrEqual(100)
-    expect(preview?.previewTruncated).toBe(true)
-    expect(preview?.totalBytes).toBe(4_000)
-    expect(capped.items[0]?.budgetOmitted).toBe(false)
+    expect(capped.items[0]).toMatchObject({ budgetOmitted: false, browser: { ariaSnapshot: { previewTruncated: true, totalBytes: 4_000 } } })
 
     const windowed = await evidence(workspaceId, run.runId, {
       nodeId: "signin",
@@ -1430,9 +1428,9 @@ describe("Phase 2 — browser step evidence", () => {
       maxBytes: 100,
     })
     // Byte offsets into the snapshot, exactly like `response.body` windows.
-    expect(windowed.items[0]?.browser?.ariaSnapshot?.preview).toBe(snapshot.slice(10, 25))
-    expect(windowed.items[0]?.browser?.ariaSnapshot?.previewTruncated).toBe(true)
-    expect(windowed.items[0]?.browser?.ariaSnapshot?.totalBytes).toBe(4_000)
+    expect(windowed.items[0]).toMatchObject({
+      browser: { ariaSnapshot: { preview: snapshot.slice(10, 25), previewTruncated: true, totalBytes: 4_000 } },
+    })
   })
 
   it("caps compared page text at the preview cap instead of echoing it whole", async () => {

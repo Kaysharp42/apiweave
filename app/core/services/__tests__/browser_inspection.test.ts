@@ -1,34 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
-import type { EnqueueRequest } from "../../runner/scheduler"
+import { AGENT_RUN_DENIED_ERROR, type EnqueueRequest } from "../../runner/scheduler"
 import type { InspectedPage } from "../../runner/browser/inspect"
 import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
+import { NotFoundError, ValidationError } from "../../ipc/errors"
 import { ScopeResolver } from "../scope_resolver"
 import { RunService, type RunTrigger } from "../run_service"
 
 /**
  * A scheduler that records the run and answers the inspection with `page`,
- * finishing as `status` — or, with `hold`, never finishing until cancelled.
+ * finishing as `status` — or, with `hold`, never finishing until `finish` is
+ * called by the test.
  */
 class FakeTrigger implements RunTrigger {
   public readonly cancelled: string[] = []
   public request: EnqueueRequest | undefined
+  public runId: string | undefined
+  private readonly requests = new Map<string, EnqueueRequest>()
   private readonly finished = new Map<string, (status: RunTerminalStatus) => void>()
 
   public constructor(
     private readonly runs: RunRepository,
-    private readonly outcome: { page?: InspectedPage | null; status?: RunTerminalStatus; hold?: boolean },
+    private readonly outcome: { page?: InspectedPage | null; status?: RunTerminalStatus; error?: string; hold?: boolean },
   ) {}
 
   public enqueue(request: EnqueueRequest): string {
     this.request = request
     const run = this.runs.create({ workspaceId: request.workspaceId, workflowId: request.workflowId, status: "running" })
-    if (!this.outcome.hold) {
-      if (this.outcome.page !== undefined) request.inspect?.done(this.outcome.page)
-      this.runs.updateStatus(run.runId, this.outcome.status ?? "completed")
-    }
+    this.runId = run.runId
+    this.requests.set(run.runId, request)
+    if (!this.outcome.hold) this.finish(run.runId, this.outcome.status ?? "completed", this.outcome.page, this.outcome.error)
     return run.runId
+  }
+
+  /** End a held run, handing back its page the way the scheduler does. */
+  public finish(runId: string, status: RunTerminalStatus = "completed", page?: InspectedPage | null, error?: string): void {
+    if (page !== undefined) this.requests.get(runId)?.inspect?.done(page)
+    this.runs.updateStatus(runId, status, error)
+    this.finished.get(runId)?.(status)
   }
 
   public whenFinished(runId: string): Promise<RunTerminalStatus> {
@@ -59,6 +69,13 @@ class FakeTrigger implements RunTrigger {
 
 const PAGE: InspectedPage = { url: "http://app.test/login", title: "Sign in", ariaSnapshot: '- heading "Sign in" [level=1]\n- button "Sign in"' }
 
+const request = (workflowId: string, waitMs?: number): { workflowId: string; screenshot: boolean; maxBytes: number; waitMs?: number } => ({
+  workflowId,
+  screenshot: false,
+  maxBytes: 16_384,
+  ...(waitMs !== undefined ? { waitMs } : {}),
+})
+
 describe("RunService.inspectBrowser", () => {
   let db: InitializedDatabase
   let runs: RunRepository
@@ -83,13 +100,15 @@ describe("RunService.inspectBrowser", () => {
     const trigger = new FakeTrigger(runs, { page: PAGE })
     const inspection = await service(trigger).inspectBrowser(
       workspaceId,
-      { workflowId, beforeNodeId: "submit", screenshot: false, maxBytes: 16_384 },
+      { ...request(workflowId), beforeNodeId: "submit" },
       { agent: "claude-code" },
     )
     expect(trigger.request?.agent).toBe("claude-code")
     expect(trigger.request?.inspect?.beforeNodeId).toBe("submit")
     expect(inspection).toMatchObject({
       status: "completed",
+      terminal: true,
+      deniedByUser: false,
       stoppedBeforeNodeId: "submit",
       failedNodeIds: [],
       page: { url: PAGE.url, title: "Sign in", ariaSnapshot: { preview: PAGE.ariaSnapshot, previewTruncated: false } },
@@ -124,30 +143,95 @@ describe("RunService.inspectBrowser", () => {
 
   it("says why there is no page", async () => {
     const none = await service(new FakeTrigger(runs, { page: null })).inspectBrowser(workspaceId, {
-      workflowId,
+      ...request(workflowId),
       beforeNodeId: "open",
-      screenshot: false,
-      maxBytes: 16_384,
     })
     expect(none.page).toBeNull()
+    expect(none.terminal).toBe(true)
     expect(none.note).toBe("No browser step ran before open, so no page was open. Add a navigate step first.")
 
-    const unread = await service(new FakeTrigger(runs, { status: "failed" })).inspectBrowser(workspaceId, {
-      workflowId,
-      screenshot: false,
-      maxBytes: 16_384,
-    })
+    const unread = await service(new FakeTrigger(runs, { status: "failed" })).inspectBrowser(workspaceId, request(workflowId))
     expect(unread.status).toBe("failed")
     expect(unread.note).toBe("The run stopped before the page could be read.")
   })
 
-  it("cancels the run when the caller goes away: nobody would read the page", async () => {
+  it("reports a refused run as deniedByUser, and says to tell the user instead of retrying", async () => {
+    const inspection = await service(
+      new FakeTrigger(runs, { status: "failed", error: AGENT_RUN_DENIED_ERROR }),
+    ).inspectBrowser(workspaceId, request(workflowId))
+    expect(inspection).toMatchObject({
+      status: "failed",
+      terminal: true,
+      deniedByUser: true,
+      page: null,
+      error: AGENT_RUN_DENIED_ERROR,
+    })
+    // The refusal's note outranks the generic "run stopped" one.
+    expect(inspection.note).toBe(
+      "The user did not allow this run to send secrets. Tell them, and do not call browser_inspect again for this workflow until they agree.",
+    )
+  })
+
+  it("returns a non-terminal result at the deadline and leaves the run alone", async () => {
+    const trigger = new FakeTrigger(runs, { hold: true })
+    const inspection = await service(trigger).inspectBrowser(workspaceId, request(workflowId, 10))
+    expect(inspection).toMatchObject({ terminal: false, status: "running", page: null })
+    expect(inspection.note).toMatch(/browser_inspect with this runId/)
+    // A deadline is not a cancel: the run keeps going, to be read later.
+    expect(trigger.cancelled).toEqual([])
+    expect(runs.getById(inspection.runId)?.status).toBe("running")
+  })
+
+  it("continues an inspection with its runId, and refuses the runId once read", async () => {
+    const trigger = new FakeTrigger(runs, { hold: true })
+    const runService = service(trigger)
+    const first = await runService.inspectBrowser(workspaceId, request(workflowId, 10))
+    expect(first.terminal).toBe(false)
+
+    trigger.finish(first.runId, "completed", PAGE)
+    const second = await runService.inspectBrowser(workspaceId, {
+      runId: first.runId,
+      screenshot: false,
+      maxBytes: 16_384,
+    })
+    expect(second).toMatchObject({
+      runId: first.runId,
+      terminal: true,
+      status: "completed",
+      page: { url: PAGE.url, title: "Sign in" },
+    })
+
+    // The page is held once: a screenshot must not be handed out twice.
+    await expect(
+      runService.inspectBrowser(workspaceId, { runId: first.runId, screenshot: false, maxBytes: 16_384 }),
+    ).rejects.toMatchObject({ name: "NotFoundError", message: expect.stringMatching(/browser_inspect with a workflowId/) })
+  })
+
+  it("refuses a run that was not an inspection", async () => {
+    const plain = runs.create({ workspaceId, workflowId, status: "completed" })
+    await expect(
+      service(new FakeTrigger(runs, {})).inspectBrowser(workspaceId, { runId: plain.runId, screenshot: false, maxBytes: 16_384 }),
+    ).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it("requires exactly one of workflowId and runId", async () => {
+    const serviceUnderTest = service(new FakeTrigger(runs, {}))
+    await expect(
+      serviceUnderTest.inspectBrowser(workspaceId, { workflowId, runId: "run-1", screenshot: false, maxBytes: 16_384 }),
+    ).rejects.toBeInstanceOf(ValidationError)
+    await expect(
+      serviceUnderTest.inspectBrowser(workspaceId, { screenshot: false, maxBytes: 16_384 }),
+    ).rejects.toBeInstanceOf(ValidationError)
+  })
+
+  it("leaves the run alone when the caller goes away", async () => {
     const trigger = new FakeTrigger(runs, { hold: true })
     const controller = new AbortController()
-    const pending = service(trigger).inspectBrowser(workspaceId, { workflowId, screenshot: false, maxBytes: 16_384 }, { signal: controller.signal })
-    while (trigger.request === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+    const pending = service(trigger).inspectBrowser(workspaceId, request(workflowId, 5_000), { signal: controller.signal })
+    while (trigger.runId === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
     controller.abort()
     await expect(pending).rejects.toMatchObject({ name: "AbortError" })
-    expect(trigger.cancelled).toHaveLength(1)
+    expect(trigger.cancelled).toEqual([])
+    expect(runs.getById(trigger.runId)?.status).toBe("running")
   })
 })
