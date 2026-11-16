@@ -157,6 +157,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   right-click menu offers **Turn into extract**, which turns it into a **Save a
   value** step read from the same element. See
   [Browser Steps](docs/features/browser-steps.md#recording-steps).
+- **Fixing one browser step.** A browser step's right-click menu now offers
+  **Re-pick element**, which replays the steps before it in a visible browser,
+  then replaces the step's element with the one you click — highlighted, not
+  clicked — and changes nothing else, and **Re-record from here**, which
+  replays those steps and then records from the page as the replay left it: the
+  new steps replace that step and the browser steps after it, and one undo
+  restores them. Both are desktop-app only. See
+  [Browser Steps](docs/features/browser-steps.md#fixing-one-step).
 
 ### Changed
 
@@ -176,6 +184,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   time: the declared id when no workflow holds it, otherwise an id derived from
   the workflow's name. A project bundle's workflows keep their declared ids the
   same way, and an id already held (in any workspace) still gets a fresh one.
+
+- **Recorded locators no longer keep the start of a secret.** Playwright
+  shortens an element's name to a unique prefix when it builds a locator, so a
+  locator could hold the first characters of a secret. A step whose locator
+  shows a secret, or ends in four or more characters of one, is now not
+  recorded, and neither is a picked element.
 
 ## [1.0.0] — 2026-11-10
 

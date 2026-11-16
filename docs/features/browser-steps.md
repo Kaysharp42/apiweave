@@ -13,6 +13,7 @@
 - [What Browser Steps Are](#what-browser-steps-are)
 - [A Worked Example](#a-worked-example)
 - [Recording Steps](#recording-steps)
+- [Fixing One Step](#fixing-one-step)
 - [Actions](#actions)
 - [Finding an Element](#finding-an-element)
 - [Placeholders and Secrets](#placeholders-and-secrets)
@@ -116,7 +117,7 @@ If a dialog follows a step that cannot answer one — a page load, typing, a che
 - **A typed value equal to a secret of the workspace or the selected environment becomes `{{secrets.NAME}}`**, and a secret inside longer text is replaced by its placeholder.
 - **Text typed into a password field (`<input type="password">`) that matches no secret becomes `{{secrets.UNSET_PASSWORD_1}}`**, numbered, never reusing a name already in scope or in the workflow. The typed value is discarded and is never sent to the canvas, not even partly typed. The node shows a **needs secret** badge, and its **Text to type** field says the secret is not set, with a **Save as secret** button that opens the workspace secret form with that name filled in; or type `{{` in the field to pick an existing secret. Until it is set, a run fails that step with `{{secrets.UNSET_PASSWORD_1}} is not set` rather than typing the placeholder.
 - **Text that ends in the beginning of a stored secret is held back** once it matches four characters or more, until it either completes the secret or stops matching. A recording that ends while text is still held back gives the step a placeholder secret, `{{secrets.UNSET_SECRET_n}}`.
-- **A page address that contains a secret is not recorded, and neither is a step whose element locator would show one.** A toast says so.
+- **A page address that contains a secret is not recorded, and neither is a step whose element locator would show one, or the start of one.** Playwright shortens an element's name to a unique prefix when it builds a locator, so a locator that shows a secret or ends in the first four or more characters of one is not recorded. A toast says so.
 
 The element the recorder picked becomes the same structured locator the node editor edits: role and name, label, placeholder, text, alt, title, test id, CSS, with **inside** parents, `nth` and iframe. When it has no structured equivalent it is kept as a raw `selector` locator (see [Finding an Element](#finding-an-element)).
 
@@ -129,6 +130,24 @@ The element the recorder picked becomes the same structured locator the node edi
 **Saving a value.** The recorder toolbar has no save-a-value mode. Right-click any browser step on the canvas that acts on an element — it has a locator, is not already an extract, and does not tick or untick a checkbox, whose element has no text and whose value is not its state — and its menu offers **Turn into extract**. It asks for a variable name, suggesting one made from the element's name: an element named "Order number" suggests `orderNumber`. The step keeps its element and becomes **Save a value** (`extract`): a form field — one a step typed into, chose an option in, or checked the value of — is read for its value, any other element for its text. The step's own fields are dropped — the typed text, the expected text, the click options, the dialog setting — while its `description`, `timeoutMs` and `continueOnFail` stay, and its title becomes **Save a value** unless it was renamed. Anything other than an unaccented letter A–Z, a digit or `_` is dropped from the name typed — accented letters included — and a name with no letter A–Z is refused. **Undo** takes the change back. Later steps read the value as `{{variables.NAME}}`. This works on a recorded step and on one added by hand.
 
 **Finishing.** Press **Stop**, or close the browser window. The frame stays on the canvas as ordinary steps: edit them, move them, run them, or undo the recording. Recording is a desktop-app feature only — an agent cannot record over MCP and the CLI cannot record — and it never writes a workflow itself: the canvas inserts the steps.
+
+## Fixing One Step
+
+A page changes: a button is renamed, a field moves. A single step can then be fixed without recording the whole flow again. The right-click menu of a browser step, the same one that holds **Run from here** and **Turn into extract**, offers **Re-pick element** and **Re-record from here**.
+
+**The replay.** Both save the canvas first, then replay the workflow up to the step, not including it, as an ordinary run: it appears in run history and on the canvas, uses the selected environment and its secrets, and opens a visible window in the browser chosen in [Settings > Browser](#settings--browser). The toolbar reads **Replaying the steps before…** with a **Cancel** button; **Cancel** stops the run and closes the window, and nothing changes. The steps before must pass. If one fails, a toast says "The steps before this one did not pass, so there is no page to continue from. The run is in the run history: fix the step that failed first." When no browser step before it opens a page, a toast says so and suggests **Record**. One of these runs at a time in the whole app, sharing the slot with **Record**, so neither action is offered while a recording, a re-pick or a re-record is in progress, while a run is in progress, or while the workflow is loading. A dialog answer set on the last replayed step (**If the page asks for confirmation**) that no dialog used is dropped before the page is handed over, so it cannot answer a dialog you open. Both are desktop-app features only: an agent cannot do either over MCP, and the CLI cannot.
+
+**Re-pick element.** Offered on a step that acts on an element, when a browser step before it opens a page. After the replay the toolbar reads **Click the element in the browser**, with **Cancel**. In the browser window, moving the pointer highlights elements and shows their locator; clicking picks an element **without clicking it**, so picking a Delete button deletes nothing. The step's element is replaced by the one picked. Its action, its value, its options, its description and its timeout stay, no other step changes, the window closes, and a toast says "The step now uses the element you picked". **Undo** takes it back, and **Cancel** or closing the window changes nothing. An element is not saved when its locator would show a secret or the start of one (toast: "The element you picked shows a secret value, so its locator was not saved. Pick an element near it instead."), or when Playwright cannot describe it as a locator (the toast says to pick another one or edit the step's element by hand). Re-pick changes only the element: to change what a step does, edit it, or use **Re-record from here**.
+
+**Re-record from here.** Offered on a step when a browser step before it opens a page, the step has exactly one incoming connection, that connection comes from a node that leads only to this step — not from one of a condition's branches — and the step has at most one outgoing connection. After the replay, recording starts on the page exactly as the replay left it, without reloading it, so the first step recorded is your first action. The toolbar reads **Recording — N steps** with **Stop**, and everything in [Recording Steps](#recording-steps) applies: checks, dialogs, typed values and secrets.
+
+**What is replaced.** When the first new step arrives, it takes the place of the step and every browser step after it in a straight line, in one edit, so **Undo** puts the old steps back. The line stops at:
+
+- a step of another kind, such as an HTTP request;
+- a step with more than one way out;
+- a step that two connections lead into.
+
+The new steps go into a new frame named `Re-recorded <date and time>`, connected between the step before and whatever followed the replaced steps, and a frame the replaced steps leave empty is removed. Stopping before anything is recorded leaves the steps as they were, and a toast says "Nothing was re-recorded, so the steps are unchanged". If the steps around it changed during the replay so that they can no longer be replaced cleanly, the new steps are added after the step instead, and a toast says so.
 
 ## Actions
 
@@ -331,6 +350,9 @@ The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chr
 - **Network settings do not apply.** `Settings > Network`'s proxy, CA certificates and client certificates are not used by browser steps; the browser uses the machine's own network configuration.
 - **Recording covers one page.** Actions in a popup or a new tab, the toolbar's checkbox-state and ARIA snapshot checks, and file uploads are not recorded yet; each shows a warning toast once per recording.
 - **A recording always clicks OK on a dialog.** Record the flow, then set the step that opened the dialog to **Click Cancel** and re-record or edit the steps after it.
+- **Re-record replaces a straight line of browser steps.** It stops at another kind of step, a branch or a merge; the steps after that are kept.
+- **A re-pick or re-record needs the steps before it to pass.** Fix or re-pick the failing step first, from the first failure.
+- **Re-pick changes only the element.** To change what the step does, edit it, or use **Re-record from here**.
 - **Only password fields are treated as passwords.** Text typed into a field that is not an `<input type="password">` is stored as typed, unless it matches an environment variable or a secret. Save a value as a secret before recording and it is recorded as `{{secrets.NAME}}`.
 - **Only `type="password"` fields are treated as passwords.** A secret typed into an ordinary text field is recorded as text, unless it is saved as a secret first, in which case it becomes `{{secrets.NAME}}`.
 
@@ -340,6 +362,8 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 
 - **If a step shows `needs secret`**, its typed password matched no secret. Set it with **Save as secret**, or type `{{` in **Text to type** to pick one; until then a run fails with `{{secrets.UNSET_PASSWORD_1}} is not set`.
 - **If Record is disabled**, another workflow is being recorded, a run is in progress, or the workflow is loading. Stop the other recording or wait for the run to finish.
+- **If Re-pick element or Re-record from here is missing from a step's menu**, no browser step before it opens a page; for **Re-pick element**, the step does not act on an element; for **Re-record from here**, the step is reached from a condition's branch or from a node that also leads elsewhere, two connections lead into it, or it has more than one way out; or a recording, a run or a re-pick is in progress.
+- **If the replay stops with "The steps before this one did not pass"**, open the run in history, fix the first failing step — a re-pick on it may be the fix — then try again.
 - **If a recorded check was not recorded**, its expected text would have held a secret or a password field's value, or it was a checkbox-state or ARIA snapshot check, which has no step. Add an expect step by hand, reading the value from `{{env.*}}` or `{{variables.*}}`.
 - **If Turn into extract is missing from a step's menu**, the step has no element — a page load, or a key press without one — or is already an extract, or ticks or unticks a checkbox (its element has no text, and its value is not its state), or its element is half-filled in.
 - **If the recording could not start**, the toast names the reason: the browser was not found, so choose another one in **Settings → Browser**, or the start page did not load.

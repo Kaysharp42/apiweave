@@ -9,7 +9,7 @@
 | 2: Agents author and repair browser steps over MCP | `Kaysharp42/browser-steps-phase-2` | **Done** (notes below) |
 | 3: Recorder — record steps into nodes | `Kaysharp42/browser-recorder` | **Done** (notes below) |
 | 4: Checks, extracts and dialogs while recording | `Kaysharp42/browser-recorder-checks` | **Done** (notes below) |
-| 5: Update one node — re-pick an element, re-record from a step | `feat/browser-node-repick` | Not started |
+| 5: Update one node — re-pick an element, re-record from a step | `Kaysharp42/browser-node-repick` | **Done** (notes below) |
 
 **Base.** `main` with PR #196 merged (`5670ac42`). The next migration number is `033`.
 
@@ -422,6 +422,16 @@ The user's "update a single node later" goal.
 - Both are privileged recorder operations (same preload world).
 
 **Done when:** after a button is renamed on the fixture page, the failing step is fixed with one re-pick, and no other node changes.
+
+**As built (differences from the text above):**
+- **The replay is an ordinary run.** `RunScheduler.enqueue` takes a `replay: { beforeNodeId, session }` beside `inspect`: the run stops before the node in a headed `BrowserSession` the caller owns, which the scheduler never closes. It is in run history and on the canvas, and it gets the environment's secrets like any run the user starts. `replayToNode` (`core/services/browser_replay.ts`) turns its end into `page`, `failed` (run did not pass, or cancelled) or `no-page`.
+- **Re-pick does not record.** Playwright 1.64.1 has a public `page.pickLocator()`: hovering highlights elements with their locator, and a click picks one *without clicking it*, so re-picking a Delete button deletes nothing. The plan's "first recorded action's locator" would have clicked it. The selector is read from the `Locator`'s private `_selector` (pinned version; `pick.test.ts` reads it from a real browser) and goes through the recorder's own parser and secret check (`locatorFromSelector`). The canvas puts the locator on the step; nothing else changes.
+- **Re-record replaces the step itself too**, not only the nodes after it: the replay stops *before* the step, so a step left in place would never have run in the recording. The replaced steps are the step and the browser steps after it in a straight line (one plain connection out, one way in), stopping at another kind of step, a branch or a merge (`utils/stepReplay.ts`). They are taken out in the same canvas edit as the first recorded step, so one undo restores them, and nothing changes if the user stops before recording anything. The menu offers it only where the new steps can take the step's place: one plain way in, from a node that leads only to it, and at most one way out.
+- **`BrowserRecording.attach(page)`** records on the replayed page without reloading it. Playwright sends no `openPage` for a page that is already open (spike: `docs/.scratch/browser-spike/phase5.cjs`), so the converter starts with the page counted (`pageAlreadyOpen`) and a later `openPage` is a popup. The last replayed step's unused dialog answer is disarmed first (`disarmDialog`), or it would answer the recording's first dialog.
+- **Both share the one recording slot** and the `__APIWEAVE_BROWSER__` world (`repickElement`, `rerecordFrom`); Stop cancels the replay, closes the picker, or ends the recording. A `replayed` event moves the toolbar from **Replaying the steps before…** to **Click the element in the browser** or **Recording — N steps**.
+- **Both are offered only after a browser step that opens a page**, found upstream on the canvas, since the replay of anything else leaves no page.
+- **Found on the way, and fixed for recording too:** Playwright shortens an element's name to a unique prefix (`Key tok-` for `Key tok-123456`), so a locator could hold the start of a secret. Locator texts, and each quoted name in a raw selector, now count as showing a secret when they contain one or end in its first four or more characters (`showsSecret`), the rule typed text already had.
+- **Checked:** the "done when" runs in `executor_browser.test.ts` with a real scheduler and a real browser — the renamed button fails the run, one replay and one pick give `Log in`, the run passes, every other node is unchanged. The canvas half (placement, undo as one edit, the menu rules, the store's phases) is unit-tested. Not checked by hand in the app.
 
 ---
 
