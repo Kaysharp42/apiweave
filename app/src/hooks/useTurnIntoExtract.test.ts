@@ -51,4 +51,15 @@ describe("useTurnIntoExtract", () => {
     expect(setNodes).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalled();
   });
+
+  it.each(["_", "_1", "12_3"])("refuses %s, which cleans to no letter at all", (typed) => {
+    const { nodesRef, setNodes, result } = setup();
+    act(() => result.current.start("b1"));
+    act(() => result.current.dialog.onSubmit(typed));
+    expect(nodesRef.current[0]).toBe(total);
+    expect(setNodes).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenLastCalledWith(
+      "A variable name needs at least one letter A–Z. Unaccented letters, digits and _ only.",
+    );
+  });
 });

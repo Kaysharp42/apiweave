@@ -7,14 +7,27 @@ import { recordedStepLabel } from "./recordedSteps";
 /** Steps on a form field read its value; any other element is read for its text. */
 const READS_VALUE: ReadonlySet<string> = new Set(["fill", "select", "expect-value"]);
 
+/** A checkbox has no text, and its value is not its state, so there is nothing to read into a variable. */
+const NOTHING_TO_READ: ReadonlySet<unknown> = new Set(["check", "uncheck"]);
+
 function configOf(node: CanvasNode): Readonly<Record<string, unknown>> {
   return node.data.config ?? {};
 }
 
-/** A browser step that acts on an element and is not already an extract. */
+/**
+ * A browser step that acts on an element with something to read into a
+ * variable, and is not already an extract. A checkbox is left out: its element
+ * is the `<input>`, whose text is empty and whose value is not its state.
+ */
 export function canTurnIntoExtract(node: CanvasNode): boolean {
   const config = configOf(node);
-  return node.type === "browser" && config["action"] !== "extract" && BrowserLocatorSchema.safeParse(config["locator"]).success;
+  const action = config["action"];
+  return (
+    node.type === "browser" &&
+    action !== "extract" &&
+    !NOTHING_TO_READ.has(action) &&
+    BrowserLocatorSchema.safeParse(config["locator"]).success
+  );
 }
 
 /** A variable name drawn from what the locator names: `Order number` → `orderNumber`, `#total` → `total`. */

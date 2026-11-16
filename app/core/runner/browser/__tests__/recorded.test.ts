@@ -277,34 +277,46 @@ describe("RecordingConverter dialogs", () => {
   it("sets the click that opened a dialog to click OK, and says so once", () => {
     const recording = converter()
     const [click] = recording.apply({ kind: "added", action: { name: "click", selector: button, button: "left", clickCount: 1 }, onMainPage: true }).steps
-    const first = recording.signal("dialog", true)
+    const first = recording.signal("dialog", true, true)
     expect(first.steps).toEqual([
       { stepId: click?.stepId, config: { action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept" } },
     ])
     expect(first.warnings).toHaveLength(1)
     // A second dialog after the same step changes nothing and says nothing new.
-    expect(recording.signal("dialog", true)).toEqual({ steps: [], warnings: [] })
+    expect(recording.signal("dialog", true, true)).toEqual({ steps: [], warnings: [] })
   })
 
   it("sets a key press that opened a dialog to click OK", () => {
     const recording = converter()
     recording.apply({ kind: "added", action: { name: "press", selector: button, key: "Enter", modifiers: 0 }, onMainPage: true })
-    expect(recording.signal("dialog", true).steps[0]?.config).toMatchObject({ action: "press", key: "Enter", dialog: "accept" })
+    expect(recording.signal("dialog", true, true).steps[0]?.config).toMatchObject({ action: "press", key: "Enter", dialog: "accept" })
+  })
+
+  it("leaves a step alone when the dialog arrived long after it", () => {
+    const recording = converter()
+    const [click] = recording.apply({ kind: "added", action: { name: "click", selector: button }, onMainPage: true }).steps
+    const late = recording.signal("dialog", true, false)
+    expect(late.steps).toEqual([])
+    expect(late.warnings).toEqual([
+      "The page showed a dialog a while after the last step, or after a step that cannot answer one. When the workflow runs, that dialog is cancelled.",
+    ])
+    // The step still has no dialog field, so a run cancels that dialog.
+    expect(click?.config).toEqual({ action: "click", locator: { kind: "role", role: "button", name: "Delete" } })
   })
 
   it("warns when a dialog follows a step that cannot answer one, or no step at all", () => {
     const recording = converter()
-    expect(recording.signal("dialog", true).warnings).toHaveLength(1)
+    expect(recording.signal("dialog", true, true).warnings).toHaveLength(1)
     recording.apply({ kind: "added", action: { name: "navigate", url: "https://app.test/" }, onMainPage: true })
     // Once per recording.
-    expect(recording.signal("dialog", true)).toEqual({ steps: [], warnings: [] })
+    expect(recording.signal("dialog", true, true)).toEqual({ steps: [], warnings: [] })
   })
 
   it("ignores other signals, and dialogs in a popup", () => {
     const recording = converter()
     recording.apply({ kind: "added", action: { name: "click", selector: button }, onMainPage: true })
-    expect(recording.signal("download", true)).toEqual({ steps: [], warnings: [] })
-    expect(recording.signal("dialog", false)).toEqual({ steps: [], warnings: [] })
+    expect(recording.signal("download", true, true)).toEqual({ steps: [], warnings: [] })
+    expect(recording.signal("dialog", false, true)).toEqual({ steps: [], warnings: [] })
   })
 
   it("reads only a signal's name", () => {

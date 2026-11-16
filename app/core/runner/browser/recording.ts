@@ -56,6 +56,16 @@ const START_TIMEOUT_MS = 30_000
 const DEFAULT_THROTTLE_MS = 150
 /** Just past Playwright's `kActionBufferTimeout` (500 ms in its `RecorderSignalProcessor`). */
 const RECORDER_BUFFER_MS = 600
+/**
+ * How long after a step its dialog may still count as that step's. Playwright
+ * holds a click for up to 500 ms and then emits the click and its signals back
+ * to back, so a dialog a click opens arrives well inside a second. A dialog
+ * that arrives seconds later was opened by a timer — a session expiry, say —
+ * and must not be pinned on whichever step happened to go last. Five seconds
+ * is the same threshold Playwright uses to decide a navigation belongs to the
+ * previous action, and leaves room for a slow page.
+ */
+const DIALOG_WINDOW_MS = 5_000
 /** What an abandoned recording tells its owner: nothing at all. */
 const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () => undefined, ended: () => undefined }
 
@@ -74,6 +84,8 @@ export class BrowserRecording {
   private mainPage: Page | null = null
   private accepting = true
   private stopping: Promise<void> | null = null
+  /** When the last recorder action arrived, to tell a dialog it opened from one the page raised later. */
+  private lastActionAt: number | null = null
   private readonly passwordFields = new Map<string, boolean>()
   private readonly sentStepIds = new Set<string>()
   private readonly pending = new Map<string, RecordedBrowserStep>()
@@ -181,6 +193,9 @@ export class BrowserRecording {
     this.mainPage ??= page
     const action = readRecorderAction(raw)
     if (action === null) return
+    // Read here, at receipt, not in the queue: a dialog is judged on how long
+    // after the action Playwright sent it, and the queue may lag behind that.
+    this.lastActionAt = Date.now()
     const onMainPage = page === this.mainPage
     this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage)).catch(() => undefined)
   }
@@ -191,7 +206,8 @@ export class BrowserRecording {
     const name = readRecorderSignal(raw)
     if (name === null) return
     const onMainPage = page === this.mainPage
-    this.queue = this.queue.then(() => this.report(this.converter.signal(name, onMainPage))).catch(() => undefined)
+    const isRecent = this.lastActionAt !== null && Date.now() - this.lastActionAt <= DIALOG_WINDOW_MS
+    this.queue = this.queue.then(() => this.report(this.converter.signal(name, onMainPage, isRecent))).catch(() => undefined)
   }
 
   private async handle(kind: "added" | "updated", page: Page, action: RecorderAction, onMainPage: boolean): Promise<void> {

@@ -4,7 +4,7 @@ import type { UseTurnIntoExtractParams } from "../types/UseTurnIntoExtractParams
 import type { UseTurnIntoExtractResult } from "../types/UseTurnIntoExtractResult";
 import { canTurnIntoExtract, suggestedVariableName, turnIntoExtract } from "../utils/turnIntoExtract";
 
-/** What a typed name becomes: only letters, digits and `_`, not starting with a digit. */
+/** What a typed name becomes: only letters A-Z, digits and `_`, not starting with a digit. */
 function variableNameFrom(typed: string): string {
   return typed.replace(/[^A-Za-z0-9_]/g, "").replace(/^[0-9]+/, "");
 }
@@ -33,8 +33,9 @@ export function useTurnIntoExtract({ nodesRef, setNodes }: UseTurnIntoExtractPar
       setNodeId(null);
       const variable = variableNameFrom(typed);
       if (id === null) return;
-      if (variable === "") {
-        toast.error("A variable name needs at least one letter. Letters, digits and _ only.");
+      // `_1` survives cleaning but is not a name: it needs a letter A-Z.
+      if (!/[A-Za-z]/.test(variable)) {
+        toast.error("A variable name needs at least one letter A–Z. Unaccented letters, digits and _ only.");
         return;
       }
       // A save reads the ref: set it first, so Ctrl+S right after keeps the change.

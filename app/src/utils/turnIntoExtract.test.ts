@@ -15,6 +15,8 @@ describe("canTurnIntoExtract", () => {
   it.each([
     ["a check on an element", node({ action: "expect-text", locator: heading, text: "x", match: "contains" }), true],
     ["a click", node({ action: "click", locator: { kind: "css", value: "#total" } }), true],
+    ["a tick on a checkbox", node({ action: "check", locator: { kind: "css", value: "#terms" } }), false],
+    ["an untick on a checkbox", node({ action: "uncheck", locator: { kind: "css", value: "#terms" } }), false],
     ["a navigate", node({ action: "navigate", url: "https://x.test/" }), false],
     ["a key press with no element", node({ action: "press", key: "Enter" }), false],
     ["an extract already", node({ action: "extract", locator: heading, from: "text", variable: "n" }), false],

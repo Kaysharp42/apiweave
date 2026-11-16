@@ -107,7 +107,7 @@ const WARNINGS = {
   dialog:
     "The page showed a dialog (alert, confirm or prompt). The recording clicked OK, and the step that opened it is set to do the same when it runs. To cancel instead, open that step and choose Click Cancel.",
   dialogElsewhere:
-    "The page showed a dialog after a step that cannot answer one. When the workflow runs, that dialog is cancelled.",
+    "The page showed a dialog a while after the last step, or after a step that cannot answer one. When the workflow runs, that dialog is cancelled.",
   upload: "File uploads are not supported by browser steps yet, so this one was not recorded.",
   element: "A step was not recorded: the element it used could not be described.",
   secretUrl: "A page address contained a secret value, so it was not recorded.",
@@ -175,7 +175,8 @@ interface StepState {
  * - `openPage` and `closePage` produce no step; a second page is a popup.
  * - The toolbar's checks arrive as `assertVisible`, `assertText` and
  *   `assertValue`, and become `expect-*` steps.
- * - A `dialog` signal follows the action that opened the dialog (see {@link signal}).
+ * - A `dialog` signal follows the action that opened the dialog, at once (see
+ *   {@link signal}).
  *
  * Every value goes through {@link templateFill} or {@link templateUrl} before
  * it is returned, and a step whose config — or the selector it came from —
@@ -216,13 +217,17 @@ export class RecordingConverter {
    * Apply one recorder signal. Only `dialog` changes a step: Playwright sends
    * it right after the action that opened the dialog, which the recording
    * answered with OK, so that click or key press is set to do the same.
+   *
+   * A dialog that arrives later than that (`isRecent` false) was opened by a
+   * timer or by the page itself, not by the step before it, so no step claims
+   * it and the warning says the run will cancel it.
    */
-  public signal(name: string, onMainPage: boolean): ConverterOutput {
+  public signal(name: string, onMainPage: boolean, isRecent: boolean): ConverterOutput {
     const warnings: string[] = []
     if (name !== "dialog" || !onMainPage) return { steps: [], warnings }
     const state = this.current
     const opener = state?.action.name
-    if (state === null || state.sent === undefined || (opener !== "click" && opener !== "press")) {
+    if (!isRecent || state === null || state.sent === undefined || (opener !== "click" && opener !== "press")) {
       this.warn("dialogElsewhere", warnings)
       return { steps: [], warnings }
     }
