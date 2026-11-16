@@ -10,6 +10,7 @@ import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 import { BrowserSession } from "../browser/session"
 import { replayToNode } from "../../services/browser_replay"
+import { pickElement, type PickOutcome } from "../browser/pick"
 import { BROWSER_SEARCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, findTestBrowser } from "./browser_test_channel"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 import type { Run } from "@shared/types/Run"
@@ -18,11 +19,14 @@ import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 const SECRET_PASSWORD = "s3cret-pass-987"
 
-const LOGIN_PAGE = `<!doctype html><title>Sign in</title><h1>Sign in</h1>
+/** The login form's button; a test renames it, as a frontend change would. */
+let loginLabel = "Sign in"
+
+const loginPage = (): string => `<!doctype html><title>Sign in</title><h1>Sign in</h1>
 <form id="f">
   <label for="email">Email</label><input id="email" type="email">
   <label for="pw">Password</label><input id="pw" type="password">
-  <button type="submit">Sign in</button>
+  <button type="submit">${loginLabel}</button>
 </form>
 <script>
 document.getElementById('f').addEventListener('submit', (event) => {
@@ -61,7 +65,7 @@ beforeAll(async () => {
     if (path === "/api/profile") {
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ name: "Ada" }))
     } else if (path === "/login") {
-      response.writeHead(200, { "content-type": "text/html" }).end(LOGIN_PAGE)
+      response.writeHead(200, { "content-type": "text/html" }).end(loginPage())
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
     } else if (path === "/outer") {
@@ -116,6 +120,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
   beforeEach((context) => {
     if (channel === undefined) context.skip()
     greeting = "Welcome"
+    loginLabel = "Sign in"
     frameSrc = ""
     db = initDatabase({ databasePath: ":memory:" })
     workflows = new WorkflowRepository(db.kvStore)
@@ -183,6 +188,45 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
     const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
     expect(outcome).toMatchObject({ kind: "failed", status: "failed" })
+  })
+
+  it("fixes a step broken by a renamed button with one re-pick, and changes no other step", async () => {
+    const workflowId = create([
+      ...loginSteps("{{secrets.TEST_PASSWORD}}"),
+      step("submit", { action: "click", locator: role("button", "Sign in"), timeoutMs: 1_000 }),
+      step("greets", { action: "expect-text", locator: role("heading"), text: "Welcome", match: "contains" }),
+    ])
+    loginLabel = "Log in"
+    const broken = await run(workflowId)
+    expect(broken.failedNodes).toEqual(["submit"])
+
+    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
+    const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
+    if (outcome.kind !== "page") throw new Error(`replay: ${JSON.stringify(outcome)}`)
+    let picked: PickOutcome
+    try {
+      const picking = pickElement(outcome.page, { env: {}, secrets: { TEST_PASSWORD: SECRET_PASSWORD } })
+      await outcome.page.waitForTimeout(300)
+      const box = await outcome.page.getByRole("button", { name: "Log in" }).boundingBox()
+      if (box === null) throw new Error("no Log in button")
+      await outcome.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+      picked = await picking
+    } finally {
+      await outcome.close()
+    }
+    expect(picked).toEqual({ kind: "locator", locator: { kind: "role", role: "button", name: "Log in" } })
+    if (picked.kind !== "locator") return
+
+    // What the canvas does with it: the new locator on that step, nothing else.
+    const before = workflows.getById(workflowId)!.nodes
+    const nodes = before.map((candidate) =>
+      candidate.nodeId === "submit" ? { ...candidate, config: { ...candidate.config, locator: picked.locator } } : candidate,
+    ) as WorkflowNode[]
+    workflows.update(workflowId, { nodes })
+    const fixed = await run(workflowId)
+    expect(fixed.status, JSON.stringify(fixed.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
+    const after = workflows.getById(workflowId)!.nodes
+    expect(after.filter((candidate) => candidate.nodeId !== "submit")).toEqual(before.filter((candidate) => candidate.nodeId !== "submit"))
   })
 
   it("reports no page when no browser step runs before the node", async () => {
