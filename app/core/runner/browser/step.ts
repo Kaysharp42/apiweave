@@ -125,7 +125,8 @@ function armDialog(page: Page, answer: "accept" | "dismiss" | undefined): void {
   page.once("dialog", handler)
 }
 
-function disarmDialog(page: Page): void {
+/** Drop a dialog answer an earlier step armed and no dialog used: the next step starts, or someone else takes the page. */
+export function disarmDialog(page: Page): void {
   const handler = pendingDialogs.get(page)
   if (handler === undefined) return
   pendingDialogs.delete(page)

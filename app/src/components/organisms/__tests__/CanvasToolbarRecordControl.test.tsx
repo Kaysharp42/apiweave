@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CanvasToolbarRecordControl } from "../CanvasToolbarRecordControl";
 
-const base = { stepCount: 0, disabled: false, onRecord: vi.fn(), onStop: vi.fn() };
+const base = { stepCount: 0, stopping: false, disabled: false, onRecord: vi.fn(), onStop: vi.fn() };
 
 describe("CanvasToolbarRecordControl", () => {
   it("opens the start dialog from Record", async () => {
@@ -30,9 +30,49 @@ describe("CanvasToolbarRecordControl", () => {
     expect(onStop).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ["replaying", "Replaying the steps before…"],
+    ["picking", "Click the element in the browser"],
+  ] as const)("says what a re-pick or re-record is %s, and cancels it", async (state, text) => {
+    const onStop = vi.fn();
+    render(<CanvasToolbarRecordControl {...base} state={state} onStop={onStop} />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it.each(["replaying", "picking"] as const)("says it is cancelling a %s, not recording nothing", (state) => {
+    render(<CanvasToolbarRecordControl {...base} state={state} stopping stepCount={0} />);
+    expect(screen.getAllByText("Cancelling…")).toHaveLength(2);
+    expect(screen.queryByText("Recording — 0 steps")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("keeps the count while a recording stops, and disables Stop", () => {
+    render(<CanvasToolbarRecordControl {...base} state="recording" stopping stepCount={1} />);
+    expect(screen.getByText("Recording — 1 step")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop recording" })).toBeDisabled();
+  });
+
   it("keeps the count, without the label, when the toolbar is narrow", () => {
-    render(<CanvasToolbarRecordControl {...base} state="stopping" stepCount={1} showLabel={false} />);
+    render(<CanvasToolbarRecordControl {...base} state="recording" stopping stepCount={1} showLabel={false} />);
     expect(screen.getByText("1 step")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop recording" })).toBeDisabled();
+  });
+
+  it.each([
+    ["replaying", "Replaying…"],
+    ["picking", "Picking…"],
+  ] as const)("shortens what it says about a %s when the toolbar is narrow", (state, text) => {
+    render(<CanvasToolbarRecordControl {...base} state={state} showLabel={false} />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("says the browser is opening while it starts", () => {
+    render(<CanvasToolbarRecordControl {...base} state="starting" />);
+    expect(screen.getByText("Opening browser…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record browser steps" })).toBeDisabled();
   });
 });

@@ -254,6 +254,8 @@ const browserBridge: BrowserBridge = {
   startRecording: invokeBridge(BROWSER_CHANNELS.startRecording),
   stopRecording: invokeBridge(BROWSER_CHANNELS.stopRecording),
   recordingStatus: invokeBridge(BROWSER_CHANNELS.recordingStatus),
+  repickElement: invokeBridge(BROWSER_CHANNELS.repickElement),
+  rerecordFrom: invokeBridge(BROWSER_CHANNELS.rerecordFrom),
   onRecording: (callback) => subscribe<BrowserRecordingEvent>(BROWSER_RECORDING_CHANNEL, callback),
 }
 

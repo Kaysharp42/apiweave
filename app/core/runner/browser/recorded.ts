@@ -3,7 +3,7 @@ import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
 import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
 import { parseRecordedSelector } from "./selector_parse"
-import { containsSecret, templateCheck, templateFill, templateUrl, type RecordingValues } from "./recording_values"
+import { containsSecret, showsSecret, templateCheck, templateFill, templateUrl, type RecordingValues } from "./recording_values"
 
 /**
  * The fields of a Playwright recorder action this converter reads. Playwright
@@ -137,9 +137,71 @@ function configStrings(value: unknown, into: string[] = []): string[] {
   return into
 }
 
-/** A selector with the backslash escapes it writes undone: `pa\"ss\\word1` becomes `pa"ss\word1`. */
-function unescapeSelector(selector: string): string {
-  return selector.replace(/\\(.)/gs, "$1")
+/**
+ * Whether a selector Playwright wrote shows a secret or the start of one: the
+ * whole selector as written and with its backslash escapes undone
+ * (`pa\"ss\\word1` is `pa"ss\word1`) since a `{ kind: "selector" }` locator
+ * keeps them, and each quoted name in it on its own. Only a quoted name is
+ * shortened by Playwright to a unique prefix — which is why a shortened name
+ * ends at its closing quote rather than at the end of the selector — so the
+ * prefix rule applies to quoted names alone. Judging the whole selector by it
+ * refused nameless ones such as `internal:role=link` whenever a secret begins
+ * `link`; a whole secret in the selector is still caught.
+ */
+export function selectorShowsSecret(selector: string, values: RecordingValues): boolean {
+  const unescape = (text: string): string => text.replace(/\\(.)/gs, "$1")
+  const quoted = [...selector.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => unescape(match[1] ?? ""))
+  return containsSecret(selector, values) || containsSecret(unescape(selector), values) || quoted.some((name) => showsSecret(name, values))
+}
+
+/**
+ * The locator keys that hold no page text: the `kind` discriminator, an ARIA
+ * `role` name, the `exact` match switch and the `nth` index. The prefix rule
+ * must not judge them: a secret that begins `role`, `text` or `link` is a
+ * secret that begins most of a page, and refusing every locator of that kind
+ * or role would make the page unpickable. A whole secret in them is still
+ * caught, because {@link checked} walks the whole config with
+ * {@link containsSecret}.
+ */
+const STRUCTURAL_LOCATOR_KEYS: ReadonlySet<string> = new Set(["kind", "role", "exact", "nth"])
+
+/**
+ * Every string a locator takes from the page — a name, a label, a placeholder,
+ * a test id, a `hasText`, a CSS or raw selector value — and the same fields of
+ * a nested `within` locator, which is the only object one holds. Only this text
+ * can end in the start of a secret, since Playwright shortens an element's name
+ * to a unique prefix.
+ */
+function locatorPageText(value: unknown, into: string[] = []): string[] {
+  if (typeof value === "string") {
+    into.push(value)
+  } else if (typeof value === "object" && value !== null) {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (!STRUCTURAL_LOCATOR_KEYS.has(key)) locatorPageText(child, into)
+    }
+  }
+  return into
+}
+
+/** Whether a locator's page text shows a secret or the start of one. */
+function locatorShowsSecret(locator: BrowserLocator, values: RecordingValues): boolean {
+  return locatorPageText(locator).some((text) => showsSecret(text, values))
+}
+
+/** What an element the user picked becomes: its locator, or why it cannot have one. */
+export type PickedLocator =
+  | { readonly kind: "locator"; readonly locator: BrowserLocator }
+  /** The element's text or attributes show a secret, or its start: storing the locator would store it. */
+  | { readonly kind: "secret" }
+  /** Playwright described the element in a way no locator can hold. */
+  | { readonly kind: "undescribable" }
+
+/** The locator for a selector from `page.pickLocator()`, checked like a recorded step's. */
+export function locatorFromSelector(selector: string, values: RecordingValues): PickedLocator {
+  const locator = parseRecordedSelector(selector)
+  if (locator === null) return { kind: "undescribable" }
+  if (selectorShowsSecret(selector, values) || locatorShowsSecret(locator, values)) return { kind: "secret" }
+  return { kind: "locator", locator }
 }
 
 /** `dialog: "accept"` for a click or key press after which the recording answered a dialog with OK. */
@@ -187,7 +249,7 @@ export class RecordingConverter {
   private readonly steps: StepState[] = []
   /** The step the last recorder action became, which an `updated` event replaces. Null when it became none. */
   private current: StepState | null = null
-  private sawFirstPage = false
+  private sawFirstPage: boolean
   private readonly warned = new Set<keyof typeof WARNINGS>()
   private unsetCount = 0
 
@@ -196,7 +258,15 @@ export class RecordingConverter {
     private readonly newStepId: () => string,
     /** Secret names the workflow already uses: a placeholder never takes one, set or not. */
     private readonly takenSecretNames: ReadonlySet<string> = new Set(),
-  ) {}
+    /**
+     * The recording joins a page that is already open (re-recording after a
+     * replay), so Playwright sends no `openPage` for it and the first one it
+     * does send is a popup.
+     */
+    pageAlreadyOpen = false,
+  ) {
+    this.sawFirstPage = pageAlreadyOpen
+  }
 
   /** Apply one recorder event. */
   public apply(event: RecorderEvent): ConverterOutput {
@@ -393,16 +463,18 @@ export class RecordingConverter {
   }
 
   /**
-   * The config, if it is valid and carries no secret anywhere: a locator shows
-   * page text, and the selector it came from is checked both as written and
-   * with its escapes undone, since a `{ kind: "selector" }` locator keeps them.
+   * The config, if it is valid and carries no secret anywhere: a whole secret
+   * anywhere in it refuses the step, a locator's page text also refuses it when
+   * it ends in the start of one, and the selector it came from is checked both
+   * as written and with its escapes undone, since a `{ kind: "selector" }`
+   * locator keeps them.
    */
   private checked(config: BrowserNodeData, action: RecorderAction): CheckedResult {
-    const texts =
-      action.selector === undefined
-        ? configStrings(config)
-        : [...configStrings(config), action.selector, unescapeSelector(action.selector)]
-    if (texts.some((text) => containsSecret(text, this.values))) return { kind: "skip", warning: "secretStep" }
+    const showsSecret =
+      configStrings(config).some((text) => containsSecret(text, this.values)) ||
+      ("locator" in config && config.locator !== undefined && locatorShowsSecret(config.locator, this.values)) ||
+      (action.selector !== undefined && selectorShowsSecret(action.selector, this.values))
+    if (showsSecret) return { kind: "skip", warning: "secretStep" }
     return BrowserNodeDataSchema.safeParse(config).success ? { kind: "config", config } : { kind: "skip", warning: "element" }
   }
 

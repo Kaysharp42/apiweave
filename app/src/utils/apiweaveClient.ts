@@ -50,6 +50,7 @@ import type { BrowserSettings } from "@shared/types/BrowserSettings";
 import type { BrowserRecordingEvent } from "@shared/types/BrowserRecordingEvent";
 import type { BrowserRecordingRequest } from "@shared/types/BrowserRecordingRequest";
 import type { BrowserRecordingStatus } from "@shared/types/BrowserRecordingStatus";
+import type { BrowserReplayRequest } from "@shared/types/BrowserReplayRequest";
 import type { GitAccountList } from "@shared/types/GitAccountList";
 import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
@@ -1352,6 +1353,12 @@ export const browser = {
   recordingStatus: (): Promise<BrowserRecordingStatus | null> =>
     getBrowserBridge()?.recordingStatus().catch(unwrapRemoteError) ??
     Promise.resolve(null),
+  repickElement: (request: BrowserReplayRequest): Promise<void> =>
+    getBrowserBridge()?.repickElement(request).catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
+  rerecordFrom: (request: BrowserReplayRequest): Promise<BrowserRecordingStatus | null> =>
+    getBrowserBridge()?.rerecordFrom(request).catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
   /** Recording events; a no-op outside the desktop app, where nothing can record. */
   onRecording: (callback: (event: BrowserRecordingEvent) => void): (() => void) =>
     getBrowserBridge()?.onRecording(callback) ?? (() => undefined),

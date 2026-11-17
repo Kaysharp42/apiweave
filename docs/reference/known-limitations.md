@@ -208,8 +208,14 @@ page or through the CLI flags.
 - **`playwright-core` stays pinned to an exact version.** Recording uses
   Playwright's own recorder through an internal API, so the dependency is not
   moved by a range bump.
+- **Re-record replaces a straight line of browser steps only.** It replaces
+  the step and the browser steps after it until another kind of step, a branch
+  or a merge; the steps after that are kept.
+- **Re-pick and re-record need the steps before them to pass.** Both replay the
+  workflow up to the step first, so a failing earlier step has to be fixed, or
+  re-picked, before either can continue.
 - **Recording is a desktop-app feature.** It is not available over MCP and not in
-  the CLI.
+  the CLI, and neither are **Re-pick element** and **Re-record from here**.
 - **`browser_inspect` has no `url` mode.** It reads the page a workflow run left
   open, so inspecting an address means adding an `Open a page` step and
   inspecting after it. The run it makes is an ordinary run: it sends real

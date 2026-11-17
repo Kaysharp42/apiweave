@@ -41,6 +41,16 @@ export function containsSecret(text: string, values: RecordingValues): boolean {
 }
 
 /**
+ * True when `text` contains a secret or ends in the start of one. For the
+ * page text a locator is built from: Playwright shortens an element's name to
+ * a unique prefix, so a button labelled `Key tok-123456` can be located by
+ * `Key tok-`, which is part of the secret.
+ */
+export function showsSecret(text: string, values: RecordingValues): boolean {
+  return containsSecret(text, values) || endsInSecretPrefix(text, values)
+}
+
+/**
  * True when `text` ends in the beginning of a secret: the user may be typing
  * it right now, one key per update. Shorter tails than a run masks never count.
  */

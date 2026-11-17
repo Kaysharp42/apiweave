@@ -11,6 +11,7 @@ import {
 } from "./recorded"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, launchBrowser, PAGE_VIEWPORT, type BrowserLaunchSettings } from "./session"
+import { disarmDialog } from "./step"
 
 /**
  * Playwright's recording API on a browser context. It is private (Playwright's
@@ -39,9 +40,6 @@ export interface RecordingListener {
 }
 
 export interface RecordingOptions {
-  /** Which browser, and whether it shows: a recording is headed except in tests. */
-  readonly launch: BrowserLaunchSettings
-  readonly startUrl: string
   readonly values: RecordingValues
   /** Secret names the workflow already uses, which a placeholder secret never takes. */
   readonly takenSecretNames: ReadonlySet<string>
@@ -49,6 +47,13 @@ export interface RecordingOptions {
   readonly listener: RecordingListener
   /** The fewest milliseconds between two sends of the same step while the user types. */
   readonly throttleMs?: number
+}
+
+/** A recording in a browser of its own, from a start page. */
+export interface NewRecordingOptions extends RecordingOptions {
+  /** Which browser, and whether it shows: a recording is headed except in tests. */
+  readonly launch: BrowserLaunchSettings
+  readonly startUrl: string
 }
 
 /** How long opening the start page may take. */
@@ -97,43 +102,29 @@ export class BrowserRecording {
     private readonly browser: Browser,
     private readonly context: BrowserContext,
     private readonly options: RecordingOptions,
+    pageAlreadyOpen: boolean,
   ) {
-    this.converter = new RecordingConverter(options.values, options.newStepId, options.takenSecretNames)
+    this.converter = new RecordingConverter(options.values, options.newStepId, options.takenSecretNames, pageAlreadyOpen)
     this.listener = options.listener
   }
 
   /** Launch the browser, start recording and open the start page. Throws, with nothing left open, when any of it fails. */
-  public static async start(options: RecordingOptions): Promise<BrowserRecording> {
+  public static async start(options: NewRecordingOptions): Promise<BrowserRecording> {
     const browser = await launchBrowser(options.launch)
     let recording: BrowserRecording | null = null
     try {
       const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
-      recording = new BrowserRecording(browser, context, options)
-      const started = recording
-      // With nobody listening, Playwright cancels every dialog, and a confirm()
-      // flow would be recorded on a page where the user's confirmation never
-      // happened. OK is what a test of that flow usually means; the step
-      // records it (`dialog: "accept"`), and the panel can switch it to Cancel.
-      context.on("dialog", (dialog) => void dialog.accept().catch(() => undefined))
-      await (context as unknown as RecordingContext)._startRecording(
-        { language: "javascript" },
-        {
-          actionAdded: (page, action) => started.receive("added", page, action),
-          actionUpdated: (page, action) => started.receive("updated", page, action),
-          signalAdded: (page, signal) => started.receiveSignal(page, signal),
-        },
-      )
+      recording = new BrowserRecording(browser, context, options, false)
+      await recording.listen()
       const page = await context.newPage()
-      started.mainPage ??= page
-      page.on("close", () => void started.stop())
-      browser.on("disconnected", () => void started.stop())
+      recording.watch(page)
       try {
         await page.goto(options.startUrl, { waitUntil: "load", timeout: START_TIMEOUT_MS })
       } catch (error) {
         const reason = error instanceof Error ? (error.message.split("\n")[0] ?? "") : String(error)
         throw new BrowserSessionError(`the start page could not be opened: ${reason.slice(0, 200)}`)
       }
-      return started
+      return recording
     } catch (error) {
       // The recorder may already have sent a step, and closing the browser fires
       // `disconnected`, which would end the recording: silence it first, or a
@@ -142,6 +133,56 @@ export class BrowserRecording {
       await browser.close().catch(() => undefined)
       throw error
     }
+  }
+
+  /**
+   * Record on a page a run left open (re-recording from a step), and own its
+   * browser from now on: stopping closes it. The page is not reloaded, so the
+   * first step recorded is the user's first action. Throws, with the browser
+   * closed, when recording cannot start.
+   */
+  public static async attach(page: Page, options: RecordingOptions): Promise<BrowserRecording> {
+    const context = page.context()
+    const browser = context.browser()
+    if (browser === null) throw new BrowserSessionError("the replayed page has no browser to record in")
+    // The last replayed step may have armed an answer for a dialog it never
+    // opened; left armed, it would answer the first dialog of the recording.
+    disarmDialog(page)
+    const recording = new BrowserRecording(browser, context, options, true)
+    try {
+      recording.watch(page)
+      await recording.listen()
+      await page.bringToFront()
+      return recording
+    } catch (error) {
+      recording.abandon()
+      await browser.close().catch(() => undefined)
+      throw error
+    }
+  }
+
+  /** Answer dialogs, and turn what Playwright's recorder reports into steps. */
+  private async listen(): Promise<void> {
+    // With nobody listening, Playwright cancels every dialog, and a confirm()
+    // flow would be recorded on a page where the user's confirmation never
+    // happened. OK is what a test of that flow usually means; the step
+    // records it (`dialog: "accept"`), and the panel can switch it to Cancel.
+    this.context.on("dialog", (dialog) => void dialog.accept().catch(() => undefined))
+    await (this.context as unknown as RecordingContext)._startRecording(
+      { language: "javascript" },
+      {
+        actionAdded: (page, action) => this.receive("added", page, action),
+        actionUpdated: (page, action) => this.receive("updated", page, action),
+        signalAdded: (page, signal) => this.receiveSignal(page, signal),
+      },
+    )
+  }
+
+  /** The page the run will drive: closing it, or the browser, ends the recording. */
+  private watch(page: Page): void {
+    this.mainPage ??= page
+    page.on("close", () => void this.stop())
+    this.browser.on("disconnected", () => void this.stop())
   }
 
   /** The page being recorded. */

@@ -53,6 +53,7 @@ import {
   BrowserRecordingService,
   GrpcDiscoveryService,
 } from "../core/services"
+import { replayToNode } from "../core/services/browser_replay"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { detectInstalledBrowsers } from "../core/runner/browser/detect"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
@@ -1044,11 +1045,21 @@ if (!hasSingleInstanceLock) {
         if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.webContents.send(BROWSER_RECORDING_CHANNEL, event)
       },
       now: () => Date.now(),
+      // Re-pick and re-record replay the workflow as an ordinary run, in a
+      // browser on the user's screen that the run leaves open.
+      replay: (request, signal) => {
+        const runs = scheduler
+        if (runs === null) return Promise.reject(new Error("the run scheduler is not ready"))
+        const { channel } = browserSettings.get()
+        return replayToNode(runs, { ...(channel === undefined ? {} : { channel }), headless: false }, request, signal)
+      },
     })
     browserRecording = recordingService
     ipcMain.handle(BROWSER_CHANNELS.startRecording, requireTrustedSender((request: unknown) => recordingService.start(request)))
     ipcMain.handle(BROWSER_CHANNELS.stopRecording, requireTrustedSender(() => recordingService.stop()))
     ipcMain.handle(BROWSER_CHANNELS.recordingStatus, requireTrustedSender(() => recordingService.status()))
+    ipcMain.handle(BROWSER_CHANNELS.repickElement, requireTrustedSender((request: unknown) => recordingService.repick(request)))
+    ipcMain.handle(BROWSER_CHANNELS.rerecordFrom, requireTrustedSender((request: unknown) => recordingService.rerecord(request)))
 
     // Version history. Off the router like network:* — see registerGitHandlers.
     const hostCli = new HostCliService()

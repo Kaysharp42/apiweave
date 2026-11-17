@@ -35,7 +35,7 @@ function renderToolbar(props: Partial<CanvasToolbarProps> = {}) {
       onRun={vi.fn()}
       environments={[]}
       onEnvironmentChange={vi.fn()}
-      recording={{ state: "idle", stepCount: 0, disabled: false, onRecord: vi.fn(), onStop: vi.fn() }}
+      recording={{ state: "idle", stopping: false, stepCount: 0, disabled: false, onRecord: vi.fn(), onStop: vi.fn() }}
       {...props}
     />,
   );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
-import { RecordingConverter, readRecorderAction, readRecorderSignal, type RecorderEvent } from "../recorded"
+import { RecordingConverter, locatorFromSelector, readRecorderAction, readRecorderSignal, type RecorderEvent } from "../recorded"
 import { templateCheck, templateFill, templateUrl, type RecordingValues } from "../recording_values"
 import events from "./fixtures/recorder-events.json"
 
@@ -179,6 +179,48 @@ describe("RecordingConverter rules", () => {
     expect([...click.steps, ...navigate.steps]).toEqual([])
     expect(click.warnings).toHaveLength(1)
     expect(navigate.warnings).toHaveLength(1)
+  })
+
+  it("does not record a step whose locator shows the start of a secret, as Playwright shortens names to a unique prefix", () => {
+    const recording = converter({ env: {}, secrets: { TOKEN: "tok-123456" } })
+    const click = (selector: string): RecordedBrowserStep[] =>
+      [...recording.apply({ kind: "added", action: { name: "click", selector }, onMainPage: true }).steps]
+    expect(click('internal:role=button[name="Key tok-"i]')).toEqual([])
+    // Inside a raw selector the shortened name ends at its quote, not at the end of the selector.
+    expect(click('#keys >> internal:has-text="Key tok-1"i >> nth=1')).toEqual([])
+    // Three characters of it are not enough to count, as for typed text.
+    expect(click('internal:role=button[name="Key tok"i]')).toHaveLength(1)
+  })
+
+  it("judges only a locator's page text by the prefix rule, so a secret that starts like a role does not refuse the locator", () => {
+    // Secrets that begin with the words a locator is built from: the locator's
+    // own `kind` and `role` are structure, not page text, so a click on a
+    // button or a link must still be recorded.
+    const values: RecordingValues = {
+      env: {},
+      secrets: { ROLE: "role-admin-9876", LINK: "link1234-5678", KIND: "text-5555", INDEX: "nth=1-6000" },
+    }
+    const recording = converter(values)
+    const click = (selector: string): RecordedBrowserStep[] =>
+      [...recording.apply({ kind: "added", action: { name: "click", selector }, onMainPage: true }).steps]
+    expect(click('internal:role=button[name="Save"i]')).toHaveLength(1)
+    expect(click('internal:role=link[name="Docs"i]')).toHaveLength(1)
+    expect(click('internal:text="Dashboard"i')).toHaveLength(1)
+    // A nested `within` locator is judged the same way.
+    expect(click('#rows >> internal:role=link[name="Docs"i]')).toHaveLength(1)
+    // Playwright shortens a name, never a selector's own tail: `internal:role=link`
+    // ends with "link" and `… >> nth=1` with "nth=1", which must not count as
+    // the start of the LINK or INDEX secret.
+    expect(click("internal:role=link")).toHaveLength(1)
+    expect(click("internal:role=button >> nth=1")).toHaveLength(1)
+    // The element's own text still counts, shortened to the prefix Playwright wrote.
+    expect(click('internal:role=button[name="Reset role-"i]')).toEqual([])
+    // Picking the same element goes through the same rule.
+    expect(locatorFromSelector('internal:role=button[name="Save"i]', values)).toEqual({
+      kind: "locator",
+      locator: { kind: "role", role: "button", name: "Save" },
+    })
+    expect(locatorFromSelector('internal:role=link[name="Docs role-a"i]', values)).toEqual({ kind: "secret" })
   })
 
   it("does not record a step whose locator shows a secret that holds a quote or a backslash", () => {

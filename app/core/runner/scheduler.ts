@@ -157,6 +157,18 @@ export interface RunInspection {
   readonly done: (page: InspectedPage | null) => void
 }
 
+/**
+ * Re-pick an element or re-record from a step: run the workflow up to a node
+ * in a browser the caller owns, so the page it leaves is still open, and
+ * still on the user's screen, once the run is over.
+ */
+export interface RunReplay {
+  /** The run stops before this node. */
+  readonly beforeNodeId: string
+  /** The run's browser. The scheduler never closes it: the caller takes the page over and closes it. */
+  readonly session: BrowserSession
+}
+
 export interface EnqueueRequest {
   readonly workspaceId: string
   readonly workflowId: string
@@ -172,6 +184,8 @@ export interface EnqueueRequest {
   readonly iteration?: RunIteration
   /** Read the page the run leaves open (`browser_inspect`). Held in memory only. */
   readonly inspect?: RunInspection
+  /** Leave the page open for the caller (re-pick, re-record). Held in memory only. */
+  readonly replay?: RunReplay
 }
 
 /**
@@ -200,6 +214,8 @@ export class RunScheduler {
   private readonly runData = new Map<string, Readonly<Record<string, JsonValue>>>()
   /** runId → the page read it was started for (`browser_inspect`). */
   private readonly runInspections = new Map<string, RunInspection>()
+  /** runId → the replay it was started for, whose browser outlives it. */
+  private readonly runReplays = new Map<string, RunReplay>()
   private readonly queue: string[] = []
   /** runId → callers of {@link whenFinished} still waiting on it. */
   private readonly finishWaiters = new Map<string, ((status: RunTerminalStatus) => void)[]>()
@@ -242,10 +258,7 @@ export class RunScheduler {
     if (!workflow) {
       throw new NotFoundError(`workflow ${request.workflowId} not found`)
     }
-    const stopBefore = request.inspect?.beforeNodeId
-    if (stopBefore !== undefined && !workflow.nodes.some((node) => node.nodeId === stopBefore)) {
-      throw new ValidationError(`node ${stopBefore} is not in workflow ${request.workflowId}`)
-    }
+    checkStopBefore(request, workflow.nodes)
     // Inherit the workflow's stored `selectedEnvironmentId` when the caller
     // omits it (an MCP agent running a workflow without a UI dropdown, or the
     // canvas's Run button before the environment picker has a value). Without
@@ -277,12 +290,36 @@ export class RunScheduler {
         ? { resumeFromRunId: resume.sourceRunId, resumeFromNodeIds: resume.entries, resumeMode: request.resume?.nodeId ? "single" : "all-failed" }
         : {}),
     })
-    if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
-    if (request.data !== undefined) this.runData.set(run.runId, request.data)
-    if (request.inspect !== undefined) this.runInspections.set(run.runId, request.inspect)
+    this.holdInMemory(run.runId, request)
     this.queue.push(run.runId)
     void this.drain()
     return run.runId
+  }
+
+  /** What a run needs that is never stored with it: who started it, its data row, and the page it hands back. */
+  private holdInMemory(runId: string, request: EnqueueRequest): void {
+    if (request.agent !== undefined) this.agentRuns.set(runId, request.agent)
+    if (request.data !== undefined) this.runData.set(runId, request.data)
+    if (request.inspect !== undefined) this.runInspections.set(runId, request.inspect)
+    if (request.replay !== undefined) this.runReplays.set(runId, request.replay)
+  }
+
+  /**
+   * The browser a run uses when its caller reads the page afterwards, and the
+   * node it stops before. An inspection gets a headless browser of its own,
+   * which the run closes once the page is read; a replay brings a browser the
+   * caller owns and closes. Undefined for an ordinary run: the executor
+   * launches and closes one itself.
+   */
+  private pageHandOff(runId: string): { readonly inspectSession?: BrowserSession; readonly session?: BrowserSession; readonly stopBeforeNodeId?: string } {
+    const inspection = this.runInspections.get(runId)
+    if (inspection !== undefined) {
+      // Headless whoever asked: nothing is shown to anyone.
+      const inspectSession = new BrowserSession({ ...(this.deps.browser?.() ?? {}), headless: true })
+      return { inspectSession, session: inspectSession, ...(inspection.beforeNodeId !== undefined ? { stopBeforeNodeId: inspection.beforeNodeId } : {}) }
+    }
+    const replay = this.runReplays.get(runId)
+    return replay === undefined ? {} : { session: replay.session, stopBeforeNodeId: replay.beforeNodeId }
   }
 
   /** A finished run's per-node results, for a load run to fold before clearing them. */
@@ -309,6 +346,7 @@ export class RunScheduler {
       this.agentRuns.delete(runId)
       this.runData.delete(runId)
       this.runInspections.delete(runId)
+      this.runReplays.delete(runId)
       this.deps.runs.updateStatus(runId, "cancelled")
       // A queued run never reached executeRun, so nothing else will publish its
       // terminal event — do it here or a subscriber waits forever (Phase 6).
@@ -386,11 +424,8 @@ export class RunScheduler {
     this.deps.runs.updateStatus(runId, "running")
     this.deps.emitProgress?.(runId, { kind: "run.started", runId })
     const inspection = this.runInspections.get(runId)
-    // An inspection owns the run's browser, so the page outlives the executor
-    // long enough to be read. Headless whoever asked: nothing is shown to anyone.
-    const inspectSession = inspection !== undefined
-      ? new BrowserSession({ ...(this.deps.browser?.() ?? {}), headless: true })
-      : undefined
+    // The run's browser outlives the executor when someone reads its page afterwards.
+    const { inspectSession, session: callerSession, stopBeforeNodeId } = this.pageHandOff(runId)
 
     try {
       const run = this.deps.runs.getById(runId)
@@ -497,7 +532,7 @@ export class RunScheduler {
         oauthTokens: this.deps.oauthTokens ?? new Map(),
         maskValue,
         maskedValues: () => [...maskedValues],
-        ...(inspectSession !== undefined ? { browserSession: inspectSession } : {}),
+        ...(callerSession !== undefined ? { browserSession: callerSession } : {}),
         ...(this.deps.browser !== undefined
           ? { browser: agent !== undefined ? { ...this.deps.browser(), headless: true } : this.deps.browser() }
           : {}),
@@ -556,7 +591,7 @@ export class RunScheduler {
         ...(run.resumeFromRunId && run.resumeFromNodeIds
           ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph, workflow.variables) }
           : {}),
-        ...(inspection?.beforeNodeId !== undefined ? { stopBeforeNodeId: inspection.beforeNodeId } : {}),
+        ...(stopBeforeNodeId !== undefined ? { stopBeforeNodeId } : {}),
       })
 
       if (inspection !== undefined && inspectSession !== undefined && !controller.signal.aborted) {
@@ -595,6 +630,7 @@ export class RunScheduler {
       this.agentRuns.delete(runId)
       this.runData.delete(runId)
       this.runInspections.delete(runId)
+      this.runReplays.delete(runId)
       void this.drain()
     }
   }
@@ -925,6 +961,17 @@ export function requestDestinations(
     }
   }
   return [...destinations]
+}
+
+/** An inspection or a replay stops before a node: it must be in the workflow, and a run does one or the other. */
+function checkStopBefore(request: EnqueueRequest, nodes: readonly { readonly nodeId: string }[]): void {
+  if (request.inspect !== undefined && request.replay !== undefined) {
+    throw new ValidationError("A run cannot both inspect its page and hand it over")
+  }
+  const stopBefore = request.inspect?.beforeNodeId ?? request.replay?.beforeNodeId
+  if (stopBefore !== undefined && !nodes.some((node) => node.nodeId === stopBefore)) {
+    throw new ValidationError(`node ${stopBefore} is not in workflow ${request.workflowId}`)
+  }
 }
 
 /** A node with a non-empty pre-request or post-response script. */
