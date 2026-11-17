@@ -122,7 +122,7 @@ rejected config names its node's list index and field in the error path.
 | \`http-request\` | sends one request, optionally extracts variables | 1 in, 1 out |
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`websocket\` | opens a bounded WebSocket, sends its messages, captures what comes back | 1 in, **2 out: \`ready\` and \`complete\`** |
-| \`grpc\` | calls one unary gRPC method | 1 in, 1 out |
+| \`grpc\` | calls a gRPC method, unary or server-streaming | 1 in, 1 out; a server-streaming call has **2 out: \`ready\` and \`complete\`** |
 | \`browser\` | one step in a web page, in a real Chrome or Edge | 1 in, 1 out; all browser steps share one ordered chain |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
@@ -224,7 +224,10 @@ The body has \`messages\`, \`messageCount\`, \`termination\`, \`closeCode\` and
 
 ### grpc
 
-A unary gRPC call. \`target\` is \`host:port\` (literal when you rely on reflection discovery), \`service\` and
+A gRPC call, unary by default. With \`callType: "server-streaming"\` it opens a stream instead: the
+\`ready\` output fires once the call is accepted, and \`complete\` — with every message collected in
+\`response.body.messages\` — when the server ends the stream or a \`finishConditions\` rule or
+\`maxMessages\` closes it. \`target\` is \`host:port\` (literal when you rely on reflection discovery), \`service\` and
 \`method\` name the RPC, and \`message\` is the request as **JSON text** with field names as written in the
 .proto. The schema comes from \`schemaSource: "reflection"\` (the server must expose it; call
 \`grpc_discover\` to list its services, methods and request skeletons) or \`"proto"\` with the files inline in
@@ -357,8 +360,13 @@ That rule constrains which handle an edge that *exists* must use — it does not
 require an edge on *every* handle. Leaving \`fail\` unconnected is normal: the run
 still records the failed assertion and stops that branch there.
 
-Except for SSE (\`ready\`/\`complete\`) and visual \`group\`/\`note\` nodes (no handles),
-all other node types have one output; leave \`sourceHandle\` unset for them.
+Except for stream nodes — SSE, WebSocket and a server-streaming gRPC call
+(\`callType: "server-streaming"\`), whose edges use \`ready\`/\`complete\` — and
+visual \`group\`/\`note\` nodes (no handles), all other node types have one output;
+leave \`sourceHandle\` unset for them. A handle the source node does not have is
+an \`edge_source_handle_ignored\` warning (the canvas hides the edge), and a
+stream edge without \`ready\`/\`complete\` is a \`stream_edge_handle_invalid\` error
+(the run never follows it).
 
 ## Changing a graph
 
@@ -607,6 +615,8 @@ Clear every \`error\` before running.
 | \`missing_end_node\` | a workflow needs at least one \`end\`; separate terminal paths may use separate end nodes |
 | \`duplicate_node_id\` / \`duplicate_edge_id\` | ids must be unique |
 | \`dangling_edge\` | an edge references a nodeId that does not exist |
+| \`edge_source_handle_ignored\` | an edge from a single-output node sets a \`sourceHandle\`; the canvas does not draw it (a run still follows it) — warning |
+| \`stream_edge_handle_invalid\` | an edge from an SSE, WebSocket or server-streaming gRPC node does not use \`ready\` or \`complete\`. The run never follows it, so the branch never runs. |
 | \`unreachable_nodes\` | no path from \`start\` reaches these — they never run |
 | \`cycle_detected\` | the graph loops |
 

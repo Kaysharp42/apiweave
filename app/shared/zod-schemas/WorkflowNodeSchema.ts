@@ -78,7 +78,7 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .describe(
-      'Calls one unary gRPC method. The schema comes from server reflection or inline .proto files. One input, one output. The result has response.body (the decoded message), response.status (the gRPC code name, e.g. "OK"), response.statusCode, response.statusMessage, response.headers and response.trailers. Any non-OK status fails the node unless it is the configured expectedStatus.',
+      'Calls a gRPC method. The schema comes from server reflection or inline .proto files. A unary call has one input and one output; a server-streaming call (callType "server-streaming") has one input and TWO outputs, every outgoing edge using sourceHandle "ready" (after the call is accepted) or "complete" (after the stream closes with its bounded result). The result has response.body (the decoded message, or the collected messages), response.status (the gRPC code name, e.g. "OK"), response.statusCode, response.statusMessage, response.headers and response.trailers. Any non-OK status fails the node unless it is the configured expectedStatus.',
     ),
   baseNode
     .extend({

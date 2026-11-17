@@ -228,6 +228,7 @@ export type { NodeModalSseTabKey } from "./NodeModalSseTabKey";
 export type { SseConfigPanelProps } from "./SseConfigPanelProps";
 export type { SseNodeData } from "./SseNodeData";
 export type { SseNodeProps } from "./SseNodeProps";
+export type { StreamOutputHandleProps } from "./StreamOutputHandleProps";
 export type { NodeModalWebsocketConfig } from "./NodeModalWebsocketConfig";
 export type { NodeModalWebsocketTabKey } from "./NodeModalWebsocketTabKey";
 export type { WebsocketConfigPanelProps } from "./WebsocketConfigPanelProps";

@@ -385,6 +385,18 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
+/**
+ * The named outputs a node type has, or null when it has one unnamed output.
+ * Assertion nodes are handled by their own check; SSE, WebSocket and a
+ * server-streaming gRPC call have `ready` and `complete`, and the runner
+ * follows an edge from them only when it names one of the two.
+ */
+function namedOutputs(node: WorkflowNode): readonly string[] | null {
+  if (node.type === "sse" || node.type === "websocket") return ["ready", "complete"]
+  if (node.type === "grpc" && node.config?.callType === "server-streaming") return ["ready", "complete"]
+  return null
+}
+
 function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const nodeCounts = new Map<string, number>()
   for (const node of workflow.nodes) nodeCounts.set(node.nodeId, (nodeCounts.get(node.nodeId) ?? 0) + 1)
@@ -444,6 +456,41 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
         { kind: "remove_or_reconnect_edge", edgeId: edge.edgeId },
       ))
     }
+  }
+
+  // A handle the source node does not have is invisible. On a stream node the
+  // run also skips the edge, so the branch never runs; on any other node the
+  // canvas drops it while the run still follows it, which reads as a missing
+  // branch. Assertion handles have their own diagnostic above.
+  for (const edge of workflow.edges) {
+    const source = nodesById.get(edge.source)
+    if (source === undefined || source.type === "assertion") continue
+    const handle = edge.sourceHandle ?? ""
+    const outputs = namedOutputs(source)
+    if (outputs === null) {
+      if (handle === "") continue
+      diagnostics.push(diagnostic(
+        "edge_source_handle_ignored",
+        "warning",
+        "topology",
+        [edge.source, edge.target],
+        `An edge from a ${source.type} node sets sourceHandle "${handle}", but that node has one unnamed output. The canvas does not draw the edge; a run still follows it. Clear the source handle.`,
+        { edgeId: edge.edgeId, sourceType: source.type, sourceHandle: handle },
+        { kind: "set_edge_source_handle", edgeId: edge.edgeId },
+      ))
+      continue
+    }
+    if (outputs.includes(handle)) continue
+    const expected = outputs.map((output) => `"${output}"`).join(" or ")
+    diagnostics.push(diagnostic(
+      "stream_edge_handle_invalid",
+      "error",
+      "branch",
+      [edge.source, edge.target],
+      `An edge from a ${source.type} stream node ${handle === "" ? "sets no sourceHandle" : `sets sourceHandle "${handle}"`}; a stream node has two outputs, ${expected}. The run never follows this edge.`,
+      { edgeId: edge.edgeId, sourceType: source.type, sourceHandle: handle, expectedHandles: [...outputs] },
+      { kind: "set_edge_source_handle", edgeId: edge.edgeId },
+    ))
   }
 
   if (starts.length > 0) {

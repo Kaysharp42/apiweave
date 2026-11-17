@@ -1149,3 +1149,82 @@ describe("Call Workflow output mapping", () => {
     expect(codes).not.toContain("variable_producer_not_upstream")
   })
 })
+
+describe("analyzeWorkflowGraph — source handles", () => {
+  /**
+   * `start → source → after → end`. `after` is a plain HTTP node so the only
+   * thing under test is the edge leaving `source`.
+   */
+  function graph(source: { nodeId: string; type: string; config?: Record<string, unknown> }, sourceHandle?: string | null): Workflow {
+    return WorkflowSchema.parse({
+      workflowId: "workflow-handle",
+      workspaceId: "workspace-1",
+      name: "Handle",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { position: { x: 100, y: 0 }, ...source },
+        { nodeId: "after", type: "http-request", position: { x: 200, y: 0 }, config: { method: "GET", url: "https://example.test/after" } },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 }, config: {} },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: source.nodeId },
+        { edgeId: "e2", source: source.nodeId, target: "after", ...(sourceHandle === undefined ? {} : { sourceHandle }) },
+        { edgeId: "e3", source: "after", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+  const sse = { nodeId: "stream", type: "sse", config: { url: "https://example.test/events" } }
+  const streamingGrpc = { nodeId: "stream", type: "grpc", config: { callType: "server-streaming", target: "localhost:50051", service: "a.B", method: "Watch" } }
+  const unaryGrpc = { nodeId: "stream", type: "grpc", config: { target: "localhost:50051", service: "a.B", method: "Get" } }
+  const http = { nodeId: "stream", type: "http-request", config: { method: "GET", url: "https://example.test/x" } }
+  const codes = (workflow: Workflow) => analyzeWorkflowGraph(workflow).diagnostics.map((item) => item.code)
+
+  it.each<[string, { nodeId: string; type: string; config: Record<string, unknown> }, string | null]>([
+    ["an SSE ready edge", sse, "ready"],
+    ["an SSE complete edge", sse, "complete"],
+    ["a WebSocket complete edge", { nodeId: "stream", type: "websocket", config: { url: "wss://example.test" } }, "complete"],
+    ["a streaming gRPC complete edge", streamingGrpc, "complete"],
+    ["a unary gRPC edge with no handle", unaryGrpc, null],
+    ["an HTTP edge with no handle", http, null],
+  ])("accepts %s", (_case, source, handle) => {
+    const found = codes(graph(source, handle))
+    expect(found).not.toContain("stream_edge_handle_invalid")
+    expect(found).not.toContain("edge_source_handle_ignored")
+  })
+
+  it.each<[string, { nodeId: string; type: string; config: Record<string, unknown> }, string | null]>([
+    ["an SSE edge with no handle", sse, null],
+    ["an SSE edge from a handle it does not have", sse, "pass"],
+    ["a streaming gRPC edge with no handle", streamingGrpc, null],
+  ])("rejects %s", (_case, source, handle) => {
+    const diagnostic = analyzeWorkflowGraph(graph(source, handle)).diagnostics.find((item) => item.code === "stream_edge_handle_invalid")
+    expect(diagnostic).toMatchObject({
+      severity: "error",
+      category: "branch",
+      nodeIds: ["after", "stream"],
+      evidence: { edgeId: "e2", sourceType: source.type, sourceHandle: handle ?? "", expectedHandles: ["ready", "complete"] },
+      remediation: { kind: "set_edge_source_handle", edgeId: "e2" },
+    })
+    expect(diagnostic?.message).toContain('"ready" or "complete"')
+  })
+
+  it.each<[string, { nodeId: string; type: string; config: Record<string, unknown> }, string]>([
+    ["a unary gRPC edge from a handle it does not have", unaryGrpc, "complete"],
+    ["an HTTP edge from a handle it does not have", http, "pass"],
+  ])("warns about %s, which the canvas would not draw", (_case, source, handle) => {
+    const diagnostic = analyzeWorkflowGraph(graph(source, handle)).diagnostics.find((item) => item.code === "edge_source_handle_ignored")
+    expect(diagnostic).toMatchObject({
+      severity: "warning",
+      category: "topology",
+      evidence: { edgeId: "e2", sourceType: source.type, sourceHandle: handle },
+      remediation: { kind: "set_edge_source_handle", edgeId: "e2" },
+    })
+    expect(codes(graph(source, handle))).not.toContain("stream_edge_handle_invalid")
+  })
+})

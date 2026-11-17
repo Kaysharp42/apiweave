@@ -10,6 +10,7 @@ export interface GrpcNodeData {
     error?: string;
   };
   config?: {
+    callType?: "unary" | "server-streaming";
     target?: string;
     service?: string;
     method?: string;

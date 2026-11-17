@@ -449,7 +449,7 @@ Every edge connects two nodes:
 | edgeId | string | Unique edge ID |
 | source | string | Source nodeId |
 | target | string | Target nodeId |
-| sourceHandle | string or null | \`"pass"\` or \`"fail"\` for assertion nodes; \`"ready"\` or \`"complete"\` for SSE and WebSocket nodes; \`null\` for other nodes |
+| sourceHandle | string or null | \`"pass"\` or \`"fail"\` for assertion nodes; \`"ready"\` or \`"complete"\` for SSE, WebSocket and server-streaming gRPC nodes; \`null\` for other nodes |
 | targetHandle | string or null | Usually \`null\` |
 | label | string or null | Optional label: \`"Pass"\`, \`"Fail"\`, etc. |
 
@@ -613,7 +613,7 @@ Create multiple edges from one node to fan out. Use a Merge node to rejoin.
 3. Node IDs must be unique. Use the convention \`{type}_{timestamp}\`.
 4. Edge IDs must be unique.
 5. Assertion nodes should use \`sourceHandle: "pass"\` and \`sourceHandle: "fail"\` on their outgoing edges.
-6. Non-assertion nodes use \`sourceHandle: null\`.
+6. Single-output nodes use \`sourceHandle: null\`; SSE, WebSocket and server-streaming gRPC nodes use \`"ready"\` or \`"complete"\`.
 7. All string values in \`body\` must be properly escaped JSON (double-escaped quotes).
 8. Use \`{{env.VAR}}\` for values that change per environment (base URLs, credentials).
 9. Use \`{{variables.name}}\` for values extracted during execution.

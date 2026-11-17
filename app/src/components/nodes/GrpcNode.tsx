@@ -1,11 +1,13 @@
 import { memo, useMemo } from "react";
 import { Waypoints } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
+import { StreamOutputHandle } from "../atoms/flow/StreamOutputHandle";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import type { GrpcNodeProps } from "../../types/GrpcNodeProps";
 
 function GrpcNode({ id, data, selected }: GrpcNodeProps) {
-  const { target, service, method, expectedStatus } = data.config ?? {};
+  const { target, service, method, expectedStatus, callType } = data.config ?? {};
+  const streaming = callType === "server-streaming";
   const status = data.executionStatus ?? "idle";
   const grpcStatus = data.executionResult?.response?.status;
   const icon = useMemo(() => <Waypoints className="h-4 w-4" />, []);
@@ -21,7 +23,12 @@ function GrpcNode({ id, data, selected }: GrpcNodeProps) {
       nodeId={id}
       presetNodeType="grpc"
       handleLeft={{ type: "target" }}
-      handleRight={{ type: "source" }}
+      handleRight={
+        streaming
+          ? { type: "source", id: "ready", style: { top: "calc(50% - 10px)" } }
+          : { type: "source" }
+      }
+      extraHandles={streaming ? <StreamOutputHandle id="complete" label="complete" offsetY={10} /> : null}
       collapsible={false}
       typeChip={<span className="rounded-node-chip bg-status-info/10 px-1.5 py-0.5 font-mono text-2xs text-status-info">gRPC</span>}
       restLine={{ operation: call, ...(target ? { argument: target } : {}) }}

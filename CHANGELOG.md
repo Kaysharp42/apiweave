@@ -202,6 +202,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A server-streaming gRPC node shows its two outputs.** The canvas drew one
+  socket for every gRPC call, so an edge leaving `ready` or `complete` was
+  invisible — and clearing its handle to make the edge appear silently skipped
+  the branch, which is how the demo's TrackShipment assertion stopped running.
+  The node now draws Ready and Complete sockets, as SSE and WebSocket nodes do.
+- **An edge that leaves a handle the node does not have is reported.** A
+  `sourceHandle` on a single-output node is a warning: the canvas hides that
+  edge while a run still follows it. A stream node's edge without `ready` or
+  `complete` is an error: the run never follows it, so the branch disappears.
+  Both name the edge and the outputs the node actually has.
 - **A recorded check keeps the element's accessible name.** Playwright's
   recorder writes a bare `internal:role=heading` when that role is unique on the
   page at pick time, so a check on a product title became "some heading": once
