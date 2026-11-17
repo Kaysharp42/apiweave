@@ -8,6 +8,12 @@ const QUIET = "h-8 whitespace-nowrap text-text-secondary dark:text-text-secondar
 const ICON = "w-4 h-4 shrink-0";
 const SPINNER = <Loader2 className={`${ICON} animate-spin motion-reduce:animate-none`} />;
 
+/** Replaying the steps before a re-pick or re-record, or waiting for the user's pick: nothing recorded yet. */
+const isWaiting = (state: CanvasToolbarRecordProps["state"]): boolean => state === "replaying" || state === "picking";
+
+/** Stop pressed on a replay or a pick cancels it rather than ending a recording. */
+const isCancelling = ({ state, stopping }: CanvasToolbarRecordProps): boolean => stopping && state !== "recording";
+
 /** What the badge says: the live step count while recording, else what the user is waiting on or doing. */
 function statusText({ state, stepCount, showLabel, stopping }: CanvasToolbarRecordProps): string {
   // Stop on a replay or a pick cancels it rather than ending a recording, and nothing was recorded to count.
@@ -18,6 +24,30 @@ function statusText({ state, stepCount, showLabel, stopping }: CanvasToolbarReco
   return showLabel ? `Recording — ${steps}` : steps;
 }
 
+/** Replay and pick say something is in progress; so does a stop that cancels one. */
+const badgeVariant = (props: CanvasToolbarRecordProps): "info" | "error" =>
+  isWaiting(props.state) || isCancelling(props) ? "info" : "error";
+
+/** The badge's icon: a spinner while replaying or cancelling, else the pulsing dot of a live recording. */
+const badgeIcon = (props: CanvasToolbarRecordProps) =>
+  props.state === "replaying" || isCancelling(props) ? (
+    <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+  ) : (
+    <span className="h-2 w-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+  );
+
+/** Stop's icon: a spinner once it has been pressed, else the square that ends a recording. */
+const stopIcon = (stopping: boolean) => (stopping ? SPINNER : <Square className={ICON} />);
+
+/** Stop cancels a replay or a pick, and ends a recording. */
+const stopAriaLabel = (state: CanvasToolbarRecordProps["state"]): string => (isWaiting(state) ? "Cancel" : "Stop recording");
+
+/** What Stop's visible label says it does right now. */
+function stopLabel({ state, stopping }: CanvasToolbarRecordProps): string {
+  if (stopping) return state === "recording" ? "Stopping…" : "Cancelling…";
+  return isWaiting(state) ? "Cancel" : "Stop";
+}
+
 /**
  * While this workflow is being recorded, re-recorded or re-picked: where it
  * stands, and Stop. Before anything is recorded — the replay, the pick — Stop
@@ -25,30 +55,23 @@ function statusText({ state, stepCount, showLabel, stopping }: CanvasToolbarReco
  * while it waits for the browser to close.
  */
 function RecordingStatus(props: CanvasToolbarRecordProps) {
-  const { state, onStop, showLabel, stopping } = props;
-  const waiting = state === "replaying" || state === "picking";
-  const cancelling = stopping && state !== "recording";
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Badge variant={waiting || cancelling ? "info" : "error"} size="sm" className="shrink-0 gap-1.5" aria-live="polite">
-        {state === "replaying" || cancelling ? (
-          <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-        ) : (
-          <span className="h-2 w-2 rounded-full bg-current animate-pulse motion-reduce:animate-none" aria-hidden="true" />
-        )}
+      <Badge variant={badgeVariant(props)} size="sm" className="shrink-0 gap-1.5" aria-live="polite">
+        {badgeIcon(props)}
         {statusText(props)}
       </Badge>
       <Button
         variant="ghost"
         intent="error"
         size="sm"
-        onClick={onStop}
-        disabled={stopping}
+        onClick={props.onStop}
+        disabled={props.stopping}
         className="h-8 whitespace-nowrap"
-        aria-label={waiting ? "Cancel" : "Stop recording"}
-        icon={stopping ? SPINNER : <Square className={ICON} />}
+        aria-label={stopAriaLabel(props.state)}
+        icon={stopIcon(props.stopping)}
       >
-        {showLabel && <span>{cancelling ? "Cancelling…" : stopping ? "Stopping…" : waiting ? "Cancel" : "Stop"}</span>}
+        {props.showLabel && <span>{stopLabel(props)}</span>}
       </Button>
     </div>
   );

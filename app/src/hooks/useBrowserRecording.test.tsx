@@ -200,4 +200,24 @@ describe("useBrowserRecording control", () => {
     // The phase stays, so the toolbar still knows nothing was recorded.
     expect(result.current.control).toMatchObject({ state: "replaying", stopping: true, stepCount: 0 });
   });
+
+  it("reads another workflow's recording as elsewhere, with none of its steps", () => {
+    const canvas = createCanvas([startNode]);
+    useBrowserRecordingStore.setState({ phase: "recording", workflowId: "other", steps: [step("browser-recording-1-1", "https://dev.test/")] });
+
+    const { result } = mountRecording(canvas);
+
+    expect(result.current.control).toMatchObject({ state: "elsewhere", stopping: false, stepCount: 0, disabled: false });
+    // The other workflow's canvas places its steps, not this one.
+    expect(canvas.setNodes).not.toHaveBeenCalled();
+  });
+
+  it("is disabled while a run is in progress or the canvas has no workflow yet", () => {
+    const canvas = createCanvas([startNode]);
+    const running = renderHook(() => useBrowserRecording({ ...canvas.params, isRunning: true }));
+    expect(running.result.current.control.disabled).toBe(true);
+
+    const unwired = renderHook(() => useBrowserRecording({ ...canvas.params, workflowId: undefined }));
+    expect(unwired.result.current.control.disabled).toBe(true);
+  });
 });

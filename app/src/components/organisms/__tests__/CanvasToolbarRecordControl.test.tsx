@@ -59,4 +59,20 @@ describe("CanvasToolbarRecordControl", () => {
     expect(screen.getByText("1 step")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop recording" })).toBeDisabled();
   });
+
+  it.each([
+    ["replaying", "Replaying…"],
+    ["picking", "Picking…"],
+  ] as const)("shortens what it says about a %s when the toolbar is narrow", (state, text) => {
+    render(<CanvasToolbarRecordControl {...base} state={state} showLabel={false} />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("says the browser is opening while it starts", () => {
+    render(<CanvasToolbarRecordControl {...base} state="starting" />);
+    expect(screen.getByText("Opening browser…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record browser steps" })).toBeDisabled();
+  });
 });

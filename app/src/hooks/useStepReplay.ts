@@ -71,25 +71,28 @@ export function useStepReplay(params: UseStepReplayParams): UseStepReplayResult 
     [environmentId, saveWorkflowRef, workflowId, workspaceId],
   );
 
-  const repick = useCallback(
-    (nodeId: string) => {
-      void (async () => {
-        const request = await prepare(nodeId);
-        // The element arrives as a `picked` event, and the effect above applies it.
-        if (request !== null) await useBrowserRecordingStore.getState().repick(request);
-      })();
+  /** Save pending edits, then hand the request for `nodeId` to `run`; nothing replays when the save is refused. */
+  const replay = useCallback(
+    async (nodeId: string, run: (request: BrowserReplayRequest) => Promise<void>): Promise<void> => {
+      const request = await prepare(nodeId);
+      if (request !== null) await run(request);
     },
     [prepare],
   );
 
+  const repick = useCallback(
+    (nodeId: string) => {
+      // The element arrives as a `picked` event, and the effect above applies it.
+      void replay(nodeId, (request) => useBrowserRecordingStore.getState().repick(request));
+    },
+    [replay],
+  );
+
   const rerecord = useCallback(
     (nodeId: string) => {
-      void (async () => {
-        const request = await prepare(nodeId);
-        if (request !== null) await useBrowserRecordingStore.getState().rerecord(request, rerecordLabel());
-      })();
+      void replay(nodeId, (request) => useBrowserRecordingStore.getState().rerecord(request, rerecordLabel()));
     },
-    [prepare],
+    [replay],
   );
 
   return {

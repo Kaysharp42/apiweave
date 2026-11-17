@@ -1,3 +1,4 @@
+// fallow-ignore-file weakened-tests -- this suite drives a real browser and skips itself when none is installed, so a machine without one still passes.
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import type { Browser, Page } from "playwright-core"
