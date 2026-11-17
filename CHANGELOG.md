@@ -231,6 +231,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   a Call Workflow node's `outputMapping` was reported as never produced.
 - **A failed Call Workflow says which step failed.** "Sub-workflow Login failed
   in 1 node(s)" now names the first failed step and its error.
+- **Accept snapshot works for an Assertion node.** The button existed only for
+  a `matchesSnapshot` rule written on the HTTP node itself, so a snapshot rule
+  on an Assertion node (the usual layout, and the one agents write) could only
+  be re-baselined from the CLI. An Assertion node's result now lists where each
+  failed snapshot differs and accepts the value the inspected node returned.
+- **Choosing a WSDL file imports it.** Import nodes → WSDL kept a chosen or
+  dropped file aside and imported only the text box, so the file was ignored
+  and Add to Nodes stayed disabled. The file now fills the box.
 - **A workspace an agent creates opens without a restart.** A workspace page
   whose workspace was missing from the loaded list showed "Workspace
   unavailable" until the app restarted; it now reloads the list once first.
