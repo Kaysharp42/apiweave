@@ -34,6 +34,9 @@ import { loadCaCertificates, loadClientCertificate, type NetworkConfig } from ".
 import { RunScheduler } from "../runner/scheduler"
 import { ProjectRunner, planProjectRun } from "../runner/project_runner"
 import { buildConsoleReport, buildReport, type ReportInput, type SingleReportInput } from "../runner/reporters"
+import { writeEvidence, type WrittenEvidence } from "./evidence"
+import { browserProxy } from "../runner/browser/proxy"
+import type { BrowserLaunchSettings } from "../runner/browser/session"
 import { MAX_ITERATION_DATA_BYTES, parseIterationData, type IterationRow } from "@shared/iteration-data/iterationData"
 import { formatThreshold, parseThreshold, type Threshold } from "../runner/thresholds"
 import { MAX_LOAD_ITERATIONS, buildLoadRun, startLoadRun } from "../runner/load"
@@ -101,6 +104,8 @@ Options:
   -r, --reporter <list>           cli, junit, html; comma separated (default cli)
       --reporter-junit-export <path>  JUnit XML file (default apiweave-report.xml)
       --reporter-html-export <path>   HTML file (default apiweave-report.html)
+      --evidence-dir <dir>        Write each failed browser step's screenshot and
+                                  ARIA snapshot here; the reports link them
   -d, --iteration-data <file>     Run once per row of a CSV or JSON array file;
                                   each row's values are {{data.<column>}}
   -n, --iteration-count <n>       Run n times (with --iteration-data: its first n rows)
@@ -176,6 +181,8 @@ interface CliOptions {
   readonly reporters: ReadonlySet<string>
   readonly junitPath: string
   readonly htmlPath: string
+  /** Where failed browser steps' screenshots and ARIA snapshots are written; absent: nowhere. */
+  readonly evidenceDir: string | undefined
   readonly iterationData: string | undefined
   readonly iterationCount: number | undefined
   readonly concurrency: number | undefined
@@ -214,6 +221,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       reporter: { type: "string", short: "r" },
       "reporter-junit-export": { type: "string" },
       "reporter-html-export": { type: "string" },
+      "evidence-dir": { type: "string" },
       "iteration-data": { type: "string", short: "d" },
       "iteration-count": { type: "string", short: "n" },
       concurrency: { type: "string", short: "c" },
@@ -270,6 +278,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     reporters,
     junitPath: path.resolve(cwd, values["reporter-junit-export"] ?? "apiweave-report.xml"),
     htmlPath: path.resolve(cwd, values["reporter-html-export"] ?? "apiweave-report.html"),
+    evidenceDir: resolve(values["evidence-dir"]),
     iterationData: resolve(values["iteration-data"]),
     iterationCount,
     concurrency,
@@ -471,13 +480,15 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     if (options.bail) stopProjectsAtFirstFailure(targets, repos.collections)
 
     // -------- Run --------
+    const network = networkConfig(options, secrets, io.env, io.cwd)
     http = new CliHttp(
       {
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         ...(options.insecure ? { rejectUnauthorized: false } : {}),
       },
-      networkConfig(options, secrets, io.env, io.cwd),
+      network,
     )
+    const browserLaunch = cliBrowserLaunch(options, network)
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
     const snapshots = new FileSnapshotStore(options.snapshotsPath)
@@ -497,7 +508,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       // The in-memory run's screenshot is kept for the life of this process,
       // like the run row itself; nothing reads it back after the report.
       saveArtifact: (artifact) => repos.runArtifacts.save(artifact),
-      browser: () => ({ headless: !options.headed, ...(options.browser !== undefined ? { channel: options.browser } : {}) }),
+      browser: () => browserLaunch,
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }
@@ -523,7 +534,9 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     // Mask the report's input, not its output: node labels and names can hold
     // a secret the run never masked, and the formats escape `<SECRET>` only if
     // it is there before they are built.
-    writeReports(mask(input), options, io)
+    const masked = mask(input)
+    const evidence = options.evidenceDir === undefined ? undefined : writeEvidence(options.evidenceDir, masked, (id) => repos.runArtifacts.get(id))
+    writeReports(masked, options, io, evidence)
     return passed ? EXIT_PASSED : EXIT_FAILED
   } finally {
     await scheduler?.shutdown(0)
@@ -838,14 +851,31 @@ function statusOf(one: SingleReportInput): string {
   return one.kind === "run" ? one.run.status : one.projectRun.status
 }
 
-function writeReports(masked: ReportInput, options: CliOptions, io: CliIo): void {
+/** The reports asked for; evidence files are named relative to the HTML file's folder in HTML, and to the working directory elsewhere. */
+function writeReports(masked: ReportInput, options: CliOptions, io: CliIo, evidence?: WrittenEvidence): void {
   const color = io.stdout.isTTY === true && io.env["NO_COLOR"] === undefined
-  if (options.reporters.has("cli")) io.stdout.write(buildConsoleReport(masked, color))
+  const fromCwd = evidence?.relativeTo(io.cwd)
+  if (options.reporters.has("cli")) io.stdout.write(buildConsoleReport(masked, color, fromCwd))
   for (const [format, filePath] of [["junit", options.junitPath], ["html", options.htmlPath]] as const) {
     if (!options.reporters.has(format)) continue
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(filePath, buildReport(format, masked), "utf8")
+    fs.writeFileSync(filePath, buildReport(format, masked, format === "html" ? evidence?.relativeTo(path.dirname(filePath)) : fromCwd), "utf8")
     if (options.reporters.has("cli")) io.stdout.write(`${format === "junit" ? "JUnit" : "HTML"} report: ${filePath}\n`)
+  }
+}
+
+/**
+ * How browser steps start their browser: `--browser`, `--headed`, and the
+ * network flags that apply to a page — the proxy, and `--insecure`. Trusted
+ * CAs and client certificates do not reach the browser.
+ */
+function cliBrowserLaunch(options: CliOptions, network: NetworkConfig): BrowserLaunchSettings {
+  const proxy = browserProxy(network)
+  return {
+    headless: !options.headed,
+    ...(options.browser === undefined ? {} : { channel: options.browser }),
+    ...(proxy === undefined ? {} : { proxy }),
+    ...(options.insecure ? { ignoreHttpsErrors: true } : {}),
   }
 }
 

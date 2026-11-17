@@ -530,6 +530,78 @@ describe("report contents", () => {
   })
 })
 
+describe("a failed browser step", () => {
+  const workflow: ReportWorkflow = {
+    workflowId: "wf_1",
+    name: "Web login",
+    nodes: [
+      { nodeId: "b1", type: "browser", label: "Open login", position: { x: 0, y: 0 } },
+      { nodeId: "b2", type: "browser", label: "Check heading", position: { x: 1, y: 0 } },
+    ],
+  }
+  const run = makeRun({
+    status: "failed",
+    nodeStatuses: { b1: { status: "passed" }, b2: { status: "failed" } },
+    results: [
+      result("b1", { browser: { action: "navigate", url: "https://dev.example.com/login", title: "Sign in" } }),
+      result("b2", {
+        status: "failed",
+        error: "Browser step: the text of getByRole('heading') did not equal the expected text within 2s",
+        browser: {
+          action: "expect-text",
+          url: "https://dev.example.com/home",
+          expected: "Dashboard",
+          actual: "Welcome back",
+          detail: "playwright-call-log",
+          ariaSnapshot: "- heading \"page-content\" [level=1]",
+          screenshotArtifactId: "art_1",
+        },
+      }),
+    ],
+  })
+  const input: ReportInput = { kind: "run", run, workflow }
+  const evidence = (runId: string, nodeId: string) =>
+    runId === "run_1" && nodeId === "b2" ? { screenshot: "evidence/run 1/b2.jpg", ariaSnapshot: "evidence/run 1/b2.aria.yml" } : undefined
+
+  it("says what it expected, what it found and on which page, in every format", () => {
+    const lines = ['Expected: "Dashboard"', 'Found: "Welcome back"', "Page: https://dev.example.com/home"]
+    const console = buildConsoleReport(input, false)
+    const failure = all(all(parseXml(buildJUnitReport(input)), "testsuite")[0]!, "testcase")[1]!.children[0]!
+    const html = buildHtmlReport(input)
+    for (const line of lines) {
+      expect(console).toContain(`      ${line}\n`)
+      expect(failure.text).toContain(line)
+      expect(html).toContain(`<div class="detail">${line.replace(/"/g, "&quot;")}</div>`)
+    }
+    // The passed step's page is not a failure detail.
+    expect(console).not.toContain("/login")
+  })
+
+  it("never inlines the page's content: Playwright's log, the ARIA snapshot or the screenshot", () => {
+    for (const report of [buildConsoleReport(input, false, evidence), buildJUnitReport(input, evidence), buildHtmlReport(input, evidence)]) {
+      for (const value of ["playwright-call-log", "page-content", "art_1", "base64"]) expect(report).not.toContain(value)
+    }
+  })
+
+  it("links the evidence files: on the console, as JUnit attachments, and as a screenshot in HTML", () => {
+    expect(buildConsoleReport(input, false, evidence)).toContain(
+      "      Screenshot: evidence/run 1/b2.jpg\n      ARIA snapshot: evidence/run 1/b2.aria.yml\n",
+    )
+    const failed = all(all(parseXml(buildJUnitReport(input, evidence)), "testsuite")[0]!, "testcase")[1]!
+    expect(all(failed, "system-out")[0]!.text).toBe("[[ATTACHMENT|evidence/run 1/b2.jpg]]\n[[ATTACHMENT|evidence/run 1/b2.aria.yml]]")
+    const html = buildHtmlReport(input, evidence)
+    expect(html).toContain('<img class="shot" src="evidence/run%201/b2.jpg"')
+    expect(html).toContain('<a href="evidence/run%201/b2.aria.yml">ARIA snapshot</a>')
+    expect(html).not.toMatch(/<script|<link/)
+  })
+
+  it("names no evidence when none was written", () => {
+    expect(buildConsoleReport(input, false)).not.toContain("Screenshot:")
+    expect(buildJUnitReport(input)).not.toContain("ATTACHMENT")
+    expect(buildHtmlReport(input)).not.toContain("<img")
+  })
+})
+
 describe("writeReport", () => {
   it("writes the chosen format to the given path", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "apiweave-report-"))
