@@ -177,6 +177,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An agent can create a workspace.** `workspaces_create` without
+  `isPersonal` handed back the existing Personal workspace instead of creating
+  one, because a create that did not say otherwise was taken to mean the
+  Personal workspace. Only the app's first run asks for that one now; every
+  other create makes a new workspace.
 - **Snapshot baselines survive across CLI runs for every file.** The CLI
   imports its file into a fresh database each run, and an export without a
   `workflowId` got a random one, so `matchesSnapshot` never found its baseline

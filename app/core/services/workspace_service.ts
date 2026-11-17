@@ -32,11 +32,15 @@ export class WorkspaceService {
   }
 
   async create(input: WorkspaceCreateInput): Promise<Workspace> {
+    // The personal workspace is asked for by name, only by the app's first run:
+    // a create that leaves `isPersonal` out (an agent's, a dialog's) is a new
+    // workspace, never the personal one handed back.
+    //
     // Idempotent personal workspace: the local owner has exactly one. A first-run
     // race (or any second `create({isPersonal: true})`) must not spawn a dupe —
     // the redirect keys off `slug === "personal"` and a second slug (`personal-2`)
     // isn't routable. better-sqlite3 is sync, so this guard is race-free.
-    const wantPersonal = input.isPersonal ?? true
+    const wantPersonal = input.isPersonal === true
     if (wantPersonal) {
       const existing = this.workspaces.listAll().find((ws) => ws.isPersonal)
       if (existing !== undefined) return existing
