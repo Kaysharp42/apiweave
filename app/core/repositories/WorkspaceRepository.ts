@@ -43,7 +43,7 @@ export class WorkspaceRepository {
     const id = input.workspaceId ?? generateId()
     const settings: WorkspaceSettings = {
       description: input.description ?? null,
-      isPersonal: input.isPersonal ?? true,
+      isPersonal: input.isPersonal ?? false,
       deletedAt: null,
     }
     this.store.set(

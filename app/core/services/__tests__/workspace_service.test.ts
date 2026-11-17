@@ -47,11 +47,12 @@ describe("WorkspaceService — personal workspace idempotency guard", () => {
     expect(all).toHaveLength(2)
   })
 
-  it("treats omitted isPersonal as personal (default) and dedupes", async () => {
-    const first = await svc.create({ name: "Personal" })
-    const second = await svc.create({ name: "Personal" })
+  it("creates a new workspace when isPersonal is left out, as an agent's create does", async () => {
+    const personal = await svc.create({ name: "Personal", slug: "personal", isPersonal: true })
+    const created = await svc.create({ name: "Browser checks" })
 
-    expect(second.workspaceId).toBe(first.workspaceId)
+    expect(created.workspaceId).not.toBe(personal.workspaceId)
+    expect(created).toMatchObject({ name: "Browser checks", slug: "browser-checks", isPersonal: false })
   })
 })
 
