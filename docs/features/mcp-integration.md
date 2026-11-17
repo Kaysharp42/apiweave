@@ -204,6 +204,11 @@ deferred until the agent searches for it.
 - `workspaces_delete`
 - `workspaces_map`
 
+`workspaces_create` creates a workspace; the desktop app then asks you whether to
+track it in git and create a repository for it as one of your accounts, which an
+agent cannot do itself. See
+[Git workflows](../guides/git-workflows.md#create-the-repository-from-apiweave).
+
 `workspaces_delete` deletes a workspace and the resources in it.
 
 `workspaces_map` orients an agent in a workspace with one paged read (30

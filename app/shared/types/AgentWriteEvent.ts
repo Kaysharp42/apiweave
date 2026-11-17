@@ -15,9 +15,11 @@ export interface AgentWriteEvent {
   /** The action, e.g. `"setVariable"`. */
   readonly action: string
   /**
-   * The workspace the call named, when it named one. Only used to notice that
-   * the workspace the user is *in* has been deleted — refetches ignore it, so a
-   * cross-workspace move (which names one side only) still refreshes both.
+   * The workspace the call named, when it named one, or the one a
+   * `workspaces` `create` made. Used to notice that the workspace the user is
+   * *in* has been deleted, and to offer a workspace an agent created a git
+   * repository — refetches ignore it, so a cross-workspace move (which names
+   * one side only) still refreshes both.
    */
   readonly workspaceId?: string
 }

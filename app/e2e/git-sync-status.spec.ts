@@ -418,8 +418,8 @@ test.describe("git sync status", () => {
     await page.getByRole("button", { name: "New workspace" }).click();
     const dialog = page.getByRole("dialog", { name: "Create workspace" });
     await dialog.getByPlaceholder("QA Workspace").fill("Shop API");
-    await expect(dialog.getByRole("checkbox", { name: "Sync with GitHub or GitLab" })).not.toBeChecked();
-    await dialog.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }).check();
+    // On by default: an account is signed in.
+    await expect(dialog.getByRole("checkbox", { name: "Sync with GitHub or GitLab" })).toBeChecked();
     await expect(dialog.getByRole("combobox", { name: "Owner" })).toHaveValue("octo-work");
     await expect(dialog.getByRole("textbox", { name: "Repository name" })).toHaveValue("shop-api");
     await captureEvidence(page, "git-create-workspace-sync.png");

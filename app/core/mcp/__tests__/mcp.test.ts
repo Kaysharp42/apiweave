@@ -2787,13 +2787,15 @@ describe("MCP writes announce themselves — the renderer's only notice", () => 
     await client.close()
   })
 
-  it("omits workspaceId when the tool does not take one — the renderer refetches anyway", async () => {
+  it("names the workspace an agent created, so the app can offer it a repository", async () => {
     const client = await connectClient()
     agentWrites = []
 
-    await client.callTool({ name: "workspaces_create", arguments: { name: "Fresh" } })
+    const result = await client.callTool({ name: "workspaces_create", arguments: { name: "Fresh" } })
+    const created = JSON.parse((result.content as Array<{ text: string }>)[0]?.text ?? "{}") as { workspaceId?: string }
 
-    expect(agentWrites).toEqual([{ domain: "workspaces", action: "create" }])
+    expect(agentWrites).toEqual([{ domain: "workspaces", action: "create", workspaceId: created.workspaceId }])
+    expect(created.workspaceId).toEqual(expect.any(String))
     await client.close()
   })
 

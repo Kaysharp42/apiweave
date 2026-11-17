@@ -78,11 +78,7 @@ async function fillAndSync(
     within(dialog).getByPlaceholderText("QA Workspace"),
     "QA Workspace",
   );
-  await user.click(
-    within(dialog).getByRole("checkbox", {
-      name: "Sync with GitHub or GitLab",
-    }),
-  );
+  // Sync is on by default: an account is signed in.
   await waitFor(() =>
     expect(within(dialog).getByRole("combobox", { name: "Owner" })).toHaveValue(
       "octo-work",

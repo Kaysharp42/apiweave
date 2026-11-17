@@ -161,39 +161,56 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
     });
   }
 
+  /** Name the workspace, and wait for sync — on by default with an account — to pick its owner. */
   async function fillAndSync(user: ReturnType<typeof userEvent.setup>) {
     await user.type(
       screen.getByPlaceholderText("QA Workspace"),
       "QA Workspace",
-    );
-    await user.click(
-      screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
     );
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue(
         "octo-work",
       ),
     );
+    expect(
+      screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+    ).toBeChecked();
   }
 
-  it("is off by default, and then creates the workspace alone", async () => {
+  it("is on once an account is listed, and switched off creates the workspace alone", async () => {
     const { bridge } = installGit();
     const user = userEvent.setup();
     const { onCreated } = renderModal();
 
+    await fillAndSync(user);
+    await user.click(
+      screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+    );
     expect(
       screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
     ).not.toBeChecked();
-    await user.type(
-      screen.getByPlaceholderText("QA Workspace"),
-      "QA Workspace",
-    );
     await user.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
     expect(bridge.track).not.toHaveBeenCalled();
     expect(bridge.createRepository).not.toHaveBeenCalled();
     expect(bridge.connectRemote).not.toHaveBeenCalled();
+  });
+
+  it("is off when no account is signed in, and can still be switched on to sign in", async () => {
+    const { bridge } = installGit({
+      listAccounts: vi.fn(async () => ({ clis: [], accounts: [] })),
+    });
+    const user = userEvent.setup();
+    renderModal();
+
+    await waitFor(() => expect(bridge.listAccounts).toHaveBeenCalled());
+    const toggle = screen.getByRole("checkbox", {
+      name: "Sync with GitHub or GitLab",
+    });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    expect(toggle).toBeChecked();
   });
 
   it("creates the workspace, tracks it, creates a private repository named after its slug and connects as the account", async () => {
@@ -386,9 +403,7 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
         screen.getByPlaceholderText("QA Workspace"),
         "QA Workspace",
       );
-      await user.click(
-        screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
-      );
+      // On by default: an account is signed in.
       await waitFor(() =>
         expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue(
           "octo-work",
@@ -446,9 +461,7 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
         screen.getByPlaceholderText("QA Workspace"),
         "QA Workspace",
       );
-      await user.click(
-        screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
-      );
+      // On by default: an account is signed in.
       await waitFor(() =>
         expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue(
           "octo-work",

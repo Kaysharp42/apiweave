@@ -17,6 +17,7 @@ import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
+import { AgentWorkspaceRepositoryPrompt } from "./components/organisms/AgentWorkspaceRepositoryPrompt";
 import { useWindowTitle } from "./hooks/useWindowTitle";
 import { apiweave, desktop } from "./utils/apiweaveClient";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
@@ -189,6 +190,8 @@ function AppShellRoutes() {
       <MainLayout>
         <Outlet />
       </MainLayout>
+      {/* A workspace an agent creates is offered a repository wherever the user is. */}
+      <AgentWorkspaceRepositoryPrompt />
     </div>
   );
 }

@@ -165,6 +165,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   new steps replace that step and the browser steps after it, and one undo
   restores them. Both are desktop-app only. See
   [Browser Steps](docs/features/browser-steps.md#fixing-one-step).
+- **A repository for a workspace an agent creates.** A workspace created over
+  MCP now prompts for the same opt-in as **Create workspace**: a **Create a
+  repository?** dialog offers to track it in git and create a repository as one
+  of your accounts, which an agent cannot do itself. **Sync with GitHub or
+  GitLab** in **Create workspace** is on by default once one of your git
+  accounts is signed in. See [Git workflows](docs/guides/git-workflows.md).
 - **Browser workflows in CI.** `apiweave run --evidence-dir <dir>` writes each
   failed browser step's screenshot to `<dir>/<runId>/<nodeId>.jpg` and its
   ARIA snapshot to `<dir>/<runId>/<nodeId>.aria.yml`, and every report links the

@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitRepository } from "@shared/types/GitRepository";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
-import type { GitRepositoryDraft } from "../../types";
-import { installGitBridge, trackedStatus } from "../../__tests__/gitFixtures";
-import { syncNewWorkspace } from "./CreateWorkspaceModal";
+import type { GitRepositoryDraft } from "../types";
+import { installGitBridge, trackedStatus } from "../__tests__/gitFixtures";
+import { syncNewWorkspace } from "./workspaceSync";
 
 const ACCOUNT: GitAccount = {
   provider: "github",
