@@ -220,7 +220,7 @@ async function dispatchAsTool(
     // projection or diagnosis failure must not swallow a change that is
     // already durable.
     if (spec.intent === "write") {
-      const workspaceId = payload["workspaceId"]
+      const workspaceId = writtenWorkspaceId(spec, payload, result.data)
       router.notifyAgentWrite({
         domain: spec.domain,
         action: spec.action,
@@ -269,6 +269,19 @@ async function dispatchAsTool(
  * field; an agent gets it as MCP image content, which a model sees as an image,
  * rather than as a base64 string it would read as text.
  */
+/**
+ * The workspace a write touched: the one the call named, or, for a new
+ * workspace, the one it created — which the renderer needs to offer that
+ * workspace a repository, since an agent cannot create one itself.
+ */
+function writtenWorkspaceId(spec: McpToolSpec, payload: Record<string, unknown>, data: unknown): string | undefined {
+  const named = payload["workspaceId"]
+  if (typeof named === "string") return named
+  if (spec.domain !== "workspaces" || spec.action !== "create" || typeof data !== "object" || data === null) return undefined
+  const created = (data as { workspaceId?: unknown }).workspaceId
+  return typeof created === "string" ? created : undefined
+}
+
 function withoutImage(spec: McpToolSpec, data: unknown): { data: unknown; image?: { mime: string; base64: string } } {
   if (spec.imageResult !== true || typeof data !== "object" || data === null || !("screenshot" in data)) return { data }
   const { screenshot, ...rest } = data
