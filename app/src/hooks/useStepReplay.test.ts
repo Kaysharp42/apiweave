@@ -116,6 +116,27 @@ describe("useStepReplay", () => {
     expect(useBrowserRecordingStore.getState().picked).toBeNull();
   });
 
+  it("does not put a locator on a step that stopped acting on an element while the user picked", () => {
+    const { nodesRef, setNodes } = setup();
+    nodesRef.current = [open, { ...remove, data: { ...remove.data, config: { action: "navigate", url: "https://dev.test/next" } } }];
+
+    holdPick();
+
+    expect(toast.warning).toHaveBeenCalledWith("The step no longer acts on an element, so the element you picked was not saved.");
+    expect(setNodes).not.toHaveBeenCalled();
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
+  });
+
+  it("keeps the pick when another field of the step is half-typed", () => {
+    const { nodesRef } = setup();
+    nodesRef.current = [open, { ...remove, data: { ...remove.data, config: { ...remove.data.config, timeoutMs: 5 } } }];
+
+    holdPick();
+
+    expect(toast.success).toHaveBeenCalledWith("The step now uses the element you picked");
+    expect(nodesRef.current[1]?.data.config).toMatchObject({ locator: picked, timeoutMs: 5 });
+  });
+
   it("applies a pick made while no canvas was open, once, when a canvas mounts", () => {
     holdPick();
     const { setNodes } = setup({ strict: true });

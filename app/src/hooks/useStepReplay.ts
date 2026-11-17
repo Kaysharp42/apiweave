@@ -45,8 +45,14 @@ export function useStepReplay(params: UseStepReplayParams): UseStepReplayResult 
     if (pending === null || pending.workflowId !== workflowId) return;
     store.takePicked();
     const { nodeId, locator } = pending;
-    if (!nodesRef.current.some((node) => node.id === nodeId)) {
+    const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+    if (node === undefined) {
       toast.warning("The step was deleted while you picked, so the element was not saved.");
+      return;
+    }
+    // The step's action can change while the pick is open: put the element only on a step that still acts on one.
+    if (node.data.config?.["locator"] === undefined) {
+      toast.warning("The step no longer acts on an element, so the element you picked was not saved.");
       return;
     }
     // A save reads the ref: set it first, so Ctrl+S right after keeps the change.
