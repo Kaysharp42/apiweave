@@ -55,6 +55,7 @@ const NODE_OUTPUT_TREE_CUSTOM_BUTTONS = [JSON_TREE_COPY_BUTTON];
 export function NodeOutputPanel({
   output,
   executionStatus = "idle",
+  review,
 }: NodeOutputPanelProps) {
   const [activeTab, setActiveTab] = useState<NodeOutputTab>("tree");
   const isDarkMode = useDarkMode();
@@ -94,6 +95,7 @@ export function NodeOutputPanel({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden bg-surface p-4 dark:bg-surface-dark">
+          {review}
           <div className="flex flex-wrap gap-2">
             <Button
               variant={activeTab === "tree" ? "primary" : "secondary"}

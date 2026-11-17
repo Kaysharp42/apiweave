@@ -27,6 +27,7 @@ function renderModal() {
       onSaveWorkflow={onSaveWorkflow}
       workspaceId="ws"
       currentWorkflowId="wf"
+      getNodeOutput={() => undefined}
     />,
   );
   const name = screen.getByLabelText("Node name");

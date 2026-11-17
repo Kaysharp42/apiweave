@@ -2369,6 +2369,9 @@ function WorkflowCanvas({
             onSaveWorkflow={() => void saveWorkflow(false)}
             workspaceId={scope.workspaceId ?? ""}
             currentWorkflowId={workflowId ?? ""}
+            getNodeOutput={(nodeId) =>
+              nodesRef.current.find((candidate) => candidate.id === nodeId)?.data.executionResult
+            }
           />
         </Suspense>
       )}
