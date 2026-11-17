@@ -40,7 +40,7 @@ const dashboardPage = (greeting: string): string => `<!doctype html><title>Dashb
 <label for="q">Query</label><input id="q" value="abc">
 <a href="/orders/42" data-id="42">Order 42</a>
 <button id="del">Delete</button><p id="status">idle</p>
-<button onclick="window.open('/login')">Help</button>
+<button onclick="window.open('/slow')">Help</button>
 <script>
 const user = new URLSearchParams(location.search).get('user') || 'guest'
 setTimeout(() => { document.getElementById('h').textContent = ${JSON.stringify(greeting)} + ' ' + user }, 300)
@@ -68,6 +68,9 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(loginPage())
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
+    } else if (path === "/slow") {
+      // Slower than any click: Playwright reports a new tab only once its first page has loaded.
+      setTimeout(() => response.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Help</title>"), 1_500)
     } else if (path === "/outer") {
       response
         .writeHead(200, { "content-type": "text/html" })
@@ -319,15 +322,17 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
   })
 
-  it("fails a step that opens a new tab or window", async () => {
+  it("fails a step that opens a new tab or window, even one slow to load, and keeps driving its own page", async () => {
     const workflowId = create([
       step("open", { action: "navigate", url: `${base}/dashboard` }),
-      step("help", { action: "click", locator: role("button", "Help") }),
+      step("help", { action: "click", locator: role("button", "Help"), continueOnFail: true }),
+      step("greeted", { action: "expect-text", locator: { kind: "css", value: "#h" }, text: "Welcome" }),
     ])
 
     const stored = await run(workflowId)
 
     expect(result(stored, "help")?.error).toBe("Browser step: the step opened a new tab or window, which browser steps do not support yet")
+    expect(result(stored, "greeted")?.status, result(stored, "greeted")?.error).toBe("passed")
   })
 
   it("fails a step with an unset placeholder instead of typing the braces", async () => {
