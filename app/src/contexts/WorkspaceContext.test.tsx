@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   WorkspaceProvider,
@@ -58,6 +58,10 @@ function LocationProbe() {
 }
 
 describe("WorkspaceContext routing", () => {
+  beforeEach(() => {
+    listWorkspaces.mockReset();
+  });
+
   it("resolves non-personal workspaces from the route and switches with a two-segment path", async () => {
     listWorkspaces.mockResolvedValue(workspaces);
     const user = userEvent.setup();
@@ -87,5 +91,65 @@ describe("WorkspaceContext routing", () => {
     expect(screen.getByTestId("location-probe")).toHaveTextContent(
       "/personal/team-alpha/workflows",
     );
+  });
+
+  /**
+   * The reported bug: a workspace an agent created while the app was running was
+   * not in the list this provider had loaded, so Settings → Secrets rendered
+   * "Workspace unavailable" until the app was restarted. A miss is not proof the
+   * workspace is gone, so it refetches once instead of settling on null.
+   */
+  it("picks up a workspace the first load did not include when the route names it", async () => {
+    // Loaded before the agent's create landed, so the notice was missed.
+    listWorkspaces
+      .mockResolvedValueOnce([workspaces[0]])
+      .mockResolvedValue(workspaces);
+
+    render(
+      <MemoryRouter initialEntries={["/personal/team-alpha/workflows"]}>
+        <Routes>
+          <Route
+            path="/:orgSlug/:workspaceSlug/workflows"
+            element={
+              <WorkspaceProvider>
+                <WorkspaceConsumer />
+              </WorkspaceProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-slug")).toHaveTextContent(
+        "team-alpha",
+      ),
+    );
+    expect(listWorkspaces).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a missing workspace once, not in a loop", async () => {
+    listWorkspaces.mockResolvedValue([workspaces[0]]);
+
+    render(
+      <MemoryRouter initialEntries={["/personal/ghost/workflows"]}>
+        <Routes>
+          <Route
+            path="/:orgSlug/:workspaceSlug/workflows"
+            element={
+              <WorkspaceProvider>
+                <WorkspaceConsumer />
+              </WorkspaceProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(listWorkspaces).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId("workspace-slug")).toHaveTextContent("none"),
+    );
+    expect(listWorkspaces).toHaveBeenCalledTimes(2);
   });
 });
