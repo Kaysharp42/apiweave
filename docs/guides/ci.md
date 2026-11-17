@@ -257,6 +257,8 @@ apiweave run api.aweproject --env Dev \
 
 For a failed browser step the CLI writes `<dir>/<runId>/<nodeId>.jpg`, the screenshot, and `<dir>/<runId>/<nodeId>.aria.yml`, the page's ARIA (accessibility) snapshot. A character in an id that is not a letter, a digit, `.`, `_` or `-` becomes `_`. Every run has a new id and nothing in the folder is deleted. Without the flag nothing is written.
 
+A step that fails inside a workflow reached through Call Workflow is written under that call's own run id — one per iteration of a `forEach` call — and linked from the Call Workflow node's test case instead, labelled with the called workflow and step: `Screenshot (Login › Check heading)`.
+
 The screenshot has every element that shows a value the run masks painted over — a secret, a typed password — and the ARIA snapshot is masked like the rest of the run. Text the page displays that is not a known secret stays visible in the screenshot.
 
 The reports link the files and never hold the page's content:

@@ -535,7 +535,15 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     // a secret the run never masked, and the formats escape `<SECRET>` only if
     // it is there before they are built.
     const masked = mask(input)
-    const evidence = options.evidenceDir === undefined ? undefined : writeEvidence(options.evidenceDir, masked, (id) => repos.runArtifacts.get(id))
+    const evidence =
+      options.evidenceDir === undefined
+        ? undefined
+        : writeEvidence(options.evidenceDir, masked, {
+            artifact: (id) => repos.runArtifacts.get(id),
+            // Masked like the report input: a called workflow's name and labels reach the reports as step names.
+            loadRun: (runId) => mask(repos.runs.getById(runId)),
+            loadWorkflow: (workflowId) => mask(repos.workflows.getById(workflowId)),
+          })
     writeReports(masked, options, io, evidence)
     return passed ? EXIT_PASSED : EXIT_FAILED
   } finally {

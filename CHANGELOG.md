@@ -170,12 +170,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   ARIA snapshot to `<dir>/<runId>/<nodeId>.aria.yml`, and every report links the
   files instead of carrying the page's content: the console report lists the two
   paths under the failed step, JUnit adds `[[ATTACHMENT|…]]` lines GitLab and
-  Jenkins show beside the test, and the HTML report shows the screenshot. Every
-  report, the app's export included, also shows what a failed step expected,
-  what it found and the page's address with its query string removed. The CI
-  guide gains a GitHub Actions job (the runner's Chrome needs no install) and a
-  GitLab CI job on the Playwright image. See
-  [Run APIWeave Tests in CI](docs/guides/ci.md#browser-steps).
+  Jenkins show beside the test, and the HTML report shows the screenshot. A
+  step that fails inside a workflow reached through Call Workflow is written
+  under that call's own run id and linked from the Call Workflow node's case,
+  labelled with the called workflow and step. Every report, the app's export
+  included, also shows what a failed step expected, what it found and the page's
+  address with its query string removed. The CI guide gains a GitHub Actions job
+  (the runner's Chrome needs no install) and a GitLab CI job on the Playwright
+  image. See [Run APIWeave Tests in CI](docs/guides/ci.md#browser-steps).
 
 ### Changed
 

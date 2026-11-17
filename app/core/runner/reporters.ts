@@ -48,10 +48,16 @@ export type ReportWorkflow = Pick<Workflow, "workflowId" | "name" | "nodes">
 export interface ReportEvidence {
   readonly screenshot?: string
   readonly ariaSnapshot?: string
+  /** The called workflow and step the files belong to (`Login › Check heading`); absent for the case's own step. */
+  readonly step?: string
 }
 
-/** The evidence written for one node of one run, if any. */
-export type ReportEvidenceLookup = (runId: string, nodeId: string) => ReportEvidence | undefined
+/**
+ * The evidence written for one node of one run, if any: one entry per failed
+ * browser step. A browser node has at most its own; a Call Workflow node has
+ * one per failed step of every workflow it reached, iterations included.
+ */
+export type ReportEvidenceLookup = (runId: string, nodeId: string) => readonly ReportEvidence[] | undefined
 
 export type ReportInput =
   | SingleReportInput
@@ -108,8 +114,8 @@ interface ReportCase {
   readonly logs: readonly string[]
   /** Contract violations recorded on a node that still passed (contract mode `warn`). */
   readonly warnings: readonly string[]
-  /** A failed browser step's files, when they were written. */
-  readonly evidence?: ReportEvidence
+  /** Failed browser steps' files, when they were written. */
+  readonly evidence?: readonly ReportEvidence[]
 }
 
 interface ReportSuite {
@@ -353,7 +359,7 @@ function consoleLoadTable(loadRun: LoadRun): string[] {
   return rows.map((row) => row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))
 }
 
-function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown, evidence: ReportEvidence | undefined): ReportCase {
+function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown, evidence: readonly ReportEvidence[] | undefined): ReportCase {
   const recorded = statusOf(entry) ?? result?.status ?? "idle"
   const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
   return {
@@ -376,8 +382,8 @@ function nodeCase(name: string, type: string, result: RunResult | undefined, ent
 }
 
 /** Evidence is a failed step's only. */
-function evidenceOf(outcome: Outcome, evidence: ReportEvidence | undefined): { evidence?: ReportEvidence } {
-  return outcome === "failed" && evidence !== undefined ? { evidence } : {}
+function evidenceOf(outcome: Outcome, evidence: readonly ReportEvidence[] | undefined): { evidence?: readonly ReportEvidence[] } {
+  return outcome === "failed" && evidence !== undefined && evidence.length > 0 ? { evidence } : {}
 }
 
 /** Stands in for a run that did not complete with no failed node to show for it. */
@@ -531,12 +537,21 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;")
 }
 
-/** A case's evidence files, screenshot first, each with what to call it. */
-function evidenceFiles(evidence: ReportEvidence | undefined): { readonly label: string; readonly path: string }[] {
-  return [
-    ...(evidence?.screenshot === undefined ? [] : [{ label: "Screenshot", path: evidence.screenshot }]),
-    ...(evidence?.ariaSnapshot === undefined ? [] : [{ label: "ARIA snapshot", path: evidence.ariaSnapshot }]),
-  ]
+interface EvidenceFile {
+  readonly label: string
+  readonly path: string
+  readonly screenshot: boolean
+}
+
+/** A case's evidence files in entry order, each named for the step it belongs to. */
+function evidenceFiles(evidence: readonly ReportEvidence[] | undefined): EvidenceFile[] {
+  return (evidence ?? []).flatMap((one) => {
+    const suffix = one.step === undefined ? "" : ` (${one.step})`
+    return [
+      ...(one.screenshot === undefined ? [] : [{ label: `Screenshot${suffix}`, path: one.screenshot, screenshot: true }]),
+      ...(one.ariaSnapshot === undefined ? [] : [{ label: `ARIA snapshot${suffix}`, path: one.ariaSnapshot, screenshot: false }]),
+    ]
+  })
 }
 
 function seconds(ms: number): string {
@@ -563,7 +578,11 @@ function junitCase(suite: ReportSuite, testCase: ReportCase): string {
     children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
   // The attachment convention GitLab and Jenkins read: a failed browser step's screenshot shows with the test.
-  const attachments = evidenceFiles(testCase.evidence).map((file) => `[[ATTACHMENT|${file.path}]]`)
+  // GitLab shows only the first attachment, so every screenshot precedes every ARIA snapshot.
+  const files = evidenceFiles(testCase.evidence)
+  const attachments = [...files.filter((file) => file.screenshot), ...files.filter((file) => !file.screenshot)].map(
+    (file) => `[[ATTACHMENT|${file.path}]]`,
+  )
   const out = [...testCase.warnings, ...testCase.logs, ...attachments]
   if (out.length > 0) children.push(`      <system-out>${escapeXmlText(out.join("\n"))}</system-out>`)
   return children.length === 0 ? `${head}/>` : `${head}>\n${children.join("\n")}\n    </testcase>`
@@ -602,17 +621,32 @@ export function buildJUnitReport(input: ReportInput, evidence?: ReportEvidenceLo
 
 const OUTCOME_LABEL: Record<Outcome, string> = { passed: "Passed", failed: "Failed", skipped: "Skipped" }
 
-/** Links to a failed browser step's files beside the report, and the screenshot shown from its file. */
-function htmlEvidence(evidence: ReportEvidence | undefined): string {
-  const files = evidenceFiles(evidence)
-  if (files.length === 0) return ""
-  const href = (file: string): string => escapeHtml(file.split("/").map(encodeURIComponent).join("/"))
-  const links = files.map((file) => `<a href="${href(file.path)}">${file.label}</a>`).join(" · ")
-  const image =
-    evidence?.screenshot === undefined
-      ? ""
-      : `<a href="${href(evidence.screenshot)}"><img class="shot" src="${href(evidence.screenshot)}" alt="The page when the step failed" loading="lazy"></a>`
-  return `<div class="evidence">${links}</div>${image}`
+/** Links to failed browser steps' files beside the report, and each screenshot shown from its file. */
+function htmlEvidence(evidence: readonly ReportEvidence[] | undefined): string {
+  const steps = evidence ?? []
+  if (steps.length === 0) return ""
+  const links = evidenceFiles(steps)
+    .map((file) => `<a href="${htmlHref(file.path)}">${escapeHtml(file.label)}</a>`)
+    .join(" · ")
+  const images = steps.flatMap((one) =>
+    one.screenshot === undefined
+      ? []
+      : [`<a href="${htmlHref(one.screenshot)}"><img class="shot" src="${htmlHref(one.screenshot)}" alt="The page when the step failed" loading="lazy"></a>`],
+  )
+  return `<div class="evidence">${links}</div>${images.join("")}`
+}
+
+/**
+ * A report path as an href. A relative path is its segments, each encoded. An
+ * absolute one — the evidence folder on another Windows drive, which
+ * `path.relative` cannot make relative — becomes a `file:///` URL, because
+ * encoding its `D:` segment would turn it into a path under the report.
+ */
+function htmlHref(file: string): string {
+  const drive = /^[A-Za-z]:\//.test(file)
+  if (!drive && !file.startsWith("/")) return file.split("/").map(encodeURIComponent).join("/")
+  const segments = file.split("/").map((segment, index) => (drive && index === 0 ? segment : encodeURIComponent(segment)))
+  return `file://${drive ? "/" : ""}${segments.join("/")}`
 }
 
 function htmlSuite(suite: ReportSuite): string {
