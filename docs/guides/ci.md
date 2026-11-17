@@ -84,6 +84,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `-r, --reporter <list>` | `cli`, `junit`, `html`, comma separated. Default `cli`. |
 | `--reporter-junit-export <path>` | Where to write JUnit XML (default `apiweave-report.xml`). Naming a path turns the JUnit report on. |
 | `--reporter-html-export <path>` | Where to write the HTML report (default `apiweave-report.html`). Naming a path turns the HTML report on. |
+| `--evidence-dir <dir>` | Write each failed browser step's screenshot and ARIA snapshot to this folder; the reports link them. See [Browser steps](#browser-steps). |
 | `-d, --iteration-data <file>` | Run once per row of a CSV or JSON array file; each row's values are `{{data.<column>}}`. See [Data-driven runs](#data-driven-runs). |
 | `-n, --iteration-count <n>` | Run `n` times; with `--iteration-data`, its first `n` rows. |
 | `-c, --concurrency <n>` | Load mode: run `n` iterations at once and report latency percentiles. Needs one workflow (`--workflow`). See [Load runs](#load-runs). |
@@ -104,7 +105,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--headed` | Show the browser window while browser steps run. |
 | `-h, --help` | Print the usage text and exit `0`. |
 
-`--env-file`, `--var` and secret values stay in memory for the run. Nothing is written to disk except the reports you ask for.
+`--env-file`, `--var` and secret values stay in memory for the run. Nothing is written to disk except the reports and evidence files you ask for.
 
 The console report lists each workflow, a line per step with its time, and the failure message and failed assertion rules under a failed step, then a summary table. It uses colour only on a terminal, and never when `NO_COLOR` is set. The JUnit and HTML files are the same reports the app exports; see [Run reports](../features/visualization-and-debugging.md#5-run-reports-junit-and-html).
 
@@ -206,14 +207,145 @@ A file that cannot be read, a key that does not match its certificate or a wrong
 
 ## Browser steps
 
-A workflow with `browser` nodes runs headless with the same one-browser-per-run rules as the app. Against a machine with Chrome, Edge or Playwright's Chromium installed, a full run needs no extra flags:
+A workflow with `browser` nodes runs headless with the same one-browser-per-run rules as the app. A failed browser step fails the run, so the CLI exits `1`; a browser that cannot start fails its step, and the error names the browser.
 
 ```bash
 apiweave run api.aweproject --env Staging                       # first browser that starts
 apiweave run api.aweproject --env Staging --browser msedge --headed
 ```
 
-`--browser chrome|msedge|chromium` picks the browser; `--headed` opens its window so you can watch a run locally. A CI machine needs one of Google Chrome, Microsoft Edge, or Playwright's Chromium (`npx playwright install chromium`); the CLI does not install a browser itself, and no display is needed when headless. A step that cannot start its browser fails, so the run exits `1` with the browser named in the error. A failed browser step's screenshot is stored with the in-memory run and is not part of the console, JUnit or HTML report yet. See [Browser Steps](../features/browser-steps.md).
+### Which browser
+
+`--browser chrome|msedge|chromium` picks the browser. Without it the CLI starts the first of Google Chrome, Microsoft Edge and Playwright's Chromium that starts on the machine. `--headed` opens its window, for watching a run locally. No display is needed when headless.
+
+GitHub Actions' `ubuntu-latest` runner has Google Chrome preinstalled, so the default finds it and a workflow that runs browser steps needs no browser install step. This repository proves it on every push: its quality workflow runs the built CLI on a browser workflow with `--browser chrome`.
+
+A container or a machine without Chrome or Edge needs Playwright's Chromium at the exact version the CLI uses, `playwright-core` 1.64.1:
+
+```bash
+npx playwright@1.64.1 install --with-deps chromium
+apiweave run api.aweproject --env Staging --browser chromium
+```
+
+`--with-deps` installs the Linux system libraries the browser needs, so it wants root or `sudo`. A different version is not found, and the step fails with `no supported browser was found on this machine`. The alternative is the image `mcr.microsoft.com/playwright:v1.64.1-noble`, which holds that Chromium and Node.
+
+### Credentials
+
+Keep the test account out of the workflow file. The email comes from an environment variable and the password from a secret:
+
+```bash
+apiweave run api.aweproject --env Dev --var TEST_EMAIL="$TEST_EMAIL"
+```
+
+```bash
+export APIWEAVE_SECRET_TEST_PASSWORD="$TEST_PASSWORD"
+```
+
+The workflow reads the password as `{{secrets.TEST_PASSWORD}}`. A missing secret exits `2` before anything runs, as for any other node (see [Secrets](#secrets)).
+
+### Evidence
+
+`--evidence-dir <dir>` writes what each failed browser step left behind, so the files outlive the run and a pipeline can publish them:
+
+```bash
+apiweave run api.aweproject --env Dev \
+  --reporter cli,junit,html \
+  --reporter-junit-export reports/apiweave.xml \
+  --reporter-html-export reports/apiweave.html \
+  --evidence-dir reports/evidence
+```
+
+For a failed browser step the CLI writes `<dir>/<runId>/<nodeId>.jpg`, the screenshot, and `<dir>/<runId>/<nodeId>.aria.yml`, the page's ARIA (accessibility) snapshot. A character in an id that is not a letter, a digit, `.`, `_` or `-` becomes `_`. Every run has a new id and nothing in the folder is deleted. Without the flag nothing is written.
+
+The screenshot has every element that shows a value the run masks painted over — a secret, a typed password — and the ARIA snapshot is masked like the rest of the run. Text the page displays that is not a known secret stays visible in the screenshot.
+
+The reports link the files and never hold the page's content:
+
+- **Console.** `Screenshot: <path>` and `ARIA snapshot: <path>` under the failed step.
+- **JUnit.** `[[ATTACHMENT|<path>]]` lines in the failed test case's `<system-out>`, the convention GitLab and Jenkins (JUnit Attachments plugin) read to show the screenshot beside the test.
+- **HTML.** The screenshot itself, and links to both files.
+
+Console and JUnit paths are relative to the working directory. HTML paths are relative to the HTML file, so upload the evidence folder with the report and keep their relative layout.
+
+Every report, the app's own report export included, also shows `Expected: "…"`, `Found: "…"` and `Page: <url>` under a failed browser step: what a check waited for, what the page showed last, and the page's address without its query string. Values are masked like assertion rule values.
+
+### Network
+
+The proxy reaches browser steps too: `--proxy`, or else `HTTPS_PROXY` / `HTTP_PROXY`, is the browser's proxy, and `NO_PROXY` lists the hosts that bypass it. `--insecure` (`-k`) also makes the browser accept an untrusted TLS certificate, which is what a dev server with a self-signed certificate needs. In the desktop app, the proxy in **Settings > Network** applies to browser steps, recording, re-pick and re-record.
+
+`--ca-cert`, `--use-system-ca` and `--client-cert` are not passed to the browser, and neither are the app's trusted CAs and client certificates. For a dev server with a private CA in CI, use `--insecure`, or install the CA into the browser's or the operating system's store yourself.
+
+### A GitHub Actions job
+
+This job runs a browser workflow on the Chrome the runner already has:
+
+```yaml
+name: API tests
+on: [push, pull_request]
+
+jobs:
+  browser-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install the APIWeave CLI
+        run: |
+          curl -fsSL -o apiweave-cli.tgz \
+            https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+          npm install -g ./apiweave-cli.tgz
+      - name: Run API tests
+        env:
+          APIWEAVE_SECRET_TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+        run: >
+          apiweave run .
+          --env Dev
+          --var TEST_EMAIL=${{ vars.TEST_EMAIL }}
+          --reporter cli,junit,html
+          --reporter-junit-export reports/apiweave.xml
+          --reporter-html-export reports/apiweave.html
+          --evidence-dir reports/evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apiweave-reports
+          path: reports/
+```
+
+The run step fails the job on exit code `1` or `2`. `if: always()` keeps the reports and the evidence when it does, and the JUnit file carries the attachment lines.
+
+### A GitLab CI job
+
+The `mcr.microsoft.com/playwright:v1.64.1-noble` image already holds the Chromium the CLI drives, so no install step is needed:
+
+```yaml
+api-tests:
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  variables:
+    APIWEAVE_SECRET_TEST_PASSWORD: $TEST_PASSWORD
+  script:
+    - >
+      curl -fsSL -o apiweave-cli.tgz
+      https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+    - npm install -g ./apiweave-cli.tgz
+    - >
+      apiweave run . --env Dev --browser chromium
+      --var TEST_EMAIL="$TEST_EMAIL"
+      --reporter cli,junit,html
+      --reporter-junit-export reports/apiweave.xml
+      --reporter-html-export reports/apiweave.html
+      --evidence-dir reports/evidence
+  artifacts:
+    when: always
+    paths:
+      - reports/
+    reports:
+      junit: reports/apiweave.xml
+```
+
+GitLab reads the `<system-out>` attachments and shows the screenshot with the test in its report. See [Browser Steps](../features/browser-steps.md).
 
 ## Run a workspace repository
 
@@ -282,6 +414,9 @@ The run step fails the job on exit code `1` or `2`. `if: always()` keeps the rep
 - **If the CLI exits `2` with `.apiweave/format.json is missing`**, the folder is not a workspace repository: point `apiweave run` at the folder that holds `.apiweave/`.
 - **If a variable shows `<SECRET>` in the request**, the export replaced a secret-looking environment value with a placeholder. Supply the real value with `--var`, or move it to a secret.
 - **If the CLI exits `2` with `Unknown option`**, check the spelling against `apiweave --help`.
+- **If a browser step fails with `no supported browser was found on this machine`**, the machine has no Chrome, Edge or Playwright Chromium the CLI can start. GitHub Actions' `ubuntu-latest` image has Chrome already; a container needs the version the CLI uses, `npx playwright@1.64.1 install --with-deps chromium`, because a different version is not found.
+- **If a browser step fails on a dev server's certificate**, the browser does not trust the server's CA. Pass `--insecure`.
+- **If pages fail to load behind a corporate proxy**, pass `--proxy`, or set `HTTPS_PROXY`, and list the hosts that bypass it in `NO_PROXY`. `--ca-cert`, `--use-system-ca` and `--client-cert` do not reach the browser: use `--insecure` for a private CA, or install the CA in the browser's or the operating system's store.
 - **If a Call Workflow node fails with `Call Workflow node has no target workflow configured`**, its target was not in the file. A workflow export carries none of its Call Workflow targets: export the project that holds both workflows instead, and run the caller with `--workflow`.
 
 ## Related

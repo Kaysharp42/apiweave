@@ -165,9 +165,26 @@ project adheres to [Semantic Versioning](https://semver.org/).
   new steps replace that step and the browser steps after it, and one undo
   restores them. Both are desktop-app only. See
   [Browser Steps](docs/features/browser-steps.md#fixing-one-step).
+- **Browser workflows in CI.** `apiweave run --evidence-dir <dir>` writes each
+  failed browser step's screenshot to `<dir>/<runId>/<nodeId>.jpg` and its
+  ARIA snapshot to `<dir>/<runId>/<nodeId>.aria.yml`, and every report links the
+  files instead of carrying the page's content: the console report lists the two
+  paths under the failed step, JUnit adds `[[ATTACHMENT|…]]` lines GitLab and
+  Jenkins show beside the test, and the HTML report shows the screenshot. Every
+  report, the app's export included, also shows what a failed step expected,
+  what it found and the page's address with its query string removed. The CI
+  guide gains a GitHub Actions job (the runner's Chrome needs no install) and a
+  GitLab CI job on the Playwright image. See
+  [Run APIWeave Tests in CI](docs/guides/ci.md#browser-steps).
 
 ### Changed
 
+- **The proxy and `--insecure` reach browser steps.** The proxy configured in
+  **Settings → Network**, or `--proxy` / `HTTPS_PROXY` with `NO_PROXY` on the
+  CLI, is now the browser's proxy too, for runs, recording, re-pick and
+  re-record, and `--insecure` makes the browser accept an untrusted
+  certificate. Trusted CAs and client certificates still do not reach the
+  browser.
 - **SSE and WebSocket share one stream-listener lifecycle.** The executor's
   SSE-only handshake, consumer and completion code is now a protocol-neutral
   seam (`core/runner/stream_listener.ts`) driven by an adapter per protocol,
