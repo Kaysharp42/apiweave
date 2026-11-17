@@ -8,19 +8,30 @@ const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 const TIME_LEN = 10
 const RANDOM_LEN = 16
 
+/** The prefix and random part of the previous id, for monotonic generation. */
+let lastTime: string | null = null
+let lastRandom: readonly number[] = []
+
 /**
  * Generates a 26-character ULID: 10-char time prefix (48-bit millisecond
- * timestamp, big-endian) + 16-char random suffix (80 bits of cryptographic
- * randomness, 5 bits per char).
+ * timestamp, big-endian) + 16-char random suffix (80 bits of randomness, 5 bits
+ * per char).
  *
  * Why ULID over UUIDv4: lexicographically sortable on time-of-birth, so
- * backends can stream stable client-generated ids without re-hashing.
+ * backends can stream stable client-generated ids without re-hashing. Ids made
+ * in the same millisecond sort in the order they were made: the random suffix
+ * is incremented like a base-32 counter instead of re-randomised.
  *
  * The `now` parameter is exposed for tests that need deterministic time
  * prefixes; production callers omit it.
  */
 export function generateId(now: number = Date.now()): string {
-  return encodeTime(now) + encodeRandom()
+  const time = encodeTime(now)
+  // Only an exactly-equal prefix continues the counter. A clock that moved,
+  // even backwards, gets a fresh suffix so nothing is carried across.
+  lastRandom = time === lastTime ? incrementRandom(lastRandom) : randomDigits()
+  lastTime = time
+  return time + encodeRandom(lastRandom)
 }
 
 function encodeTime(now: number): string {
@@ -34,14 +45,35 @@ function encodeTime(now: number): string {
   return chars.join("")
 }
 
-function encodeRandom(): string {
-  const bytes = crypto.randomBytes(RANDOM_LEN)
+function encodeRandom(digits: readonly number[]): string {
   const chars: string[] = []
   for (let i = 0; i < RANDOM_LEN; i++) {
-    // Lower 5 bits of a uniformly-random byte → uniform 0..31 (256 % 32 == 0, no bias).
-    chars.push(ALPHABET[bytes[i]! & 0x1f] ?? "")
+    chars.push(ALPHABET[digits[i] ?? 0] ?? "")
   }
   return chars.join("")
+}
+
+function randomDigits(): number[] {
+  const bytes = crypto.randomBytes(RANDOM_LEN)
+  return Array.from(bytes, (byte) => byte & 0x1f)
+}
+
+/**
+ * The next suffix in base 32: +1 from the rightmost digit, carrying left. A
+ * suffix of all 31s cannot be incremented, so it overflows to a fresh random
+ * one rather than throwing.
+ */
+function incrementRandom(digits: readonly number[]): number[] {
+  const next = [...digits]
+  for (let i = next.length - 1; i >= 0; i--) {
+    const digit = next[i] ?? 0
+    if (digit < 31) {
+      next[i] = digit + 1
+      return next
+    }
+    next[i] = 0
+  }
+  return randomDigits()
 }
 
 /**
