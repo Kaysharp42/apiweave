@@ -145,8 +145,9 @@ platform can self-install.
   variables and also takes `--proxy`.
 
 Private certificate authorities, the operating system certificate store and
-client certificates (mTLS) are supported and configured in the same settings
-page or through the CLI flags.
+client certificates (mTLS) are supported for requests, and configured in the
+same settings page or through the CLI flags. They do not apply to browser steps,
+which use the browser's own trust store.
 - **Snapshot baselines do not travel in `.aweproject` exports.** The app keeps
   them in its local database; the CLI keeps them in `.apiweave-snapshots.json`,
   which is meant to be committed beside the workflows it runs.
@@ -177,9 +178,13 @@ page or through the CLI flags.
   the user's own browsing data, logins and extensions are never touched, and
   there is no saved login state to reuse. Sign in with steps, ideally once, in a
   sub-workflow called through Call Workflow.
-- **The network settings do not apply.** The proxy, trusted CAs and client
-  certificates of **Settings → Network** are used by HTTP nodes, not by browser
-  steps, which use the machine's own network configuration.
+- **Only the proxy reaches the browser.** The proxy configured in
+  **Settings → Network** — or `--proxy`, `HTTPS_PROXY` and `NO_PROXY` on the CLI
+  — is used by browser steps, recording, re-pick and re-record as well as by
+  HTTP nodes. Trusted CAs and client certificates do not apply to browser steps:
+  the browser uses its own trust store, so a dev server with a
+  private CA needs that CA installed there, or `--insecure` on the CLI to skip
+  verification.
 - **A screenshot covers only part of what the page displays.** Password fields
   are painted over, in every frame, and so is every field a secret was typed into
   and every element whose text or field value contains a value the run masks — a
@@ -188,9 +193,10 @@ page or through the CLI flags.
   shadow roots; text inside a closed shadow root cannot be read from script, so
   it is not painted over, and a frame that cannot be read at all means no
   screenshot is taken. Other sensitive text the page renders is still visible. A
-  failed step's screenshot is stored with the run and never exported;
-  `browser_inspect` takes one only when asked, and hands it to the agent without
-  storing it.
+  failed step's screenshot is stored with the run and never travels in an
+  export; `apiweave run --evidence-dir` writes it and the ARIA snapshot to disk
+  for the reports to link, `browser_inspect` takes one only when asked, and hands
+  it to the agent without storing it.
 - **Recording covers one page.** The recorder follows the page it opened:
   actions in a popup or a new tab are not recorded.
 - **File uploads and two toolbar checks are not recorded yet.** A file chosen

@@ -1,4 +1,4 @@
-import type { Browser, Page } from "playwright-core"
+import type { Browser, BrowserContextOptions, Page } from "playwright-core"
 import type { BrowserChannel } from "@shared/types/BrowserChannel"
 
 /** How a run's browser is started. */
@@ -7,6 +7,18 @@ export interface BrowserLaunchSettings {
   readonly channel?: BrowserChannel
   /** False shows the browser window while the run drives it. */
   readonly headless: boolean
+  /** The proxy the run's requests use, so its pages go the same way (`browserProxy`). */
+  readonly proxy?: BrowserProxy
+  /** Accept any TLS certificate, as `apiweave run --insecure` does for requests. */
+  readonly ignoreHttpsErrors?: boolean
+}
+
+/** Playwright's proxy option: the server without credentials, and the hosts that bypass it. */
+export interface BrowserProxy {
+  readonly server: string
+  readonly bypass?: string
+  readonly username?: string
+  readonly password?: string
 }
 
 /** The order an unset channel is tried in: the browsers people already have first. */
@@ -112,13 +124,18 @@ export class BrowserSession {
       throw new BrowserSessionError("the run ended while the browser was starting")
     }
     this.browser = browser
-    const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
+    const context = await browser.newContext(contextOptions(this.settings))
     return context.newPage()
   }
 }
 
 /** Every page a run or a recording opens has this size, so a recording sees the layout its run will. */
 export const PAGE_VIEWPORT = { width: 1280, height: 720 } as const
+
+/** A run's or a recording's one context: the shared viewport, and certificate errors accepted when asked. */
+export function contextOptions(settings: BrowserLaunchSettings): BrowserContextOptions {
+  return { viewport: PAGE_VIEWPORT, ...(settings.ignoreHttpsErrors === true ? { ignoreHTTPSErrors: true } : {}) }
+}
 
 /**
  * Start the configured browser, or the first installed one when none is
@@ -133,6 +150,7 @@ export async function launchBrowser(settings: BrowserLaunchSettings): Promise<Br
       return await chromium.launch({
         headless: settings.headless,
         ...(channel === "chromium" ? {} : { channel }),
+        ...(settings.proxy === undefined ? {} : { proxy: { ...settings.proxy } }),
       })
     } catch (error) {
       if (isMissingBrowser(error)) continue

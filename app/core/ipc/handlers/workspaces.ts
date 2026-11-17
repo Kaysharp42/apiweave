@@ -13,7 +13,10 @@ const createInput = z
     name: z.string().min(1),
     slug: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
-    isPersonal: z.boolean().optional(),
+    isPersonal: z
+      .boolean()
+      .optional()
+      .describe("Leave out: a new workspace is never the personal one. True returns the existing personal workspace instead of creating one."),
   })
   .strict()
 

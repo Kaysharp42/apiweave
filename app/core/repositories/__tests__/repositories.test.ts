@@ -42,7 +42,7 @@ function seedWorkspace(): string {
 describe("WorkspaceRepository", () => {
   it("applies defaults on create", () => {
     const workspace = workspaces.create({ name: "Personal", slug: "personal" })
-    expect(workspace).toMatchObject({ isPersonal: true, rev: 1 })
+    expect(workspace).toMatchObject({ isPersonal: false, rev: 1 })
     expect(workspace.workspaceId).toHaveLength(26)
     expect(workspace.createdAt).toEqual(expect.any(String))
   })

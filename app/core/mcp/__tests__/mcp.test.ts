@@ -2798,4 +2798,17 @@ describe("MCP writes announce themselves — the renderer's only notice", () => 
     expect(created.workspaceId).toEqual(expect.any(String))
     await client.close()
   })
+
+  it("creates a new workspace beside the personal one, rather than handing the personal one back", async () => {
+    const personal = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Personal", slug: "personal", isPersonal: true })
+    const client = await connectClient()
+
+    const result = await client.callTool({ name: "workspaces_create", arguments: { name: "Browser checks" } })
+    const created = JSON.parse((result.content as Array<{ text: string }>)[0]?.text ?? "{}") as { workspaceId?: string; isPersonal?: boolean; slug?: string }
+
+    expect(created.workspaceId).toBeDefined()
+    expect(created.workspaceId).not.toBe(personal.workspaceId)
+    expect(created).toMatchObject({ slug: "browser-checks", isPersonal: false })
+    await client.close()
+  })
 })

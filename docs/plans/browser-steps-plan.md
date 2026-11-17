@@ -10,6 +10,7 @@
 | 3: Recorder — record steps into nodes | `Kaysharp42/browser-recorder` | **Done** (notes below) |
 | 4: Checks, extracts and dialogs while recording | `Kaysharp42/browser-recorder-checks` | **Done** (notes below) |
 | 5: Update one node — re-pick an element, re-record from a step | `Kaysharp42/browser-node-repick` | **Done** (notes below) |
+| 6: Browser workflows in CI | `Kaysharp42/browser-ci` | **Done** (notes below) |
 
 **Base.** `main` with PR #196 merged (`5670ac42`). The next migration number is `033`.
 
@@ -32,7 +33,7 @@ The motivating flow: after merging, the user runs the workflow **from the deskto
 
 ## Out of scope for these phases
 
-- CI documentation and a CI browser story (the CLI runs browser workflows from Phase 1, but nothing is tuned or documented for pipelines yet).
+- CI documentation and a CI browser story (the CLI runs browser workflows from Phase 1, but nothing is tuned or documented for pipelines yet). Added later as Phase 6.
 - Firefox and WebKit. Chromium-family only (Chrome, Edge, or Playwright's own Chromium if installed).
 - Multiple tabs and popups. A step that opens a popup fails with "not supported yet", and the recorder warns.
 - File uploads, downloads, drag and drop, visual (pixel) diffs.
@@ -433,6 +434,17 @@ The user's "update a single node later" goal.
 - **Found on the way, and fixed for recording too:** Playwright shortens an element's name to a unique prefix (`Key tok-` for `Key tok-123456`), so a locator could hold the start of a secret. Locator texts, and each quoted name in a raw selector, now count as showing a secret when they contain one or end in its first four or more characters (`showsSecret`), the rule typed text already had.
 - **Checked:** the "done when" runs in `executor_browser.test.ts` with a real scheduler and a real browser — the renamed button fails the run, one replay and one pick give `Log in`, the run passes, every other node is unchanged. The canvas half (placement, undo as one edit, the menu rules, the store's phases) is unit-tested. Not checked by hand in the app.
 
+## Phase 6 — Browser workflows in CI
+
+The CLI has run browser steps since Phase 1. What a pipeline still lacked: a failed step's evidence left with the in-memory run, the network flags never reached the browser, and nothing showed the setup works on a CI machine.
+
+- **Evidence leaves the CLI.** A failed browser step's expected and found values and its page URL are lines in every report (console, JUnit, HTML), like an assertion rule's. `--evidence-dir <dir>` writes its screenshot and ARIA snapshot as `<dir>/<runId>/<nodeId>.jpg` and `.aria.yml`; the console names them, JUnit attaches them (`[[ATTACHMENT|path]]`, read by GitLab and Jenkins) and HTML shows the screenshot. A report links a page's content and never holds it, so it is opt-in.
+- **The network reaches the page.** The run's proxy (`--proxy`/`HTTPS_PROXY` in the CLI, Settings > Network in the app) is the browser's proxy, `NO_PROXY` its bypass list (`core/runner/browser/proxy.ts`), and `--insecure` sets `ignoreHTTPSErrors`. Trusted CAs and client certificates do not reach the browser: Chrome reads its own store, and Playwright's client certificates take exact origins where ours take `*.host`.
+- **Proved on CI.** The `quality` job runs the built CLI on a browser fixture with the runner's preinstalled Chrome, passing and failing, and checks the evidence and that the password appears nowhere.
+- **Documented.** `docs/guides/ci.md`: GitHub Actions (Chrome is preinstalled), containers (Playwright's image or `npx playwright@<version> install --with-deps chromium`, the version matching `playwright-core`), credentials, evidence, and troubleshooting.
+
+**Not in this phase:** reusing a login across workflows (`storageState`), a `--timeout` for browser steps, installing a browser from the CLI.
+
 ---
 
 ## Rules that apply to every phase
@@ -443,7 +455,7 @@ Everything in `AGENTS.md` and the "Rules that apply to every task" of `docs/plan
 - No raw SQL outside `core/db/` and `core/repositories/`.
 - The recorder, and anything that opens a *visible* browser, stays off the router.
 - A resolved secret, or a value typed into a password field, is never written to a workflow, a run result, a log line, an MCP response or an IPC message to the renderer.
-- Every Playwright version bump re-runs the recorder parser tests against freshly captured payloads (`docs/.scratch/browser-spike/record.cjs`).
+- Every Playwright version bump re-runs the recorder parser tests against freshly captured payloads (`docs/.scratch/browser-spike/record.cjs`), and updates the version in `docs/guides/ci.md`'s browser install command and container image.
 - Before handing back: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build:app`, `npm run build:cli`.
 
 ## Risks

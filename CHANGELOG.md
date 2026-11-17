@@ -171,9 +171,28 @@ project adheres to [Semantic Versioning](https://semver.org/).
   of your accounts, which an agent cannot do itself. **Sync with GitHub or
   GitLab** in **Create workspace** is on by default once one of your git
   accounts is signed in. See [Git workflows](docs/guides/git-workflows.md).
+- **Browser workflows in CI.** `apiweave run --evidence-dir <dir>` writes each
+  failed browser step's screenshot to `<dir>/<runId>/<nodeId>.jpg` and its
+  ARIA snapshot to `<dir>/<runId>/<nodeId>.aria.yml`, and every report links the
+  files instead of carrying the page's content: the console report lists the two
+  paths under the failed step, JUnit adds `[[ATTACHMENT|…]]` lines GitLab and
+  Jenkins show beside the test, and the HTML report shows the screenshot. A
+  step that fails inside a workflow reached through Call Workflow is written
+  under that call's own run id and linked from the Call Workflow node's case,
+  labelled with the called workflow and step. Every report, the app's export
+  included, also shows what a failed step expected, what it found and the page's
+  address with its query string removed. The CI guide gains a GitHub Actions job
+  (the runner's Chrome needs no install) and a GitLab CI job on the Playwright
+  image. See [Run APIWeave Tests in CI](docs/guides/ci.md#browser-steps).
 
 ### Changed
 
+- **The proxy and `--insecure` reach browser steps.** The proxy configured in
+  **Settings → Network**, or `--proxy` / `HTTPS_PROXY` with `NO_PROXY` on the
+  CLI, is now the browser's proxy too, for runs, recording, re-pick and
+  re-record, and `--insecure` makes the browser accept an untrusted
+  certificate. Trusted CAs and client certificates still do not reach the
+  browser.
 - **SSE and WebSocket share one stream-listener lifecycle.** The executor's
   SSE-only handshake, consumer and completion code is now a protocol-neutral
   seam (`core/runner/stream_listener.ts`) driven by an adapter per protocol,
@@ -183,6 +202,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An agent can create a workspace.** `workspaces_create` without
+  `isPersonal` handed back the existing Personal workspace instead of creating
+  one, because a create that did not say otherwise was taken to mean the
+  Personal workspace. Only the app's first run asks for that one now; every
+  other create makes a new workspace.
 - **Snapshot baselines survive across CLI runs for every file.** The CLI
   imports its file into a fresh database each run, and an export without a
   `workflowId` got a random one, so `matchesSnapshot` never found its baseline
