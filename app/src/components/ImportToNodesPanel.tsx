@@ -228,8 +228,14 @@ export function ImportToNodesPanel({
     reader.onload = (e: ProgressEvent<FileReader>) => {
       const result = e.target?.result;
       if (typeof result === "string") {
-        setUploadedFile(result);
-        setPastedText("");
+        // The WSDL tab imports what its text box holds, so a chosen file fills it.
+        if (activeTab === "wsdl") {
+          setUploadedFile(null);
+          setPastedText(result);
+        } else {
+          setUploadedFile(result);
+          setPastedText("");
+        }
         setMessage(null);
       }
     };
