@@ -82,6 +82,23 @@ export function templateFill(text: string, values: RecordingValues, password: bo
   return endsInSecretPrefix(value, values) ? { kind: "withheld" } : { kind: "value", value }
 }
 
+/**
+ * Turn the text a check from the recorder toolbar expects into what the
+ * workflow stores. Checks refuse `{{secrets.*}}`, so a text that is a secret,
+ * of any length, or contains one cannot be recorded at all: null. Otherwise
+ * the same rule as a fill: the whole text equal to an environment variable
+ * (at least as long as a value a run masks) becomes `{{env.KEY}}`, anything
+ * else stays as it is.
+ */
+export function templateCheck(text: string, values: RecordingValues): string | null {
+  if (secretNamed(text, values) !== undefined || containsSecret(text, values)) return null
+  if (text.length < MIN_MASKED_SECRET_LENGTH) return text
+  const variable = Object.keys(values.env)
+    .sort()
+    .find((key) => values.env[key] === text)
+  return variable === undefined ? text : `{{env.${variable}}}`
+}
+
 /** True when `url` continues `prefix` at a boundary, so `http://host:80` never matches `http://host:8080`. */
 function continuesAtBoundary(url: string, prefix: string): boolean {
   if (!url.startsWith(prefix)) return false

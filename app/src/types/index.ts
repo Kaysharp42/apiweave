@@ -379,6 +379,8 @@ export type { CanvasToolbarRecordProps } from "./CanvasToolbarRecordProps";
 export type { UseBrowserRecordingParams } from "./UseBrowserRecordingParams";
 export type { UseBrowserRecordingResult } from "./UseBrowserRecordingResult";
 export type { SecretNamesInScope } from "./SecretNamesInScope";
+export type { UseTurnIntoExtractParams } from "./UseTurnIntoExtractParams";
+export type { UseTurnIntoExtractResult } from "./UseTurnIntoExtractResult";
 export type { MissingSecretNoticeProps } from "./MissingSecretNoticeProps";
 export type { CanvasHistoryEntry } from "./CanvasHistoryEntry";
 export type { CanvasHistoryControls } from "./CanvasHistoryControls";

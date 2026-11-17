@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
-import { RecordingConverter, readRecorderAction, type RecorderEvent } from "../recorded"
-import { templateFill, templateUrl, type RecordingValues } from "../recording_values"
+import { RecordingConverter, readRecorderAction, readRecorderSignal, type RecorderEvent } from "../recorded"
+import { templateCheck, templateFill, templateUrl, type RecordingValues } from "../recording_values"
 import events from "./fixtures/recorder-events.json"
 
 const BASE = "http://127.0.0.1:54460"
@@ -163,12 +163,12 @@ describe("RecordingConverter rules", () => {
     expect(inPopup).toEqual({ steps: [], warnings: [] })
   })
 
-  it("warns about toolbar checks and file uploads instead of recording them", () => {
+  it("warns once about checks it has no step for, and about file uploads", () => {
     const recording = converter()
     const add = (name: string): string[] =>
       [...recording.apply({ kind: "added", action: { name, selector: "#x" }, onMainPage: true }).warnings]
-    expect(add("assertVisible")).toHaveLength(1)
-    expect(add("assertText")).toEqual([])
+    expect(add("assertChecked")).toHaveLength(1)
+    expect(add("assertSnapshot")).toEqual([])
     expect(add("setInputFiles")).toHaveLength(1)
   })
 
@@ -205,6 +205,141 @@ describe("RecordingConverter rules", () => {
       readRecorderAction({ name: "fill", selector: "#pw", text: "x", ref: "e5", ariaSnapshot: '- textbox "Password": x', signals: [] }),
     ).toEqual({ name: "fill", selector: "#pw", text: "x" })
     expect(readRecorderAction({ selector: "#x" })).toBeNull()
+  })
+})
+
+describe("RecordingConverter checks from the recorder toolbar", () => {
+  const values: RecordingValues = {
+    env: { TEST_EMAIL: "ada@acme.test", PAGE_SIZE: "10" },
+    secrets: { TEST_PASSWORD: "fixture-pass-2468", PIN: "12" },
+  }
+  const heading = 'internal:role=heading[name="Dashboard"i]'
+  const check = (action: RecorderEvent["action"], isPassword = false): ReturnType<RecordingConverter["apply"]> =>
+    converter(values).apply({ kind: "added", action, onMainPage: true, isPassword })
+
+  it("turns visibility, text and value checks into expect steps", () => {
+    const locator = { kind: "role", role: "heading", name: "Dashboard" }
+    expect(check({ name: "assertVisible", selector: heading }).steps[0]?.config).toEqual({ action: "expect-visible", locator })
+    expect(check({ name: "assertText", selector: heading, text: "Dashboard", substring: true }).steps[0]?.config).toEqual({
+      action: "expect-text",
+      locator,
+      text: "Dashboard",
+      match: "contains",
+    })
+    expect(check({ name: "assertText", selector: heading, text: "Dashboard", substring: false }).steps[0]?.config).toMatchObject({
+      match: "equals",
+    })
+    expect(check({ name: "assertValue", selector: "#q", value: "" }).steps[0]?.config).toEqual({
+      action: "expect-value",
+      locator: { kind: "css", value: "#q" },
+      value: "",
+    })
+  })
+
+  it("writes an expected text equal to an environment variable as its template, and leaves short ones literal", () => {
+    expect(check({ name: "assertText", selector: heading, text: "ada@acme.test", substring: true }).steps[0]?.config).toMatchObject({
+      text: "{{env.TEST_EMAIL}}",
+    })
+    expect(check({ name: "assertValue", selector: "#n", value: "10" }).steps[0]?.config).toMatchObject({ value: "10" })
+  })
+
+  it.each([
+    ["is a secret", { name: "assertText", selector: heading, text: "fixture-pass-2468" }],
+    ["is a short secret", { name: "assertValue", selector: "#pin", value: "12" }],
+    ["contains a secret", { name: "assertText", selector: heading, text: "Your key: fixture-pass-2468", substring: true }],
+  ])("does not record a check whose expected text %s", (_why, action) => {
+    const output = check(action)
+    expect(output.steps).toEqual([])
+    expect(output.warnings).toEqual(["A step was not recorded because it contained a secret value."])
+  })
+
+  it("does not record a value check on a password field", () => {
+    const output = check({ name: "assertValue", selector: "#pw", value: "hunter22" }, true)
+    expect(output.steps).toEqual([])
+    expect(JSON.stringify(output)).not.toContain("hunter22")
+    expect(output.warnings).toEqual(["A check on a password field was not recorded: it would have stored the password."])
+  })
+
+  it("reads a check's value and substring flag from a raw payload", () => {
+    expect(readRecorderAction({ name: "assertText", selector: "#m", text: "Hi", substring: true, ariaSnapshot: "x" })).toEqual({
+      name: "assertText",
+      selector: "#m",
+      text: "Hi",
+      substring: true,
+    })
+    expect(readRecorderAction({ name: "assertValue", selector: "#q", value: "abc" })).toEqual({ name: "assertValue", selector: "#q", value: "abc" })
+  })
+})
+
+describe("RecordingConverter dialogs", () => {
+  const button = 'internal:role=button[name="Delete"i]'
+
+  it("sets the click that opened a dialog to click OK, and says so once", () => {
+    const recording = converter()
+    const [click] = recording.apply({ kind: "added", action: { name: "click", selector: button, button: "left", clickCount: 1 }, onMainPage: true }).steps
+    const first = recording.signal("dialog", true, true)
+    expect(first.steps).toEqual([
+      { stepId: click?.stepId, config: { action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept" } },
+    ])
+    expect(first.warnings).toHaveLength(1)
+    // A second dialog after the same step changes nothing and says nothing new.
+    expect(recording.signal("dialog", true, true)).toEqual({ steps: [], warnings: [] })
+  })
+
+  it("sets a key press that opened a dialog to click OK", () => {
+    const recording = converter()
+    recording.apply({ kind: "added", action: { name: "press", selector: button, key: "Enter", modifiers: 0 }, onMainPage: true })
+    expect(recording.signal("dialog", true, true).steps[0]?.config).toMatchObject({ action: "press", key: "Enter", dialog: "accept" })
+  })
+
+  it("leaves a step alone when the dialog arrived long after it", () => {
+    const recording = converter()
+    const [click] = recording.apply({ kind: "added", action: { name: "click", selector: button }, onMainPage: true }).steps
+    const late = recording.signal("dialog", true, false)
+    expect(late.steps).toEqual([])
+    expect(late.warnings).toEqual([
+      "The page showed a dialog a while after the last step, or after a step that cannot answer one. When the workflow runs, that dialog is cancelled.",
+    ])
+    // The step still has no dialog field, so a run cancels that dialog.
+    expect(click?.config).toEqual({ action: "click", locator: { kind: "role", role: "button", name: "Delete" } })
+  })
+
+  it("warns when a dialog follows a step that cannot answer one, or no step at all", () => {
+    const recording = converter()
+    expect(recording.signal("dialog", true, true).warnings).toHaveLength(1)
+    recording.apply({ kind: "added", action: { name: "navigate", url: "https://app.test/" }, onMainPage: true })
+    // Once per recording.
+    expect(recording.signal("dialog", true, true)).toEqual({ steps: [], warnings: [] })
+  })
+
+  it("ignores other signals, and dialogs in a popup", () => {
+    const recording = converter()
+    recording.apply({ kind: "added", action: { name: "click", selector: button }, onMainPage: true })
+    expect(recording.signal("download", true, true)).toEqual({ steps: [], warnings: [] })
+    expect(recording.signal("dialog", false, true)).toEqual({ steps: [], warnings: [] })
+  })
+
+  it("reads only a signal's name", () => {
+    expect(readRecorderSignal({ name: "dialog", dialogAlias: "" })).toBe("dialog")
+    expect(readRecorderSignal({ dialogAlias: "" })).toBeNull()
+  })
+})
+
+describe("templateCheck", () => {
+  const values: RecordingValues = { env: { TEST_EMAIL: "ada@acme.test", SHORT: "ab" }, secrets: { TOKEN: "tok-123456", PIN: "12" } }
+
+  it.each([
+    ["ada@acme.test", "{{env.TEST_EMAIL}}"],
+    ["ab", "ab"],
+    ["Welcome ada@acme.test", "Welcome ada@acme.test"],
+    ["order 12", "order 12"],
+    ["", ""],
+  ])("%j → %j", (text, expected) => {
+    expect(templateCheck(text, values)).toBe(expected)
+  })
+
+  it.each(["tok-123456", "12", "key tok-123456"])("refuses %j", (text) => {
+    expect(templateCheck(text, values)).toBeNull()
   })
 })
 

@@ -3,7 +3,7 @@ import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
 import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
 import { parseRecordedSelector } from "./selector_parse"
-import { containsSecret, templateFill, templateUrl, type RecordingValues } from "./recording_values"
+import { containsSecret, templateCheck, templateFill, templateUrl, type RecordingValues } from "./recording_values"
 
 /**
  * The fields of a Playwright recorder action this converter reads. Playwright
@@ -21,6 +21,10 @@ export interface RecorderAction {
   readonly modifiers?: number
   readonly button?: string
   readonly clickCount?: number
+  /** `assertValue`: the field value the user checked. */
+  readonly value?: string
+  /** `assertText`: true for "contains", false for the whole text. */
+  readonly substring?: boolean
 }
 
 /** One recorder event, as the recording hands it over. */
@@ -29,8 +33,13 @@ export interface RecorderEvent {
   readonly action: RecorderAction
   /** False for a popup or a second tab: the runner drives one page only. */
   readonly onMainPage: boolean
-  /** For a fill: whether the field is an `<input type="password">`. Asked of the page by the recording. */
+  /** For a fill or a value check: whether the field is an `<input type="password">`. Asked of the page by the recording. */
   readonly isPassword?: boolean
+}
+
+/** The recorder actions whose field the recording asks the page about: is it a password? */
+export function readsField(action: RecorderAction): boolean {
+  return action.name === "fill" || action.name === "assertValue"
 }
 
 /** What one event changed: steps to insert or replace, in order, and messages for the user. */
@@ -55,14 +64,29 @@ export function readRecorderAction(raw: unknown): RecorderAction | null {
   }
   const options = record["options"]
   const action: { -readonly [K in keyof RecorderAction]: RecorderAction[K] } = { name }
-  const fields = { selector: text("selector"), url: text("url"), text: text("text"), key: text("key"), button: text("button") }
+  const fields = {
+    selector: text("selector"),
+    url: text("url"),
+    text: text("text"),
+    key: text("key"),
+    button: text("button"),
+    value: text("value"),
+  }
   for (const [key, value] of Object.entries(fields)) if (value !== undefined) action[key as keyof typeof fields] = value
   const modifiers = count("modifiers")
   if (modifiers !== undefined) action.modifiers = modifiers
   const clickCount = count("clickCount")
   if (clickCount !== undefined) action.clickCount = clickCount
+  if (typeof record["substring"] === "boolean") action.substring = record["substring"]
   if (Array.isArray(options)) action.options = options.filter((option): option is string => typeof option === "string")
   return action
+}
+
+/** The name of a recorder signal (`dialog`, `popup`, `download`…), and nothing else from it. */
+export function readRecorderSignal(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null
+  const name = (raw as Record<string, unknown>)["name"]
+  return typeof name === "string" ? name : null
 }
 
 /** Playwright's modifier bitmask, the way its own code generator reads it: Control and Meta are both `ControlOrMeta`. */
@@ -78,7 +102,12 @@ function modifierKeys(mask: number | undefined): Array<"Alt" | "ControlOrMeta" |
 /** Messages shown once per recording for what it cannot turn into a step. */
 const WARNINGS = {
   popup: "The page opened a popup or a new tab. Browser steps drive one page, so nothing done there was recorded.",
-  check: "Checks from the recorder toolbar are not recorded yet. Add an expect step to the workflow instead.",
+  check: "Checks of a checkbox's state and of an ARIA snapshot are not supported by browser steps yet, so this one was not recorded. Use a visibility, text or value check instead.",
+  passwordCheck: "A check on a password field was not recorded: it would have stored the password.",
+  dialog:
+    "The page showed a dialog (alert, confirm or prompt). The recording clicked OK, and the step that opened it is set to do the same when it runs. To cancel instead, open that step and choose Click Cancel.",
+  dialogElsewhere:
+    "The page showed a dialog a while after the last step, or after a step that cannot answer one. When the workflow runs, that dialog is cancelled.",
   upload: "File uploads are not supported by browser steps yet, so this one was not recorded.",
   element: "A step was not recorded: the element it used could not be described.",
   secretUrl: "A page address contained a secret value, so it was not recorded.",
@@ -113,6 +142,11 @@ function unescapeSelector(selector: string): string {
   return selector.replace(/\\(.)/gs, "$1")
 }
 
+/** `dialog: "accept"` for a click or key press after which the recording answered a dialog with OK. */
+function dialogField(state: StepState): { dialog?: "accept" } {
+  return state.acceptsDialog === true ? { dialog: "accept" } : {}
+}
+
 /** One step the recording has produced. */
 interface StepState {
   readonly stepId: string
@@ -122,6 +156,8 @@ interface StepState {
   unsetSecret?: string
   /** The last update was held back because it ended in the start of a secret. */
   withheld: boolean
+  /** The page showed a dialog after this click or key press, and the recording clicked OK. */
+  acceptsDialog?: true
   /** The config last sent, so an update that changes nothing sends nothing. */
   sent?: string
 }
@@ -137,6 +173,10 @@ interface StepState {
  *   has already been sent, so the fill takes over its step instead of dropping it.
  * - A `click` with `clickCount: 0` (after a key press) is noise and is dropped.
  * - `openPage` and `closePage` produce no step; a second page is a popup.
+ * - The toolbar's checks arrive as `assertVisible`, `assertText` and
+ *   `assertValue`, and become `expect-*` steps.
+ * - A `dialog` signal follows the action that opened the dialog, at once (see
+ *   {@link signal}).
  *
  * Every value goes through {@link templateFill} or {@link templateUrl} before
  * it is returned, and a step whose config — or the selector it came from —
@@ -170,6 +210,29 @@ export class RecordingConverter {
     if (state === null) return { steps: [], warnings }
     state.action = event.action
     state.isPassword ||= event.isPassword === true
+    return { steps: this.emit(state, warnings), warnings }
+  }
+
+  /**
+   * Apply one recorder signal. Only `dialog` changes a step: Playwright sends
+   * it right after the action that opened the dialog, which the recording
+   * answered with OK, so that click or key press is set to do the same.
+   *
+   * A dialog that arrives later than that (`isRecent` false) was opened by a
+   * timer or by the page itself, not by the step before it, so no step claims
+   * it and the warning says the run will cancel it.
+   */
+  public signal(name: string, onMainPage: boolean, isRecent: boolean): ConverterOutput {
+    const warnings: string[] = []
+    if (name !== "dialog" || !onMainPage) return { steps: [], warnings }
+    const state = this.current
+    const opener = state?.action.name
+    if (!isRecent || state === null || state.sent === undefined || (opener !== "click" && opener !== "press")) {
+      this.warn("dialogElsewhere", warnings)
+      return { steps: [], warnings }
+    }
+    this.warn("dialog", warnings)
+    state.acceptsDialog = true
     return { steps: this.emit(state, warnings), warnings }
   }
 
@@ -247,17 +310,46 @@ export class RecordingConverter {
       const url = templateUrl(action.url, this.values)
       return url === null ? { kind: "skip", warning: "secretUrl" } : this.checked({ action: "navigate", url }, action)
     }
-    if (action.name.startsWith("assert")) return { kind: "skip", warning: "check" }
     if (action.name === "setInputFiles") return { kind: "skip", warning: "upload" }
     const locator = action.selector === undefined ? undefined : parseRecordedSelector(action.selector)
     if (locator === null) return { kind: "skip", warning: "element" }
     if (action.name === "press") {
       if (action.key === undefined) return { kind: "skip" }
       const key = [...modifierKeys(action.modifiers), action.key].join("+")
-      return this.checked({ action: "press", key, ...(locator === undefined ? {} : { locator }) }, action)
+      const config: BrowserNodeData = { action: "press", key, ...(locator === undefined ? {} : { locator }), ...dialogField(state) }
+      return this.checked(config, action)
     }
     if (locator === undefined) return { kind: "skip" }
+    if (action.name.startsWith("assert")) return this.convertCheck(state, locator)
     return this.convertOnElement(state, locator)
+  }
+
+  /**
+   * A check made with the recorder toolbar's assert buttons. The expected text
+   * goes through {@link templateCheck}: a check cannot hold `{{secrets.*}}`,
+   * so one that would show a secret, or the value of a password field, is not
+   * recorded.
+   */
+  private convertCheck(state: StepState, locator: BrowserLocator): CheckedResult {
+    const { action } = state
+    switch (action.name) {
+      case "assertVisible":
+        return this.checked({ action: "expect-visible", locator }, action)
+      case "assertText": {
+        const text = templateCheck(action.text ?? "", this.values)
+        if (text === null) return { kind: "skip", warning: "secretStep" }
+        return this.checked({ action: "expect-text", locator, text, match: action.substring === false ? "equals" : "contains" }, action)
+      }
+      case "assertValue": {
+        if (state.isPassword) return { kind: "skip", warning: "passwordCheck" }
+        const value = templateCheck(action.value ?? "", this.values)
+        if (value === null) return { kind: "skip", warning: "secretStep" }
+        return this.checked({ action: "expect-value", locator, value }, action)
+      }
+      default:
+        // assertChecked has no browser step yet, and assertSnapshot holds a whole ARIA snapshot.
+        return { kind: "skip", warning: "check" }
+    }
   }
 
   private convertOnElement(state: StepState, locator: BrowserLocator): Converted {
@@ -273,6 +365,7 @@ export class RecordingConverter {
           ...(button === undefined ? {} : { button }),
           ...(clickCount > 1 ? { clickCount } : {}),
           ...(modifiers.length > 0 ? { modifiers } : {}),
+          ...dialogField(state),
         }
         return this.checked(config, action)
       }

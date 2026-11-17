@@ -1,7 +1,14 @@
 import type { Browser, BrowserContext, Page } from "playwright-core"
 import { within } from "./capture"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
-import { RecordingConverter, readRecorderAction, type RecorderAction } from "./recorded"
+import {
+  RecordingConverter,
+  readRecorderAction,
+  readRecorderSignal,
+  readsField,
+  type ConverterOutput,
+  type RecorderAction,
+} from "./recorded"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, launchBrowser, PAGE_VIEWPORT, type BrowserLaunchSettings } from "./session"
 
@@ -16,6 +23,7 @@ interface RecordingContext {
     sink: {
       readonly actionAdded: (page: Page, action: unknown) => void
       readonly actionUpdated: (page: Page, action: unknown) => void
+      readonly signalAdded: (page: Page, signal: unknown) => void
     },
   ): Promise<void>
   _stopRecording(): Promise<void>
@@ -48,6 +56,16 @@ const START_TIMEOUT_MS = 30_000
 const DEFAULT_THROTTLE_MS = 150
 /** Just past Playwright's `kActionBufferTimeout` (500 ms in its `RecorderSignalProcessor`). */
 const RECORDER_BUFFER_MS = 600
+/**
+ * How long after a step its dialog may still count as that step's. Playwright
+ * holds a click for up to 500 ms and then emits the click and its signals back
+ * to back, so a dialog a click opens arrives well inside a second. A dialog
+ * that arrives seconds later was opened by a timer — a session expiry, say —
+ * and must not be pinned on whichever step happened to go last. Five seconds
+ * is the same threshold Playwright uses to decide a navigation belongs to the
+ * previous action, and leaves room for a slow page.
+ */
+const DIALOG_WINDOW_MS = 5_000
 /** What an abandoned recording tells its owner: nothing at all. */
 const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () => undefined, ended: () => undefined }
 
@@ -66,6 +84,8 @@ export class BrowserRecording {
   private mainPage: Page | null = null
   private accepting = true
   private stopping: Promise<void> | null = null
+  /** When the last recorder action arrived, to tell a dialog it opened from one the page raised later. */
+  private lastActionAt: number | null = null
   private readonly passwordFields = new Map<string, boolean>()
   private readonly sentStepIds = new Set<string>()
   private readonly pending = new Map<string, RecordedBrowserStep>()
@@ -90,11 +110,17 @@ export class BrowserRecording {
       const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
       recording = new BrowserRecording(browser, context, options)
       const started = recording
+      // With nobody listening, Playwright cancels every dialog, and a confirm()
+      // flow would be recorded on a page where the user's confirmation never
+      // happened. OK is what a test of that flow usually means; the step
+      // records it (`dialog: "accept"`), and the panel can switch it to Cancel.
+      context.on("dialog", (dialog) => void dialog.accept().catch(() => undefined))
       await (context as unknown as RecordingContext)._startRecording(
         { language: "javascript" },
         {
           actionAdded: (page, action) => started.receive("added", page, action),
           actionUpdated: (page, action) => started.receive("updated", page, action),
+          signalAdded: (page, signal) => started.receiveSignal(page, signal),
         },
       )
       const page = await context.newPage()
@@ -167,14 +193,30 @@ export class BrowserRecording {
     this.mainPage ??= page
     const action = readRecorderAction(raw)
     if (action === null) return
+    // Read here, at receipt, not in the queue: a dialog is judged on how long
+    // after the action Playwright sent it, and the queue may lag behind that.
+    this.lastActionAt = Date.now()
     const onMainPage = page === this.mainPage
     this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage)).catch(() => undefined)
   }
 
+  /** A signal (`dialog`…) goes through the same queue, so it follows the action Playwright sent it after. */
+  private receiveSignal(page: Page, raw: unknown): void {
+    if (!this.accepting) return
+    const name = readRecorderSignal(raw)
+    if (name === null) return
+    const onMainPage = page === this.mainPage
+    const isRecent = this.lastActionAt !== null && Date.now() - this.lastActionAt <= DIALOG_WINDOW_MS
+    this.queue = this.queue.then(() => this.report(this.converter.signal(name, onMainPage, isRecent))).catch(() => undefined)
+  }
+
   private async handle(kind: "added" | "updated", page: Page, action: RecorderAction, onMainPage: boolean): Promise<void> {
     const isPassword =
-      action.name === "fill" && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
-    const output = this.converter.apply({ kind, action, onMainPage, ...(isPassword === undefined ? {} : { isPassword }) })
+      readsField(action) && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
+    this.report(this.converter.apply({ kind, action, onMainPage, ...(isPassword === undefined ? {} : { isPassword }) }))
+  }
+
+  private report(output: ConverterOutput): void {
     for (const warning of output.warnings) this.listener.warning(warning)
     for (const step of output.steps) this.send(step)
   }

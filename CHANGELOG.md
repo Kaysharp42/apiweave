@@ -144,8 +144,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
   an environment variable or a stored secret is saved as `{{env.NAME}}` or
   `{{secrets.NAME}}`, and a password that matches no secret becomes a placeholder
   secret with a **needs secret** badge and a **Save as secret** button, so the
-  typed value never reaches the workflow. Popups, checks made with the recorder's
-  own assert buttons and file uploads are not recorded yet. See
+  typed value never reaches the workflow. Popups and file uploads are not
+  recorded yet. See
+  [Browser Steps](docs/features/browser-steps.md#recording-steps).
+- **Checks, dialogs and extracts while recording.** The recorder toolbar's
+  visibility, text and value checks now arrive as `expect-visible`,
+  `expect-text` and `expect-value` steps, with their expected text templated
+  from the selected environment and never holding a secret: a check that would
+  store one is dropped with a warning. While recording, a dialog is answered
+  with OK and the step that opened it is recorded with `dialog: "accept"`, so a
+  confirm flow no longer records as a cancellation. A browser step's
+  right-click menu offers **Turn into extract**, which turns it into a **Save a
+  value** step read from the same element. See
   [Browser Steps](docs/features/browser-steps.md#recording-steps).
 
 ### Changed

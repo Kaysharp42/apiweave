@@ -72,6 +72,7 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasHistory from "../hooks/useCanvasHistory";
 import { useBrowserRecording } from "../hooks/useBrowserRecording";
+import { useTurnIntoExtract } from "../hooks/useTurnIntoExtract";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import { useAcyclicConnections } from "../hooks/useAcyclicConnections";
@@ -127,7 +128,7 @@ import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
 import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
-import { Copy, Files, Globe, Play, Wand2 } from "lucide-react";
+import { Copy, Download, Files, Globe, Play, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -1614,6 +1615,8 @@ function WorkflowCanvas({
     setEdges,
   });
 
+  const turnIntoExtract = useTurnIntoExtract({ nodesRef, setNodes });
+
   const canvasTipContext = useMemo(() => {
     const selection = selectedIds(nodes);
     const selected = nodes.filter((node) => selection.has(node.id));
@@ -2214,6 +2217,16 @@ function WorkflowCanvas({
               label: "Run from here",
               onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
             },
+            ...(turnIntoExtract.canTurn(stepMenu.nodeId)
+              ? [
+                  {
+                    key: "turn-into-extract",
+                    icon: Download,
+                    label: "Turn into extract",
+                    onSelect: () => turnIntoExtract.start(stepMenu.nodeId),
+                  },
+                ]
+              : []),
             {
               key: "duplicate",
               icon: Files,
@@ -2253,6 +2266,19 @@ function WorkflowCanvas({
           />
         </Suspense>
       )}
+
+      <PromptDialog
+        key={`extract-${turnIntoExtract.dialog.nodeId ?? "none"}`}
+        open={turnIntoExtract.dialog.open}
+        onClose={turnIntoExtract.dialog.onClose}
+        onSubmit={turnIntoExtract.dialog.onSubmit}
+        title="Turn into extract"
+        message="The step keeps its element and saves what it shows (a field's value, or the element's text) into a workflow variable. Later steps read it as {{variables.NAME}}."
+        defaultValue={turnIntoExtract.dialog.defaultValue}
+        placeholder="orderNumber"
+        submitLabel="Turn into extract"
+        icon={Download}
+      />
 
       {/* Keyed by node id so each open re-mounts with that node's label
           prefilled — PromptDialog seeds its input from `defaultValue` once. */}
