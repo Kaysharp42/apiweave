@@ -1,4 +1,4 @@
-import type { Dialog, Locator, Page } from "playwright-core"
+import type { CDPSession, Dialog, Locator, Page } from "playwright-core"
 import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
@@ -131,6 +131,49 @@ export function disarmDialog(page: Page): void {
   if (handler === undefined) return
   pendingDialogs.delete(page)
   page.off("dialog", handler)
+}
+
+/** The page's own DevTools session, and the ids that tell its tab from any other. */
+interface TabWatch {
+  readonly session: CDPSession
+  readonly targetId: string
+  readonly browserContextId: string | undefined
+}
+
+const tabWatches = new WeakMap<Page, Promise<TabWatch>>()
+
+function tabWatch(page: Page): Promise<TabWatch> {
+  const known = tabWatches.get(page)
+  if (known !== undefined) return known
+  const watch = page
+    .context()
+    .newCDPSession(page)
+    .then(async (session) => {
+      const { targetInfo } = await session.send("Target.getTargetInfo")
+      return { session, targetId: targetInfo.targetId, browserContextId: targetInfo.browserContextId }
+    })
+  tabWatches.set(page, watch)
+  // A failed start is not kept, so the next step asks again.
+  watch.catch(() => tabWatches.delete(page))
+  return watch
+}
+
+/**
+ * Close every tab or window the page's browser context holds besides the page
+ * itself, and say whether there was one. Steps drive one page in a context of
+ * the run's own, so any other tab was opened by the step that just ran.
+ * Chromium is asked directly because it lists a new tab by the time the click
+ * that opened it returns, while Playwright's `popup` event waits for the new
+ * tab's first page to load: a slow one let the step pass.
+ */
+async function closeOpenedTabs(page: Page): Promise<boolean> {
+  const { session, targetId, browserContextId } = await tabWatch(page)
+  const { targetInfos } = await session.send("Target.getTargets")
+  const opened = targetInfos.filter(
+    (target) => target.type === "page" && target.browserContextId === browserContextId && target.targetId !== targetId,
+  )
+  await Promise.all(opened.map((target) => session.send("Target.closeTarget", { targetId: target.targetId }).catch(() => undefined)))
+  return opened.length > 0
 }
 
 function hostOf(url: string): string {
@@ -426,19 +469,15 @@ async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "t
 export async function runBrowserStep(page: Page, config: BrowserNodeData, ctx: BrowserStepContext): Promise<BrowserStepOutcome> {
   disarmDialog(page)
   const timeout = config.timeoutMs ?? (config.action === "navigate" ? DEFAULT_NAVIGATE_TIMEOUT_MS : DEFAULT_STEP_TIMEOUT_MS)
-  // Steps drive one page. A step that opens another would leave the next steps
-  // acting on the wrong one, so the new page is closed and the step fails.
-  let openedPopup = false
-  const onPopup = (popup: Page): void => {
-    openedPopup = true
-    void popup.close().catch(() => undefined)
-  }
-  page.on("popup", onPopup)
   try {
     const compared = await perform(page, config, ctx, timeout)
-    if (openedPopup) throw new StepFailure("the step opened a new tab or window, which browser steps do not support yet")
+    // Steps drive one page. A step that opens another would leave the next
+    // steps acting on the wrong one, so the new page is closed and the step fails.
+    if (await closeOpenedTabs(page)) throw new StepFailure("the step opened a new tab or window, which browser steps do not support yet")
     return { passed: true, result: { action: config.action, ...compared, ...(await pageFacts(page)) } }
   } catch (error) {
+    // A step that failed may still have opened a tab; left open, it would fail the next step instead.
+    if (!isClosed(error)) await closeOpenedTabs(page).catch(() => false)
     const detail = detailOf(error)
     return {
       passed: false,
@@ -450,7 +489,5 @@ export async function runBrowserStep(page: Page, config: BrowserNodeData, ctx: B
         ...(isClosed(error) ? {} : await pageFacts(page)),
       },
     }
-  } finally {
-    page.off("popup", onPopup)
   }
 }
