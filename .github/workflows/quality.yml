@@ -50,6 +50,7 @@ jobs:
         working-directory: app
         env:
           APIWEAVE_SECRET_API_TOKEN: ci-fixture-token
+          APIWEAVE_SECRET_TEST_PASSWORD: ci-browser-pass-4821
         run: |
           python3 -m http.server 8787 --bind 127.0.0.1 --directory core/cli/__fixtures__ >/dev/null 2>&1 &
           for _ in $(seq 20); do curl -sf http://127.0.0.1:8787/health.json >/dev/null && break; sleep 0.5; done
@@ -63,6 +64,26 @@ jobs:
           grep -q 'failures="0"' "$RUNNER_TEMP/apiweave-repo-junit.xml"
           grep -q 'name="Billing: List invoices"' "$RUNNER_TEMP/apiweave-repo-junit.xml"
           grep -q 'name="Shop API: Health check"' "$RUNNER_TEMP/apiweave-repo-junit.xml"
+          # Browser steps on the runner's preinstalled Google Chrome: the
+          # Playwright browser is installed only in the next step, so this proves
+          # a browser workflow needs no browser install on GitHub's Ubuntu image.
+          # Once passing, then once failing, which must leave the failed step's
+          # screenshot and ARIA snapshot behind and never leak the password.
+          node dist/cli/apiweave.cjs run core/cli/__fixtures__/web-login.json --browser chrome \
+            --var BASE_URL=http://127.0.0.1:8787 --var TEST_EMAIL=ci@example.com --var HEADING=Dashboard \
+            --reporter cli,junit --reporter-junit-export "$RUNNER_TEMP/apiweave-web-junit.xml"
+          grep -q 'failures="0"' "$RUNNER_TEMP/apiweave-web-junit.xml"
+          status=0
+          node dist/cli/apiweave.cjs run core/cli/__fixtures__/web-login.json --browser chrome \
+            --var BASE_URL=http://127.0.0.1:8787 --var TEST_EMAIL=ci@example.com --var HEADING=Nope \
+            --evidence-dir "$RUNNER_TEMP/evidence" \
+            --reporter cli,junit,html --reporter-junit-export "$RUNNER_TEMP/web-fail/junit.xml" \
+            --reporter-html-export "$RUNNER_TEMP/web-fail/report.html" || status=$?
+          test "$status" -eq 1
+          ls "$RUNNER_TEMP"/evidence/*/b5.jpg "$RUNNER_TEMP"/evidence/*/b5.aria.yml
+          grep -q '\[\[ATTACHMENT|' "$RUNNER_TEMP/web-fail/junit.xml"
+          grep -q 'class="shot"' "$RUNNER_TEMP/web-fail/report.html"
+          ! grep -rq ci-browser-pass-4821 "$RUNNER_TEMP/web-fail" "$RUNNER_TEMP/evidence"
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
         working-directory: app
