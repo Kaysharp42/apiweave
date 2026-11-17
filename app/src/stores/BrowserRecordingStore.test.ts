@@ -31,7 +31,7 @@ describe("useBrowserRecordingStore", () => {
     vi.mocked(browser.recordingStatus).mockResolvedValue(null);
     vi.mocked(browser.startRecording).mockResolvedValue(STATUS);
     vi.mocked(browser.stopRecording).mockResolvedValue(undefined);
-    useBrowserRecordingStore.setState({ phase: "idle", workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [] });
+    useBrowserRecordingStore.setState({ phase: "idle", stopping: false, workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [], picked: null });
   });
 
   it("starts, collects steps in arrival order with their latest config, and ends", async () => {
@@ -52,9 +52,9 @@ describe("useBrowserRecordingStore", () => {
     expect(toast.warning).toHaveBeenCalledWith("popup");
 
     await useBrowserRecordingStore.getState().stop();
-    expect(useBrowserRecordingStore.getState().phase).toBe("stopping");
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "recording", stopping: true });
     emit({ kind: "ended", recordingId: "recording-1", workflowId: "wf" });
-    expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "idle", recordingId: "recording-1" });
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "idle", stopping: false, recordingId: "recording-1" });
     expect(toast.success).toHaveBeenCalledWith("Recorded 2 steps");
     // The steps stay for a canvas that has not placed them yet.
     expect(useBrowserRecordingStore.getState().steps).toHaveLength(2);
@@ -104,6 +104,8 @@ describe("useBrowserRecordingStore re-pick and re-record", () => {
   const replayRequest = { workspaceId: "ws", workflowId: "wf", environmentId: null, nodeId: "delete" };
   const replayed: BrowserRecordingEvent = { kind: "replayed", recordingId: "recording-2", workflowId: "wf" };
   const ended: BrowserRecordingEvent = { kind: "ended", recordingId: "recording-2", workflowId: "wf" };
+  const locator: BrowserLocator = { kind: "role", role: "button", name: "Remove" };
+  const picked: BrowserRecordingEvent = { kind: "picked", recordingId: "recording-2", workflowId: "wf", nodeId: "delete", locator };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -112,29 +114,78 @@ describe("useBrowserRecordingStore re-pick and re-record", () => {
       return () => undefined;
     });
     vi.mocked(browser.stopRecording).mockResolvedValue(undefined);
-    useBrowserRecordingStore.setState({ phase: "idle", workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [] });
+    useBrowserRecordingStore.setState({ phase: "idle", stopping: false, workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [], picked: null });
   });
 
-  it("re-picks: replaying, then picking, then the locator, and says nothing itself", async () => {
-    let answer: (locator: BrowserLocator | null) => void = () => undefined;
+  it("re-picks: replaying, then picking, then holds the element for the canvas, and says nothing itself", async () => {
+    let answer: () => void = () => undefined;
     vi.mocked(browser.repickElement).mockReturnValue(new Promise((resolve) => (answer = resolve)));
     const repicking = useBrowserRecordingStore.getState().repick(replayRequest);
     expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "replaying", operation: "repick", nodeId: "delete" });
     emit(replayed);
     expect(useBrowserRecordingStore.getState().phase).toBe("picking");
+    emit(picked);
+    expect(useBrowserRecordingStore.getState().picked).toEqual({ workflowId: "wf", nodeId: "delete", locator });
     emit(ended);
-    answer({ kind: "role", role: "button", name: "Remove" });
-    await expect(repicking).resolves.toEqual({ kind: "role", role: "button", name: "Remove" });
-    expect(useBrowserRecordingStore.getState().phase).toBe("idle");
+    answer();
+    await expect(repicking).resolves.toBeUndefined();
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "idle", picked: { nodeId: "delete", locator } });
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.info).not.toHaveBeenCalled();
   });
 
+  it("takes the held element once, so only one canvas applies it", async () => {
+    await useBrowserRecordingStore.getState().repick(replayRequest);
+    emit(picked);
+    const expected = { workflowId: "wf", nodeId: "delete", locator };
+    expect(useBrowserRecordingStore.getState().takePicked()).toEqual(expected);
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
+    expect(useBrowserRecordingStore.getState().takePicked()).toBeNull();
+  });
+
+  it("accepts a re-pick's element after a reload, when the status put the store back in picking", async () => {
+    await useBrowserRecordingStore.getState().repick(replayRequest);
+    // A reloaded renderer restores the slot from `recordingStatus()`, then the event lands.
+    useBrowserRecordingStore.setState({ phase: "picking", operation: "repick", nodeId: "delete", workflowId: "wf", recordingId: "recording-2" });
+    emit(picked);
+    expect(useBrowserRecordingStore.getState().picked).toEqual({ workflowId: "wf", nodeId: "delete", locator });
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("ignores an element picked for another workflow or another recording", async () => {
+    let answer: () => void = () => undefined;
+    vi.mocked(browser.repickElement).mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    const repicking = useBrowserRecordingStore.getState().repick(replayRequest);
+    emit(replayed);
+    emit({ ...picked, workflowId: "other" });
+    emit({ ...picked, recordingId: "recording-1" });
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
+    answer();
+    await repicking;
+  });
+
+  it("drops an element nobody applied when the next operation starts", async () => {
+    await useBrowserRecordingStore.getState().repick(replayRequest);
+    emit(picked);
+    expect(useBrowserRecordingStore.getState().picked).not.toBeNull();
+    await useBrowserRecordingStore.getState().start(request, null, "Recording");
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
+  });
+
   it("says why a re-pick failed, and is idle again", async () => {
     vi.mocked(browser.repickElement).mockRejectedValue(new Error("The steps before this one did not pass."));
-    await expect(useBrowserRecordingStore.getState().repick(replayRequest)).resolves.toBeNull();
+    await expect(useBrowserRecordingStore.getState().repick(replayRequest)).resolves.toBeUndefined();
     expect(toast.error).toHaveBeenCalledWith("The steps before this one did not pass.");
     expect(useBrowserRecordingStore.getState().phase).toBe("idle");
+  });
+
+  it("stops a replay rather than a recording: the phase stays, and Stop is not offered twice", async () => {
+    vi.mocked(browser.repickElement).mockReturnValue(new Promise(() => undefined));
+    void useBrowserRecordingStore.getState().repick(replayRequest);
+    await useBrowserRecordingStore.getState().stop();
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ phase: "replaying", stopping: true });
+    await useBrowserRecordingStore.getState().stop();
+    expect(browser.stopRecording).toHaveBeenCalledOnce();
   });
 
   it("re-records: replaying, then recording the steps that replace the step", async () => {

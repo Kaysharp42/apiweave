@@ -375,6 +375,7 @@ export type { GroupOutcome } from "./GroupOutcome";
 export type { RecordingPlacement } from "./RecordingPlacement";
 export type { CanvasGraph } from "./CanvasGraph";
 export type { RecordingPhase } from "./RecordingPhase";
+export type { PickedBrowserElement } from "./PickedBrowserElement";
 export type { CanvasToolbarRecordProps } from "./CanvasToolbarRecordProps";
 export type { UseBrowserRecordingParams } from "./UseBrowserRecordingParams";
 export type { UseBrowserRecordingResult } from "./UseBrowserRecordingResult";

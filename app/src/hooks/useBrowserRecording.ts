@@ -112,6 +112,7 @@ function usePlaceRecordedSteps(
 export function useBrowserRecording(params: UseBrowserRecordingParams): UseBrowserRecordingResult {
   const { workflowId, workspaceId, environmentId, isHydrated, isRunning, nodesRef } = params;
   const phase = useBrowserRecordingStore((state) => state.phase);
+  const stopping = useBrowserRecordingStore((state) => state.stopping);
   const recordingWorkflowId = useBrowserRecordingStore((state) => state.workflowId);
   const stepCount = useBrowserRecordingStore((state) => state.steps.length);
   const environments = useEnvironmentStore((state) => state.environments);
@@ -141,6 +142,7 @@ export function useBrowserRecording(params: UseBrowserRecordingParams): UseBrows
   return {
     control: {
       state: busy && !isThisWorkflow ? "elsewhere" : phase,
+      stopping: isThisWorkflow && stopping,
       stepCount: isThisWorkflow ? stepCount : 0,
       disabled: isRunning || !isHydrated || workflowId === undefined || workspaceId === undefined,
       onRecord: () => setDialogOpen(true),

@@ -1,7 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MutableRefObject } from "react";
+import { StrictMode, type MutableRefObject } from "react";
 import { toast } from "sonner";
+import type { BrowserLocator } from "@shared/types/BrowserLocator";
 import { useBrowserRecordingStore } from "../stores/BrowserRecordingStore";
 import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasNode } from "../types/CanvasNode";
@@ -28,16 +29,34 @@ const remove: CanvasNode = {
   data: { label: "Click", config: { action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept", timeoutMs: 5_000 } },
 };
 const edges: CanvasEdge[] = [{ id: "open-delete", source: "open", target: "delete" }];
+const picked: BrowserLocator = { kind: "role", role: "button", name: "Remove" };
 
-function setup(save: () => Promise<boolean> = async () => true) {
+function setup(options: { save?: () => Promise<boolean>; hydrated?: boolean; workflowId?: string; strict?: boolean } = {}) {
   const nodesRef: MutableRefObject<CanvasNode[]> = { current: [open, remove] };
   const edgesRef: MutableRefObject<CanvasEdge[]> = { current: edges };
   const setNodes = vi.fn((next: CanvasNode[]) => void (nodesRef.current = next));
-  const saveWorkflowRef = { current: vi.fn(save) };
-  const { result } = renderHook(() =>
-    useStepReplay({ workflowId: "wf", workspaceId: "ws", environmentId: "env", isHydrated: true, isRunning: false, nodesRef, edgesRef, setNodes, saveWorkflowRef }),
+  const saveWorkflowRef = { current: vi.fn(options.save ?? (async () => true)) };
+  const { result, rerender, unmount } = renderHook(
+    ({ hydrated }: { hydrated: boolean }) =>
+      useStepReplay({
+        workflowId: options.workflowId ?? "wf",
+        workspaceId: "ws",
+        environmentId: "env",
+        isHydrated: hydrated,
+        isRunning: false,
+        nodesRef,
+        edgesRef,
+        setNodes,
+        saveWorkflowRef,
+      }),
+    { initialProps: { hydrated: options.hydrated ?? true }, ...(options.strict === true ? { wrapper: StrictMode } : {}) },
   );
-  return { result, nodesRef, setNodes, saveWorkflowRef };
+  return { result, rerender, unmount, nodesRef, setNodes, saveWorkflowRef };
+}
+
+/** The picked event's effect on the store, as the store's `receive` would leave it. */
+function holdPick(locator: BrowserLocator = picked, workflowId = "wf", nodeId = "delete"): void {
+  act(() => useBrowserRecordingStore.setState({ picked: { workflowId, nodeId, locator } }));
 }
 
 describe("useStepReplay", () => {
@@ -45,7 +64,7 @@ describe("useStepReplay", () => {
     vi.clearAllMocks();
     vi.mocked(browser.recordingStatus).mockResolvedValue(null);
     vi.mocked(browser.onRecording).mockReturnValue(() => undefined);
-    useBrowserRecordingStore.setState({ phase: "idle", workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [] });
+    useBrowserRecordingStore.setState({ phase: "idle", stopping: false, workflowId: null, recordingId: null, anchorId: null, steps: [], placedSteps: [], picked: null });
   });
 
   it("offers re-pick and re-record on a step with a page opened before it", () => {
@@ -56,35 +75,72 @@ describe("useStepReplay", () => {
   });
 
   it("saves first, then puts the picked element on the step and changes nothing else", async () => {
-    vi.mocked(browser.repickElement).mockResolvedValue({ kind: "role", role: "button", name: "Remove" });
+    vi.mocked(browser.repickElement).mockResolvedValue(undefined);
     const { result, nodesRef, saveWorkflowRef } = setup();
     act(() => result.current.repick("delete"));
+    await waitFor(() => expect(browser.repickElement).toHaveBeenCalled());
+
+    holdPick();
+
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith("The step now uses the element you picked"));
     expect(saveWorkflowRef.current).toHaveBeenCalledWith(false);
     expect(browser.repickElement).toHaveBeenCalledWith({ workspaceId: "ws", workflowId: "wf", environmentId: "env", nodeId: "delete" });
     expect(nodesRef.current[0]).toBe(open);
     expect(nodesRef.current[1]?.data).toEqual({
       label: "Click",
-      config: { action: "click", locator: { kind: "role", role: "button", name: "Remove" }, dialog: "accept", timeoutMs: 5_000 },
+      config: { action: "click", locator: picked, dialog: "accept", timeoutMs: 5_000 },
     });
+    // Held once, so a canvas that mounts later does not apply it again.
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
   });
 
   it("replays nothing when the save is refused", async () => {
-    const { result, setNodes } = setup(async () => false);
+    const { result, saveWorkflowRef, setNodes } = setup({ save: async () => false });
     act(() => result.current.repick("delete"));
-    await waitFor(() => expect(useBrowserRecordingStore.getState().phase).toBe("idle"));
+    await waitFor(() => expect(saveWorkflowRef.current).toHaveBeenCalled());
     expect(browser.repickElement).not.toHaveBeenCalled();
     expect(setNodes).not.toHaveBeenCalled();
   });
 
   it("does not bring back a step deleted while the user picked", async () => {
+    vi.mocked(browser.repickElement).mockResolvedValue(undefined);
     const { result, nodesRef, setNodes } = setup();
-    vi.mocked(browser.repickElement).mockImplementation(async () => {
-      nodesRef.current = [open];
-      return { kind: "role", role: "button", name: "Remove" };
-    });
     act(() => result.current.repick("delete"));
-    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    await waitFor(() => expect(browser.repickElement).toHaveBeenCalled());
+    nodesRef.current = [open];
+
+    holdPick();
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalledWith("The step was deleted while you picked, so the element was not saved."));
     expect(setNodes).not.toHaveBeenCalled();
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
+  });
+
+  it("applies a pick made while no canvas was open, once, when a canvas mounts", () => {
+    holdPick();
+    const { setNodes } = setup({ strict: true });
+    expect(setNodes).toHaveBeenCalledTimes(1);
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.warning).not.toHaveBeenCalled();
+    expect(useBrowserRecordingStore.getState().picked).toBeNull();
+  });
+
+  it("leaves another workflow's pick for that workflow's canvas", () => {
+    holdPick(picked, "other");
+    const { setNodes } = setup();
+    expect(setNodes).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(useBrowserRecordingStore.getState().picked).not.toBeNull();
+  });
+
+  it("waits for the canvas to be hydrated before applying a pick", async () => {
+    const { setNodes, rerender } = setup({ hydrated: false });
+    holdPick();
+    expect(setNodes).not.toHaveBeenCalled();
+    expect(useBrowserRecordingStore.getState().picked).not.toBeNull();
+
+    rerender({ hydrated: true });
+    await waitFor(() => expect(setNodes).toHaveBeenCalledTimes(1));
+    expect(toast.success).toHaveBeenCalledWith("The step now uses the element you picked");
   });
 });

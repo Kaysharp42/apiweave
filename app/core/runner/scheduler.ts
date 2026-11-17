@@ -963,7 +963,6 @@ export function requestDestinations(
   return [...destinations]
 }
 
-/** A node with a non-empty pre-request or post-response script. */
 /** An inspection or a replay stops before a node: it must be in the workflow, and a run does one or the other. */
 function checkStopBefore(request: EnqueueRequest, nodes: readonly { readonly nodeId: string }[]): void {
   if (request.inspect !== undefined && request.replay !== undefined) {
@@ -975,6 +974,7 @@ function checkStopBefore(request: EnqueueRequest, nodes: readonly { readonly nod
   }
 }
 
+/** A node with a non-empty pre-request or post-response script. */
 function hasScript(node: WorkflowGraph["nodes"][number]): boolean {
   const scripts = node.config?.["scripts"] as { readonly preRequest?: unknown; readonly postResponse?: unknown } | undefined
   return [scripts?.preRequest, scripts?.postResponse].some((source) => typeof source === "string" && source.trim() !== "")

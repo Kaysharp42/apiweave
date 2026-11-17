@@ -51,7 +51,6 @@ import type { BrowserRecordingEvent } from "@shared/types/BrowserRecordingEvent"
 import type { BrowserRecordingRequest } from "@shared/types/BrowserRecordingRequest";
 import type { BrowserRecordingStatus } from "@shared/types/BrowserRecordingStatus";
 import type { BrowserReplayRequest } from "@shared/types/BrowserReplayRequest";
-import type { BrowserLocator } from "@shared/types/BrowserLocator";
 import type { GitAccountList } from "@shared/types/GitAccountList";
 import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
@@ -1354,7 +1353,7 @@ export const browser = {
   recordingStatus: (): Promise<BrowserRecordingStatus | null> =>
     getBrowserBridge()?.recordingStatus().catch(unwrapRemoteError) ??
     Promise.resolve(null),
-  repickElement: (request: BrowserReplayRequest): Promise<BrowserLocator | null> =>
+  repickElement: (request: BrowserReplayRequest): Promise<void> =>
     getBrowserBridge()?.repickElement(request).catch(unwrapRemoteError) ??
     browserDesktopOnly(),
   rerecordFrom: (request: BrowserReplayRequest): Promise<BrowserRecordingStatus | null> =>

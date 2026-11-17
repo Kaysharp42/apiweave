@@ -87,19 +87,26 @@ export class BrowserRecordingService {
 
   /**
    * Replay the workflow up to a browser step, then let the user pick the
-   * element that step should act on. Resolves with its locator — the canvas
-   * puts it on the step — or null when the user cancelled.
+   * element that step should act on. The locator goes to the canvas as a
+   * `picked` event just before `ended`, not as this answer, so a canvas that
+   * was closed or reloaded while the user picked still gets it.
    */
-  public async repick(input: unknown): Promise<BrowserLocator | null> {
+  public async repick(input: unknown): Promise<void> {
     const request = this.replayRequest(input)
     const config = this.browserStep(request)
     if (!("locator" in config)) throw new ValidationError("This step does not act on an element, so there is nothing to re-pick.")
-    return this.afterReplay(request, "repick", async ({ page, close, active, values }) => {
+    await this.afterReplay(request, "repick", async ({ page, close, active, values }) => {
+      const { recordingId, workflowId } = active.status
       try {
-        return pickedLocator(await (this.deps.pick ?? pickElement)(page, values))
+        this.deps.publish({ kind: "replayed", recordingId, workflowId })
+        const locator = pickedLocator(await (this.deps.pick ?? pickElement)(page, values))
+        if (locator !== null) this.deps.publish({ kind: "picked", recordingId, workflowId, nodeId: request.nodeId, locator })
       } finally {
-        await close()
-        this.end(active)
+        try {
+          await close()
+        } finally {
+          this.end(active)
+        }
       }
     })
   }
@@ -107,22 +114,31 @@ export class BrowserRecordingService {
   /**
    * Replay the workflow up to a browser step, then record from the page it
    * left. The canvas replaces that step and the browser steps after it with
-   * what is recorded, once the first step arrives.
+   * what is recorded, once the first step arrives. Any browser step can be
+   * re-recorded from, however incomplete: recording replaces its config anyway.
    */
   public async rerecord(input: unknown): Promise<BrowserRecordingStatus | null> {
     const request = this.replayRequest(input)
-    this.browserStep(request)
+    if (this.browserNode(request).type !== "browser") throw new ValidationError("Only a browser step can be re-recorded from.")
     return this.afterReplay(request, "rerecord", async ({ page, close, active, values }) => {
       const attach = this.deps.attach ?? ((target: Page, options: RecordingOptions) => BrowserRecording.attach(target, options))
       const publisher = this.publisher(active)
       try {
         const recording = await attach(page, this.recordingOptions(active.status, values, publisher.listener))
         active.stop = () => recording.stop()
+        // Only once the page is recordable: a `replayed` before a failed attach
+        // would move the canvas to "recording" and then toast that nothing was
+        // re-recorded on top of the error.
+        const { recordingId, workflowId } = active.status
+        this.deps.publish({ kind: "replayed", recordingId, workflowId })
         publisher.release()
         return publisher.wasEnded() ? null : active.status
       } catch (error) {
-        await close()
-        this.end(active)
+        try {
+          await close()
+        } finally {
+          this.end(active)
+        }
         throw new ValidationError(`The recording could not start: ${messageOf(error)}`)
       }
     })
@@ -135,8 +151,12 @@ export class BrowserRecordingService {
 
   /**
    * As the only operation: replay up to the request's step, then hand the page
-   * it left to `then`. Null, without calling `then`, when the user stopped
-   * the replay.
+   * it left to `then`. Null, without calling `then`, when the user stopped it.
+   *
+   * The slot is taken before the secrets are read, because reading them can
+   * take as long as the secret store likes and Stop must work from the first
+   * moment the operation exists — a Stop in that window cancels it instead of
+   * being ignored and then watching the replay and the picker start anyway.
    */
   private afterReplay<T>(
     request: BrowserReplayRequest,
@@ -144,8 +164,21 @@ export class BrowserRecordingService {
     then: (replayed: { page: Page; close: () => Promise<void>; active: Active; values: RecordingValues }) => Promise<T | null>,
   ): Promise<T | null> {
     return this.exclusively(async () => {
-      const values = await this.values(request)
-      const replayed = await this.replayed(request, operation)
+      const controller = new AbortController()
+      const active: Active = { status: this.newStatus(request, operation), stop: async () => controller.abort() }
+      this.active = active
+      let values: RecordingValues
+      try {
+        values = await this.values(request)
+      } catch (error) {
+        this.end(active)
+        throw error
+      }
+      if (controller.signal.aborted) {
+        this.end(active)
+        return null
+      }
+      const replayed = await this.replayToStep(active, request, controller.signal)
       return replayed === null ? null : then({ ...replayed, values })
     })
   }
@@ -235,20 +268,19 @@ export class BrowserRecordingService {
   }
 
   /**
-   * Replay up to the request's step, as the active operation, so Stop cancels
-   * the run. The page it left, or null when the user stopped it; throws when
-   * the steps before failed or opened no page.
+   * Replay up to the request's step, on the operation `afterReplay` already
+   * made active, so Stop cancels the run. The page it left, or null when the
+   * user stopped it; throws when the steps before failed or opened no page.
+   * Publishing `replayed` is the caller's job, once the page is really theirs.
    */
-  private async replayed(
+  private async replayToStep(
+    active: Active,
     request: BrowserReplayRequest,
-    operation: "repick" | "rerecord",
+    signal: AbortSignal,
   ): Promise<{ page: Page; close: () => Promise<void>; active: Active } | null> {
-    const controller = new AbortController()
-    const active: Active = { status: this.newStatus(request, operation), stop: async () => controller.abort() }
-    this.active = active
     let outcome: ReplayOutcome
     try {
-      outcome = await this.deps.replay({ ...request, beforeNodeId: request.nodeId }, controller.signal)
+      outcome = await this.deps.replay({ ...request, beforeNodeId: request.nodeId }, signal)
     } catch (error) {
       this.end(active)
       throw new ValidationError(`The steps before this one could not be replayed: ${messageOf(error)}`)
@@ -262,9 +294,7 @@ export class BrowserRecordingService {
           : "The steps before this one did not pass, so there is no page to continue from. The run is in the run history: fix the step that failed first.",
       )
     }
-    const { recordingId, workflowId } = active.status
     active.stop = () => outcome.close()
-    this.deps.publish({ kind: "replayed", recordingId, workflowId })
     return { page: outcome.page, close: outcome.close, active }
   }
 
@@ -292,8 +322,16 @@ export class BrowserRecordingService {
     return parsed.data
   }
 
-  /** The request's step, which must be a valid browser step of the workflow in the request's workspace. */
+  /** The request's step, which must be a complete browser step: a re-pick needs the element it acts on now. */
   private browserStep(request: BrowserReplayRequest): BrowserNodeData {
+    const node = this.browserNode(request)
+    const config = BrowserNodeDataSchema.safeParse(node.config)
+    if (node.type !== "browser" || !config.success) throw new ValidationError("Only a complete browser step can be re-picked from.")
+    return config.data
+  }
+
+  /** The request's node, which must be a node of the workflow in the request's workspace. */
+  private browserNode(request: BrowserReplayRequest): { readonly type?: unknown; readonly config?: unknown } {
     const workflow = this.deps.workflows.getByIdInWorkspace(request.workflowId, request.workspaceId)
     if (workflow === undefined) throw new NotFoundError(`workflow ${request.workflowId} not found`)
     this.checkEnvironment(request)
@@ -302,9 +340,7 @@ export class BrowserRecordingService {
       typeof candidate === "object" && candidate !== null && (candidate as { nodeId?: unknown }).nodeId === request.nodeId,
     )
     if (node === undefined) throw new NotFoundError(`step ${request.nodeId} not found. Save the workflow and try again.`)
-    const config = BrowserNodeDataSchema.safeParse(node.config)
-    if (node.type !== "browser" || !config.success) throw new ValidationError("Only a complete browser step can be re-picked or re-recorded from.")
-    return config.data
+    return node
   }
 
   private checkEnvironment(request: { readonly workspaceId: string; readonly environmentId: string | null }): void {

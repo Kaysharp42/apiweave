@@ -182,3 +182,22 @@ describe("useBrowserRecording placement", () => {
     expect(useBrowserRecordingStore.getState().placedSteps).toEqual([]);
   });
 });
+
+describe("useBrowserRecording control", () => {
+  beforeEach(() => {
+    vi.mocked(browser.recordingStatus).mockResolvedValue(null);
+    vi.mocked(browser.onRecording).mockReturnValue(() => undefined);
+    useBrowserRecordingStore.setState({ phase: "idle", stopping: false, operation: "record", nodeId: null, workflowId: "wf", recordingId, anchorId: "start-1", steps: [], placedSteps: [], picked: null });
+  });
+
+  it("tells the toolbar that Stop is cancelling a replay, not ending a recording", () => {
+    const canvas = createCanvas([startNode]);
+    const { result } = mountRecording(canvas);
+    act(() => useBrowserRecordingStore.setState({ phase: "replaying", operation: "rerecord", stopping: false }));
+    expect(result.current.control).toMatchObject({ state: "replaying", stopping: false });
+
+    act(() => useBrowserRecordingStore.setState({ stopping: true }));
+    // The phase stays, so the toolbar still knows nothing was recorded.
+    expect(result.current.control).toMatchObject({ state: "replaying", stopping: true, stepCount: 0 });
+  });
+});

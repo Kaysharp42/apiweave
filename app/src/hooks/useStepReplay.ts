@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import type { BrowserLocator } from "@shared/types/BrowserLocator";
 import type { BrowserReplayRequest } from "@shared/types/BrowserReplayRequest";
@@ -27,9 +27,33 @@ function withLocator(node: CanvasNode, locator: BrowserLocator): CanvasNode {
 export function useStepReplay(params: UseStepReplayParams): UseStepReplayResult {
   const { workflowId, workspaceId, environmentId, isHydrated, isRunning, nodesRef, edgesRef, setNodes, saveWorkflowRef } = params;
   const idle = useBrowserRecordingStore((state) => state.phase === "idle");
+  const picked = useBrowserRecordingStore((state) => state.picked);
   const ready = idle && isHydrated && !isRunning && workflowId !== undefined && workspaceId !== undefined;
 
   const graph = useCallback(() => ({ nodes: nodesRef.current, edges: edgesRef.current }), [edgesRef, nodesRef]);
+
+  /**
+   * Put a re-pick's element on its step. The store holds it until a canvas
+   * applies it, so the canvas that was open while the user picked can be gone:
+   * this one, or the one opened later, still gets the change. Taken from the
+   * store rather than the render so that React's double effect applies it once.
+   */
+  useEffect(() => {
+    if (!isHydrated || workflowId === undefined) return;
+    const store = useBrowserRecordingStore.getState();
+    const pending = store.picked;
+    if (pending === null || pending.workflowId !== workflowId) return;
+    store.takePicked();
+    const { nodeId, locator } = pending;
+    if (!nodesRef.current.some((node) => node.id === nodeId)) {
+      toast.warning("The step was deleted while you picked, so the element was not saved.");
+      return;
+    }
+    // A save reads the ref: set it first, so Ctrl+S right after keeps the change.
+    nodesRef.current = nodesRef.current.map((node) => (node.id === nodeId ? withLocator(node, locator) : node));
+    setNodes(nodesRef.current);
+    toast.success("The step now uses the element you picked");
+  }, [isHydrated, nodesRef, picked, setNodes, workflowId]);
 
   /** The request for `nodeId`, once pending edits are saved; null when they could not be. */
   const prepare = useCallback(
@@ -45,20 +69,11 @@ export function useStepReplay(params: UseStepReplayParams): UseStepReplayResult 
     (nodeId: string) => {
       void (async () => {
         const request = await prepare(nodeId);
-        if (request === null) return;
-        const locator = await useBrowserRecordingStore.getState().repick(request);
-        if (locator === null) return;
-        if (!nodesRef.current.some((node) => node.id === nodeId)) {
-          toast.warning("The step was deleted while you picked, so the element was not saved.");
-          return;
-        }
-        // A save reads the ref: set it first, so Ctrl+S right after keeps the change.
-        nodesRef.current = nodesRef.current.map((node) => (node.id === nodeId ? withLocator(node, locator) : node));
-        setNodes(nodesRef.current);
-        toast.success("The step now uses the element you picked");
+        // The element arrives as a `picked` event, and the effect above applies it.
+        if (request !== null) await useBrowserRecordingStore.getState().repick(request);
       })();
     },
-    [nodesRef, prepare, setNodes],
+    [prepare],
   );
 
   const rerecord = useCallback(

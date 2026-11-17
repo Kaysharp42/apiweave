@@ -1,4 +1,4 @@
-import { BrowserLocatorSchema } from "@shared/zod-schemas/BrowserLocatorSchema";
+import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema";
 import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
@@ -32,7 +32,11 @@ function hasBrowserStepBefore(graph: CanvasGraph, nodeId: string): boolean {
 /** **Re-pick element**: a browser step that acts on an element, after a step that opens a page. */
 export function canRepick(graph: CanvasGraph, nodeId: string): boolean {
   const node = graph.nodes.find((candidate) => candidate.id === nodeId);
-  if (!isBrowser(node) || !BrowserLocatorSchema.safeParse(node?.data.config?.["locator"]).success) return false;
+  const config = node?.data.config;
+  if (!isBrowser(node) || config === undefined) return false;
+  // Main refuses a re-pick unless the whole step parses and names an element, so
+  // the menu must not offer one that would be refused.
+  if (!BrowserNodeDataSchema.safeParse(config).success || !("locator" in config)) return false;
   return hasBrowserStepBefore(graph, nodeId);
 }
 

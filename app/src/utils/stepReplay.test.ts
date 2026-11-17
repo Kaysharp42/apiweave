@@ -52,6 +52,19 @@ describe("canRepick", () => {
     const graph: CanvasGraph = { nodes: [node("start", "start"), click("a")], edges: [edge("start", "a")] };
     expect(canRepick(graph, "a")).toBe(false);
   });
+
+  it("is not offered when the rest of the step is invalid, since main would refuse the re-pick", () => {
+    const graph = workflow();
+    const invalid: CanvasGraph = {
+      ...graph,
+      nodes: graph.nodes.map((candidate) =>
+        candidate.id === "a"
+          ? { ...candidate, data: { ...candidate.data, config: { action: "click", locator: { kind: "role", role: "button", name: "a" }, button: "diagonal" } } }
+          : candidate,
+      ),
+    };
+    expect(canRepick(invalid, "a")).toBe(false);
+  });
 });
 
 describe("canRerecordFrom", () => {

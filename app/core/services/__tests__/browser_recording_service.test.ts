@@ -205,11 +205,18 @@ const replayUntilStopped: BrowserRecordingDeps["replay"] = (_request, signal) =>
   new Promise((resolve) => signal.addEventListener("abort", () => resolve({ kind: "failed", runId: "run-1", status: "cancelled" })))
 
 describe("BrowserRecordingService.repick", () => {
-  it("replays up to the step, lets the user pick, and closes the browser", async () => {
+  it("replays up to the step, lets the user pick, and hands the locator over as an event before the end", async () => {
     const { service, events, replays, closed } = harness()
-    await expect(service.repick(replayRequest)).resolves.toEqual({ kind: "role", role: "button", name: "Remove" })
+    await expect(service.repick(replayRequest)).resolves.toBeUndefined()
     expect(replays).toEqual([{ workspaceId: WORKSPACE, workflowId: WORKFLOW, environmentId: ENVIRONMENT, nodeId: "delete", beforeNodeId: "delete" }])
-    expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
+    expect(events.map((event) => event.kind)).toEqual(["replayed", "picked", "ended"])
+    expect(events[1]).toEqual({
+      kind: "picked",
+      recordingId: "recording-1700000000000",
+      workflowId: WORKFLOW,
+      nodeId: "delete",
+      locator: { kind: "role", role: "button", name: "Remove" },
+    })
     expect(closed()).toBe(1)
     expect(service.status()).toBeNull()
   })
@@ -222,11 +229,19 @@ describe("BrowserRecordingService.repick", () => {
         return { kind: "cancelled" }
       },
     })
-    await expect(service.repick(replayRequest)).resolves.toBeNull()
+    await expect(service.repick(replayRequest)).resolves.toBeUndefined()
     expect(seen).toEqual({
       env: { BASE_URL: "http://127.0.0.1:4777", TEST_EMAIL: "ada@acme.test" },
       secrets: { TEST_PASSWORD: "fixture-pass-2468", API_KEY: "env-key-1234" },
     })
+  })
+
+  it("hands over nothing when the user cancels the pick", async () => {
+    const { service, events, closed } = harness({ pick: async () => ({ kind: "cancelled" }) })
+    await expect(service.repick(replayRequest)).resolves.toBeUndefined()
+    expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
+    expect(closed()).toBe(1)
+    expect(service.status()).toBeNull()
   })
 
   it.each([
@@ -247,7 +262,7 @@ describe("BrowserRecordingService.repick", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(service.status()).toMatchObject({ operation: "repick", nodeId: "delete" })
     await service.stop()
-    await expect(repicking).resolves.toBeNull()
+    await expect(repicking).resolves.toBeUndefined()
     expect(events.map((event) => event.kind)).toEqual(["ended"])
     expect(service.status()).toBeNull()
   })
@@ -261,7 +276,7 @@ describe("BrowserRecordingService.repick", () => {
     const repicking = service.repick(replayRequest)
     await new Promise((resolve) => setTimeout(resolve, 0))
     await service.stop()
-    await expect(repicking).resolves.toBeNull()
+    await expect(repicking).resolves.toBeUndefined()
     expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
   })
 
@@ -279,8 +294,9 @@ describe("BrowserRecordingService.repick", () => {
     [{ kind: "secret" } as const, /shows a secret value/],
     [{ kind: "undescribable" } as const, /could not be described/],
   ])("does not hand back a pick it cannot store: %j", async (outcome, message) => {
-    const { service, closed } = harness({ pick: async () => outcome })
+    const { service, events, closed } = harness({ pick: async () => outcome })
     await expect(service.repick(replayRequest)).rejects.toThrow(message)
+    expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
     expect(closed()).toBe(1)
     expect(service.status()).toBeNull()
   })
@@ -326,7 +342,9 @@ describe("BrowserRecordingService.rerecord", () => {
     })
     await expect(service.rerecord(replayRequest)).rejects.toThrow("The recording could not start: the replayed page has no browser to record in")
     expect(closed()).toBe(1)
-    expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
+    // Only the end: no `replayed`, or the canvas would say both that it is
+    // recording and that nothing was re-recorded.
+    expect(events.map((event) => event.kind)).toEqual(["ended"])
     expect(service.status()).toBeNull()
   })
 
@@ -337,5 +355,49 @@ describe("BrowserRecordingService.rerecord", () => {
     await service.stop()
     await expect(rerecording).resolves.toBeNull()
     expect(attached).toEqual([])
+  })
+
+  it("re-records from an incomplete browser step, which recording replaces anyway", async () => {
+    const { service, events } = harness()
+    await expect(service.rerecord({ ...replayRequest, nodeId: "a" })).resolves.toMatchObject({ operation: "rerecord", nodeId: "a" })
+    await service.stop()
+    expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
+  })
+
+  it("is stopped while the secrets are read: nothing is replayed, and the slot is free", async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const { service, events, replays, attached } = harness({
+      secrets: {
+        list: async () => [{ name: "TEST_PASSWORD" }],
+        resolvePlaintext: async () => {
+          await gate
+          return { plaintext: "read-too-late" }
+        },
+      },
+    })
+    const rerecording = service.rerecord(replayRequest)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The operation exists, and Stop reaches it, before the replay could start.
+    expect(service.status()).toMatchObject({ operation: "rerecord", nodeId: "delete" })
+    await service.stop()
+    release()
+    await expect(rerecording).resolves.toBeNull()
+    expect(replays).toEqual([])
+    expect(attached).toEqual([])
+    expect(events.map((event) => event.kind)).toEqual(["ended"])
+    expect(service.status()).toBeNull()
+    await expect(service.rerecord(replayRequest)).resolves.toMatchObject({ operation: "rerecord", nodeId: "delete" })
+    await service.stop()
+  })
+
+  it.each([
+    ["another kind of node", "api", /Only a browser step can be re-recorded from/],
+    ["a step that is not in the saved workflow", "gone", /step gone not found/],
+  ])("refuses %s, and replays nothing", async (_what, nodeId, message) => {
+    const { service, replays } = harness()
+    await expect(service.rerecord({ ...replayRequest, nodeId })).rejects.toThrow(message)
+    expect(replays).toEqual([])
+    expect(service.status()).toBeNull()
   })
 })
