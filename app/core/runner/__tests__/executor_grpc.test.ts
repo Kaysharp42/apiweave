@@ -80,6 +80,35 @@ describe("WorkflowExecutor — gRPC node", () => {
     expect(output.failedNodes).toContain("rpc")
   })
 
+  it("reads the gRPC status through a dot-path assertion, not the node's own status", async () => {
+    server = await startGrpcServer()
+    const output = await executor().executeWorkflow({
+      nodes: [
+        { nodeId: "start", type: "start" },
+        { nodeId: "rpc", type: "grpc", config: { target: server.target, service: "shop.Orders", method: "GetOrder", schemaSource: "proto", protoFiles: TEST_PROTO_FILES, message: '{"order_id": "o-1"}' } },
+        {
+          nodeId: "check",
+          type: "assertion",
+          config: {
+            assertions: [
+              // `result.status` is "success"; `response.status` is the gRPC code name.
+              { source: "prev", path: "response.status", operator: "equals", expectedValue: "OK" },
+              { source: "prev", path: "response.statusCode", operator: "equals", expectedValue: 0 },
+            ],
+          },
+        },
+        { nodeId: "end", type: "end" },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "rpc" },
+        { edgeId: "e2", source: "rpc", target: "check" },
+        { edgeId: "e3", source: "check", target: "end" },
+      ],
+    })
+    expect(output.status).toBe("passed")
+    expect(output.nodeStatuses["check"]).toBe("passed")
+  })
+
   it("sends metadata and bearer auth, and a secret in either is masked in what the run stores", async () => {
     server = await startGrpcServer()
     const output = await executor({ secrets: { TOKEN: "s3cret-token" } }).executeWorkflow(workflow({

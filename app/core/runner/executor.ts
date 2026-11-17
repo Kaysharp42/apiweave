@@ -2426,17 +2426,34 @@ export class WorkflowExecutor {
   private readAssertionActual(source: AssertionSource, path: string, result: NodeResult): unknown {
     if (source === "prev") {
       // A `$`-prefixed path is JSONPath rooted at the node result; a dot path
-      // strips the optional `response.` prefix and reads the rest off the
-      // result directly. Both address the same value.
+      // is read the same way (see `readResponseValue`). Both address the same value.
       if (isQueryPath(path)) {
         const resolution = resolveExtractorPath(result, path)
         return resolution.failureReason === null ? resolution.value : undefined
       }
-      return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+      return this.readResponseValue(result, path)
     }
     if (source === "headers") return this.getResponseHeader(result, path)
     if (source === "cookies") return this.getResponseCookie(result, path)
     return result.statusCode
+  }
+
+  /**
+   * The value a dot path addresses on a node result — the one reading shared by
+   * an assertion rule and a merge branch condition.
+   *
+   * A `response.`-prefixed path reads the result's response object first, since
+   * that is where a gRPC status and a SOAP fault live (`result.status` is the
+   * node's own "success"/"error"). Only when the response object has no such
+   * field does it fall back to the top-level result, so fields that exist only
+   * there (`response.duration`) still resolve. A path with no prefix reads the
+   * result directly, so `body.x`, `statusCode` and `headers.x` keep working.
+   */
+  private readResponseValue(result: NodeResult, path: string): unknown {
+    if (!path.startsWith("response.")) return this.getNestedValue(result, path)
+    const field = path.slice("response.".length)
+    const fromResponse = this.getNestedValue(result.response, field)
+    return fromResponse === undefined ? this.getNestedValue(result, field) : fromResponse
   }
 
   /** Loads the regex sandbox when one of `rules` matches a regular expression (a schema may hold `pattern`s). */
@@ -2778,7 +2795,7 @@ export class WorkflowExecutor {
       message:
         childOutput.status === "passed"
           ? `Sub-workflow ${targetLabel} completed`
-          : `Sub-workflow ${targetLabel} failed in ${childOutput.failedNodes.length} node(s)`,
+          : this.subWorkflowFailureMessage(targetLabel, target, childOutput),
       subWorkflow: {
         workflowId: targetWorkflowId,
         ...(runId ? { runId } : {}),
@@ -2788,6 +2805,26 @@ export class WorkflowExecutor {
         outputVariableNames: Object.keys(outputMapping),
       },
     }
+  }
+
+  /**
+   * The Call Workflow node's failure text: the first node that failed inside
+   * the callee, named by its label (or id) with that node's own error, plus a
+   * count of any others. "Failed in 2 node(s)" left the caller unable to tell
+   * which step broke or why.
+   */
+  private subWorkflowFailureMessage(targetLabel: string, target: ResolvedSubWorkflow, childOutput: ExecutorOutput): string {
+    const failedNodeId = childOutput.failedNodes[0]
+    if (failedNodeId === undefined) {
+      return `Sub-workflow ${targetLabel} failed${childOutput.failureMessage ? `: ${childOutput.failureMessage.slice(0, 300)}` : ""}`
+    }
+    const stepName = target.nodes.find((node) => node.nodeId === failedNodeId)?.label || failedNodeId
+    const result = childOutput.results.find((entry) => entry.nodeId === failedNodeId)
+    // A failed assertion node reports no `error`; its rules say how many failed.
+    const failedRules = result?.assertions?.filter((assertion) => assertion.outcome === "fail").length ?? 0
+    const cause = (result?.error ?? (failedRules > 0 ? `${failedRules} assertion${failedRules === 1 ? "" : "s"} failed` : "no error reported")).slice(0, 300)
+    const others = childOutput.failedNodes.length - 1
+    return `Sub-workflow ${targetLabel} failed at "${stepName}": ${cause}${others > 0 ? ` (+${others} more)` : ""}`
   }
 
   /**
@@ -3100,9 +3137,7 @@ export class WorkflowExecutor {
     const outcome = (condition: (typeof conditions)[number]): boolean => {
       const branch = branchResults[condition.branchIndex ?? 0]
       if (!branch) return false
-      const field = condition.field ?? ""
-      const cleanPath = field.startsWith("response.") ? field.slice(9) : field
-      const actual = this.getNestedValue(branch, cleanPath)
+      const actual = this.readResponseValue(branch, condition.field ?? "")
       const expected = this.substituteVariables(String(condition.value ?? ""))
       try {
         return this.compareValues(actual, condition.operator ?? "equals", expected)
