@@ -220,6 +220,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
   locator could hold the first characters of a secret. A step whose locator
   shows a secret, or ends in four or more characters of one, is now not
   recorded, and neither is a picked element.
+- **`response.status` and `response.fault.*` reach the values they name.** A
+  dot path dropped `response.` and read the node result, so on a gRPC node
+  `response.status` read the node's own `success` and on a SOAP node
+  `response.fault.code` read nothing. Assertions and merge conditions now read
+  the response object first, as JSONPath and extractors already did.
+- **The analyzer no longer flags valid assertions.** A namespaced
+  `xpath[prefix=uri]:` path, a `response.fault.*` path and a `matchesSnapshot`
+  rule with no expected value were reported as errors, and a variable written by
+  a Call Workflow node's `outputMapping` was reported as never produced.
+- **A failed Call Workflow says which step failed.** "Sub-workflow Login failed
+  in 1 node(s)" now names the first failed step and its error.
+- **A workspace an agent creates opens without a restart.** A workspace page
+  whose workspace was missing from the loaded list showed "Workspace
+  unavailable" until the app restarted; it now reloads the list once first.
 
 ## [1.0.0] — 2026-11-10
 
