@@ -11,10 +11,10 @@ import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutCanvasOnlyNodes } from "../graph/frames"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
-import { assertionExpectedProblem } from "./assertion_expected"
+import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
-import { isQueryPath, isValidJsonPath, isValidXPath } from "../extractors/extractorPath"
+import { isQueryPath, isXPath, isValidJsonPath, isValidXPath } from "../extractors/extractorPath"
 
 const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
@@ -91,6 +91,22 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
       map[variableName] = {
         producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
         consumers: entry.consumers,
+      }
+    }
+
+    // A Call Workflow node's `outputMapping` names each variable it writes into
+    // the CALLER's scope; the value is the child variable it copies from.
+    if (node.type === "workflow" && config !== undefined) {
+      const outputMapping = config["outputMapping"]
+      if (outputMapping !== null && typeof outputMapping === "object" && !Array.isArray(outputMapping)) {
+        for (const [variableName, path] of Object.entries(outputMapping as Readonly<Record<string, unknown>>)) {
+          if (typeof path !== "string") continue
+          const entry = ensure(variableName)
+          map[variableName] = {
+            producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
+            consumers: entry.consumers,
+          }
+        }
       }
     }
 
@@ -275,7 +291,7 @@ function pathTargetsResponseBody(path: string): boolean {
   // root is `body` (directly or via `response.body`), in dot or bracket form.
   if (path.startsWith("$")) return jsonPathTargetsResponseBody(path)
   // An XPath expression reads the XML body, so it always addresses it.
-  if (path.startsWith("xpath:")) return true
+  if (isXPath(path)) return true
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   return normalized === "body" || normalized.startsWith("body.") || normalized.startsWith("body[")
 }
@@ -306,20 +322,24 @@ function jsonPathTargetsResponseBody(path: string): boolean {
  * a path one accepts and the other rejects is a trap an agent can only discover
  * by running the workflow.
  *
- * Mirrors `WorkflowExecutor.evaluateAssertion`, which strips a leading
- * `response.` and reads the rest off the node result — so `body.id`,
- * `response.body.id`, `response.headers.content-type`, `statusCode` and
- * `duration` all address something real, and anything else does not. A `$`
- * prefixed path is an RFC 9535 JSONPath expression rooted at the node result
- * and is valid whenever the parser accepts it; an `xpath:`-prefixed path is
- * XPath 1.0 over the XML body and is valid when its namespace block and
- * expression parse.
+ * Mirrors `WorkflowExecutor.evaluateAssertion`, which reads a `response.`-prefixed
+ * dot path off the node result's `response` object first and falls back to the
+ * top-level result, while an unprefixed one reads the result directly — so
+ * `body.id`, `response.body.id`, `response.headers.content-type`,
+ * `response.fault.code` (a parsed SOAP fault, which only the response object
+ * carries), `statusCode` and `duration` all address something real, and
+ * anything else does not. A `$` prefixed path is an RFC 9535 JSONPath
+ * expression rooted at the node result and is valid whenever the parser
+ * accepts it; an XPath path — `xpath:<expression>` or
+ * `xpath[prefix=uri;…]:<expression>` — is XPath 1.0 over the XML body and is
+ * valid when its namespace block and expression parse.
  */
 export function isValidRuntimePath(path: string, includeDuration: boolean): boolean {
   if (typeof path !== "string") return false
   if (path.startsWith("$")) return isValidJsonPath(path)
-  if (path.startsWith("xpath:")) return isValidXPath(path)
-  const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
+  if (isXPath(path)) return isValidXPath(path)
+  const responsePrefixed = path.startsWith("response.")
+  const normalized = responsePrefixed ? path.slice("response.".length) : path
   const parts = normalized.split(".")
   if (parts.length === 0 || parts.some((part) => part.length === 0)) return false
   for (const part of parts) {
@@ -332,6 +352,10 @@ export function isValidRuntimePath(path: string, includeDuration: boolean): bool
     return parts.length === 1 && !parts[0]!.includes("[") && (root !== "duration" || includeDuration)
   }
   if (root === "status" || root === "statusMessage") return parts.length === 1 && !parts[0]!.includes("[")
+  // The parsed SOAP fault lives on the response object only — `response.fault.code`,
+  // `response.fault.reason`. An unprefixed `fault.…` reads the top-level result,
+  // which has no fault, so it is not a path that can resolve.
+  if (root === "fault") return responsePrefixed
   return root === "body" || root === "headers" || root === "trailers"
 }
 
@@ -535,7 +559,7 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
           { kind: "update_assertion_path", nodeId: node.nodeId, path },
         ))
       }
-      if (operatorValid && assertion.operator !== "exists" && assertion.operator !== "notExists" && assertion.expectedValue === undefined) {
+      if (operatorValid && !operatorTakesNoExpectedValue(assertion.operator) && assertion.expectedValue === undefined) {
         diagnostics.push(diagnostic(
           "assertion_expected_missing",
           "error",

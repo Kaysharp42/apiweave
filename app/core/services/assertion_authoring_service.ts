@@ -8,7 +8,7 @@ import type { RunResult } from "@shared/types/RunResult"
 import type { Workflow } from "@shared/types/Workflow"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { isValidRuntimePath } from "@shared/analysis/workflow_graph_analyzer"
-import { assertionExpectedProblem } from "@shared/analysis/assertion_expected"
+import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "@shared/analysis/assertion_expected"
 import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { isSecretKey } from "@shared/credentials/credentials"
@@ -298,7 +298,7 @@ function canonicalDraft(value: unknown): unknown {
     source,
     path,
     operator,
-    ...(!["exists", "notExists"].includes(String(operator)) && "expectedValue" in draft
+    ...(!operatorTakesNoExpectedValue(String(operator)) && "expectedValue" in draft
       ? { expectedValue: draft["expectedValue"] }
       : {}),
   }
@@ -315,7 +315,7 @@ const NAMED_PATH_EXAMPLES: Readonly<Record<string, string>> = {
 /** Each check answers "what is wrong with this rule", or undefined when nothing is. */
 const RULE_CHECKS: readonly ((rule: AssertionItem) => Omit<ValidationIssue, "ruleIndex"> | undefined)[] = [
   (rule) =>
-    rule.operator !== "exists" && rule.operator !== "notExists" && rule.expectedValue === undefined
+    !operatorTakesNoExpectedValue(rule.operator) && rule.expectedValue === undefined
       ? { code: "expected_required", severity: "error", message: "This operator requires an expected value." }
       : undefined,
   // Same predicate `workflow_diagnose` uses, so a rule this accepts never trips
@@ -415,7 +415,7 @@ function missingPath(ruleIndex: number): ValidationIssue {
 
 function previewRule(rule: AssertionItem): string {
   const target = rule.source === "status" ? "HTTP status" : `${rule.source} ${rule.path}`
-  if (rule.operator === "exists" || rule.operator === "notExists") return `${target} ${rule.operator}`
+  if (operatorTakesNoExpectedValue(rule.operator)) return `${target} ${rule.operator}`
   return `${target} ${rule.operator} ${JSON.stringify(rule.expectedValue)}`
 }
 

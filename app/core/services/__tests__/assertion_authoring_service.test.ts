@@ -212,6 +212,21 @@ describe("AssertionAuthoringService", () => {
     expect(validated.issues.map((issue) => issue.code)).not.toContain("expected_required")
   })
 
+  // `matchesSnapshot` compares against the baseline its first run records, so
+  // it is the third value-less operator: requiring expectedValue blocked it.
+  it("validates matchesSnapshot without an expectedValue", async () => {
+    const { workspaceId, workflow } = await seedWorkflow()
+    const validated = await authoring.validate(
+      workspaceId,
+      workflow.workflowId,
+      "request",
+      [{ source: "prev", path: "response.body", operator: "matchesSnapshot" }],
+    )
+    expect(validated.valid).toBe(true)
+    expect(validated.issues.map((issue) => issue.code)).not.toContain("expected_required")
+    expect(validated.preview).toEqual(["prev response.body matchesSnapshot"])
+  })
+
   // A browser step has a result of its own but no HTTP response, so it can
   // neither be an assertion's evidence source nor stand upstream of one.
   it("does not treat a browser step as a response source", async () => {

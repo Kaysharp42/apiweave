@@ -21,6 +21,15 @@ export function parseSchemaValue(expected: unknown): object | boolean | null {
 }
 
 /**
+ * Operators that read no `expectedValue`: `exists`/`notExists` judge presence,
+ * and `matchesSnapshot` compares the value at `path` against a baseline its
+ * first run records. Every other operator needs one.
+ */
+export function operatorTakesNoExpectedValue(operator: string): boolean {
+  return operator === "exists" || operator === "notExists" || operator === "matchesSnapshot"
+}
+
+/**
  * What is wrong with an expected value for the operators whose value has a
  * shape (a type name, a regular expression, a JSON Schema), or null. A missing
  * value and a `{{placeholder}}` are not judged here: the first has its own
