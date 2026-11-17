@@ -9,6 +9,7 @@ import {
   type ConverterOutput,
   type RecorderAction,
 } from "./recorded"
+import { roleSelectorWithName } from "./selector_parse"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, contextOptions, launchBrowser, type BrowserLaunchSettings } from "./session"
 import { disarmDialog } from "./step"
@@ -92,6 +93,8 @@ export class BrowserRecording {
   /** When the last recorder action arrived, to tell a dialog it opened from one the page raised later. */
   private lastActionAt: number | null = null
   private readonly passwordFields = new Map<string, boolean>()
+  /** A recorded selector after its role's accessible name was added, by the selector Playwright wrote. */
+  private readonly namedSelectors = new Map<string, string>()
   private readonly sentStepIds = new Set<string>()
   private readonly pending = new Map<string, RecordedBrowserStep>()
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -254,7 +257,16 @@ export class BrowserRecording {
   private async handle(kind: "added" | "updated", page: Page, action: RecorderAction, onMainPage: boolean): Promise<void> {
     const isPassword =
       readsField(action) && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
-    this.report(this.converter.apply({ kind, action, onMainPage, ...(isPassword === undefined ? {} : { isPassword }) }))
+    const selector =
+      action.selector === undefined || !onMainPage ? action.selector : await this.namedSelector(page, action.selector)
+    this.report(
+      this.converter.apply({
+        kind,
+        action: selector === undefined || selector === action.selector ? action : { ...action, selector },
+        onMainPage,
+        ...(isPassword === undefined ? {} : { isPassword }),
+      }),
+    )
   }
 
   private report(output: ConverterOutput): void {
@@ -278,6 +290,36 @@ export class BrowserRecording {
     const isPassword = await within(answer, 1_500, true)
     this.passwordFields.set(selector, isPassword)
     return isPassword
+  }
+
+  /**
+   * The selector with its role's accessible name, when Playwright wrote a bare
+   * role. Asked once per selector, and never blocks a step for long: a page that
+   * cannot answer leaves the selector as the recorder wrote it.
+   */
+  private async namedSelector(page: Page, selector: string): Promise<string> {
+    if (!selector.startsWith("internal:role=")) return selector
+    const known = this.namedSelectors.get(selector)
+    if (known !== undefined) return known
+    const name = await within(this.accessibleName(page, selector), 1_500, "")
+    const named = roleSelectorWithName(selector, name) ?? selector
+    this.namedSelectors.set(selector, named)
+    return named
+  }
+
+  /** The accessible name in an ARIA snapshot's first line: `- heading "Orders" [level=1]`. */
+  private async accessibleName(page: Page, selector: string): Promise<string> {
+    const snapshot = await page.locator(selector).first().ariaSnapshot({ timeout: 1_000 })
+    const first = snapshot.split("\n", 1)[0] ?? ""
+    const quoted = /^-\s+[a-z]+\s+"((?:[^"\\]|\\.)*)"/.exec(first)
+    if (quoted === null) return ""
+    try {
+      const name: unknown = JSON.parse(`"${quoted[1] ?? ""}"`)
+      return typeof name === "string" ? name : ""
+    } catch {
+      // An escape JSON does not know: not a name this can reproduce exactly.
+      return ""
+    }
   }
 
   private send(step: RecordedBrowserStep): void {

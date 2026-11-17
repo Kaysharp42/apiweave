@@ -202,6 +202,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A recorded check keeps the element's accessible name.** Playwright's
+  recorder writes a bare `internal:role=heading` when that role is unique on the
+  page at pick time, so a check on a product title became "some heading": once
+  the page held more than one, the step failed on strict mode or read the wrong
+  element. A recorded role locator now carries the name the accessibility tree
+  already gives the element (`heading "Mechanical keyboard"`), so the step waits
+  for that element instead of whatever shares its role.
 - **An agent can create a workspace.** `workspaces_create` without
   `isPersonal` handed back the existing Personal workspace instead of creating
   one, because a create that did not say otherwise was taken to mean the

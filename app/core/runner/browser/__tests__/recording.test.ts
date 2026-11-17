@@ -202,6 +202,9 @@ describe("BrowserRecording", () => {
       // The recording clicked OK: the delete went through, as the user meant it to.
       await page.getByText("Order 42 deleted").waitFor()
       await checkWithToolbar(page, "assertingVisibility", page.getByRole("heading", { name: "Orders" }))
+      // Playwright writes a bare `internal:role=heading` for a text check when
+      // the page holds one heading; the recording adds its accessible name.
+      await checkWithToolbar(page, "assertingText", page.getByRole("heading", { name: "Orders" }))
       await checkWithToolbar(page, "assertingText", page.locator("#msg"))
       await checkWithToolbar(page, "assertingValue", page.getByLabel("Reference"))
       await recording.stop()
@@ -209,12 +212,25 @@ describe("BrowserRecording", () => {
       const byId = new Map<string, BrowserNodeData>()
       for (const step of sent) byId.set(step.stepId, step.config)
       const steps = [...byId.values()]
-      expect(steps.map((step) => step.action)).toEqual(["navigate", "click", "expect-visible", "expect-text", "expect-value"])
+      expect(steps.map((step) => step.action)).toEqual([
+        "navigate",
+        "click",
+        "expect-visible",
+        "expect-text",
+        "expect-text",
+        "expect-value",
+      ])
       expect(steps[0]).toEqual({ action: "navigate", url: "{{env.BASE_URL}}/orders" })
       expect(steps[1]).toEqual({ action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept" })
       expect(steps[2]).toMatchObject({ locator: { kind: "role", role: "heading", name: "Orders" } })
-      expect(steps[3]).toEqual({ action: "expect-text", locator: { kind: "css", value: "#msg" }, text: "Order 42 deleted", match: "contains" })
-      expect(steps[4]).toMatchObject({ locator: { kind: "role", role: "textbox", name: "Reference" }, value: "ACME-7" })
+      expect(steps[3]).toEqual({
+        action: "expect-text",
+        locator: { kind: "role", role: "heading", name: "Orders" },
+        text: "Orders",
+        match: "contains",
+      })
+      expect(steps[4]).toEqual({ action: "expect-text", locator: { kind: "css", value: "#msg" }, text: "Order 42 deleted", match: "contains" })
+      expect(steps[5]).toMatchObject({ locator: { kind: "role", role: "textbox", name: "Reference" }, value: "ACME-7" })
       expect(warnings).toEqual([expect.stringContaining("The page showed a dialog")])
 
       expect(await replay(steps, replayContext(env, {}))).toBeUndefined()
