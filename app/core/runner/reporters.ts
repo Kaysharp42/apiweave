@@ -19,7 +19,10 @@ import type { LoadRun } from "@shared/types/LoadRun"
  * leaves the app: it carries no request or response headers or bodies and no
  * variables — only names, statuses, timings, request method and URL (already
  * stripped of its query), response status codes and assertion rules, plus a
- * script's test results and the console output its author chose to print.
+ * script's test results and the console output its author chose to print, and
+ * a failed browser step's compared values and page URL (also without its
+ * query). A page's own content — its screenshot and ARIA snapshot — is only
+ * ever linked, as files the caller wrote beside the report.
  *
  * Mapping: one `<testsuite>` per workflow run (a single run gives one, a
  * project run one per workflow in run order) and one `<testcase>` per executed
@@ -35,6 +38,26 @@ import type { LoadRun } from "@shared/types/LoadRun"
 
 /** The workflow's name and nodes, for test case names. `Workflow` satisfies it. */
 export type ReportWorkflow = Pick<Workflow, "workflowId" | "name" | "nodes">
+
+/**
+ * A failed browser step's evidence, written next to the report (`apiweave run
+ * --evidence-dir`): each path as this report should name it — relative to the
+ * HTML file for HTML, to the working directory otherwise. The report links
+ * the files and never holds their content.
+ */
+export interface ReportEvidence {
+  readonly screenshot?: string
+  readonly ariaSnapshot?: string
+  /** The called workflow and step the files belong to (`Login › Check heading`); absent for the case's own step. */
+  readonly step?: string
+}
+
+/**
+ * The evidence written for one node of one run, if any: one entry per failed
+ * browser step. A browser node has at most its own; a Call Workflow node has
+ * one per failed step of every workflow it reached, iterations included.
+ */
+export type ReportEvidenceLookup = (runId: string, nodeId: string) => readonly ReportEvidence[] | undefined
 
 export type ReportInput =
   | SingleReportInput
@@ -91,6 +114,8 @@ interface ReportCase {
   readonly logs: readonly string[]
   /** Contract violations recorded on a node that still passed (contract mode `warn`). */
   readonly warnings: readonly string[]
+  /** Failed browser steps' files, when they were written. */
+  readonly evidence?: readonly ReportEvidence[]
 }
 
 interface ReportSuite {
@@ -117,9 +142,11 @@ const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "n
 
 // -------------------- Model --------------------
 
-function toReport(input: ReportInput): Report {
+const NO_EVIDENCE: ReportEvidenceLookup = () => undefined
+
+function toReport(input: ReportInput, evidence: ReportEvidenceLookup = NO_EVIDENCE): Report {
   if (input.kind === "iterations") {
-    return combine(input.title, input.iterations.map(toReport), "Iterations", (_report, suite, index) => `${suite.name} [iteration ${index + 1}]`)
+    return combine(input.title, input.iterations.map((one) => toReport(one, evidence)), "Iterations", (_report, suite, index) => `${suite.name} [iteration ${index + 1}]`)
   }
   if (input.kind === "load") {
     return {
@@ -133,7 +160,7 @@ function toReport(input: ReportInput): Report {
   if (input.kind === "projects") {
     // Two projects can both hold a "Login", so the project's name always leads: a suite is named the same
     // whether or not other projects ran (--bail and skipped projects change how many did).
-    return combine(input.title, input.projects.map(toReport), "Projects", (report, suite) => `${report.title}: ${suite.name}`)
+    return combine(input.title, input.projects.map((one) => toReport(one, evidence)), "Projects", (report, suite) => `${report.title}: ${suite.name}`)
   }
   if (input.kind === "run") {
     const name = input.workflow?.name ?? input.run.workflowId
@@ -141,7 +168,7 @@ function toReport(input: ReportInput): Report {
       title: name,
       status: input.run.status,
       startedAt: input.run.startedAt ?? null,
-      suites: [runSuite(name, input.run, input.workflow)],
+      suites: [runSuite(name, input.run, input.workflow, evidence)],
     }
   }
   const runs = new Map(input.runs.map((run) => [run.runId, run]))
@@ -152,7 +179,7 @@ function toReport(input: ReportInput): Report {
     startedAt: input.projectRun.startedAt,
     suites: input.projectRun.items.map((item) => {
       const run = item.runId === null ? undefined : runs.get(item.runId)
-      if (run !== undefined) return runSuite(item.workflowName, run, workflows.get(item.workflowId) ?? null)
+      if (run !== undefined) return runSuite(item.workflowName, run, workflows.get(item.workflowId) ?? null, evidence)
       // The item's own status still says how it ended, even with its run gone.
       const failed = item.status === "failed" || item.status === "cancelled" || item.status === "interrupted"
       const reason = failed
@@ -190,7 +217,7 @@ function combine(
   }
 }
 
-function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): ReportSuite {
+function runSuite(name: string, run: Run, workflow: ReportWorkflow | null, evidence: ReportEvidenceLookup): ReportSuite {
   const nodes = new Map((workflow?.nodes ?? []).map((node) => [node.nodeId, node]))
   const results = new Map(run.results.map((result) => [result.nodeId, result]))
   // Recorded statuses are in the order nodes ran; a result without one still counts.
@@ -200,7 +227,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
     const node = nodes.get(nodeId)
     const type = node?.type ?? "node"
     if (NOT_TEST_NODES.has(type)) continue
-    cases.push(nodeCase(node?.label || nodeId, type, results.get(nodeId), run.nodeStatuses[nodeId]))
+    cases.push(nodeCase(node?.label || nodeId, type, results.get(nodeId), run.nodeStatuses[nodeId], evidence(run.runId, nodeId)))
   }
   if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) cases.push(runCase(run))
   return {
@@ -332,7 +359,7 @@ function consoleLoadTable(loadRun: LoadRun): string[] {
   return rows.map((row) => row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))
 }
 
-function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown): ReportCase {
+function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown, evidence: readonly ReportEvidence[] | undefined): ReportCase {
   const recorded = statusOf(entry) ?? result?.status ?? "idle"
   const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
   return {
@@ -350,7 +377,13 @@ function nodeCase(name: string, type: string, result: RunResult | undefined, ent
     attempts: result?.attempts?.length ?? null,
     logs: (result?.scripts ?? []).flatMap((script) => script.logs),
     warnings: outcome === "passed" ? (result?.assertions ?? []).filter((rule) => rule.outcome === "fail").flatMap(describeRule).map((line) => `Contract warning: ${line}`) : [],
+    ...evidenceOf(outcome, evidence),
   }
+}
+
+/** Evidence is a failed step's only. */
+function evidenceOf(outcome: Outcome, evidence: readonly ReportEvidence[] | undefined): { evidence?: readonly ReportEvidence[] } {
+  return outcome === "failed" && evidence !== undefined && evidence.length > 0 ? { evidence } : {}
 }
 
 /** Stands in for a run that did not complete with no failed node to show for it. */
@@ -416,6 +449,7 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (result === undefined) return []
   return [
     ...requestLines(result),
+    ...(outcome === "failed" ? browserLines(result) : []),
     ...(result.assertions ?? []).filter((rule) => outcome !== "failed" || rule.outcome === "fail").flatMap((rule) => describeRule(rule)),
     ...(result.scripts ?? []).flatMap((script) => scriptLines(script, result.error ?? "", outcome)),
   ]
@@ -433,6 +467,22 @@ function requestLines(result: RunResult): string[] {
     lines.push(`Attempts ${result.attempts.length}: ${result.attempts.map((attempt) => attempt.statusCode ?? "no response").join(", ")}`)
   }
   return lines
+}
+
+/**
+ * A failed browser step's compared values and the page it was on: what an
+ * assertion rule's lines say for a response. Masked like the rest of the run;
+ * the page's own content (ARIA snapshot, screenshot) is never inlined.
+ */
+function browserLines(result: RunResult): string[] {
+  const browser = result.browser
+  if (browser === undefined) return []
+  return [
+    ...(browser.expected === undefined ? [] : [`Expected: ${JSON.stringify(browser.expected)}`]),
+    ...(browser.actual === undefined ? [] : [`Found: ${JSON.stringify(browser.actual)}`]),
+    ...(browser.url === undefined ? [] : [`Page: ${browser.url}`]),
+    ...(browser.evidenceNote === undefined ? [] : [browser.evidenceNote]),
+  ]
 }
 
 function scriptLines(script: ScriptOutcome, nodeError: string, outcome: Outcome): string[] {
@@ -487,6 +537,23 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;")
 }
 
+interface EvidenceFile {
+  readonly label: string
+  readonly path: string
+  readonly screenshot: boolean
+}
+
+/** A case's evidence files in entry order, each named for the step it belongs to. */
+function evidenceFiles(evidence: readonly ReportEvidence[] | undefined): EvidenceFile[] {
+  return (evidence ?? []).flatMap((one) => {
+    const suffix = one.step === undefined ? "" : ` (${one.step})`
+    return [
+      ...(one.screenshot === undefined ? [] : [{ label: `Screenshot${suffix}`, path: one.screenshot, screenshot: true }]),
+      ...(one.ariaSnapshot === undefined ? [] : [{ label: `ARIA snapshot${suffix}`, path: one.ariaSnapshot, screenshot: false }]),
+    ]
+  })
+}
+
 function seconds(ms: number): string {
   return (Math.max(0, ms) / 1000).toFixed(3)
 }
@@ -510,14 +577,20 @@ function junitCase(suite: ReportSuite, testCase: ReportCase): string {
   } else if (testCase.outcome === "skipped") {
     children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
-  const out = [...testCase.warnings, ...testCase.logs]
+  // The attachment convention GitLab and Jenkins read: a failed browser step's screenshot shows with the test.
+  // GitLab shows only the first attachment, so every screenshot precedes every ARIA snapshot.
+  const files = evidenceFiles(testCase.evidence)
+  const attachments = [...files.filter((file) => file.screenshot), ...files.filter((file) => !file.screenshot)].map(
+    (file) => `[[ATTACHMENT|${file.path}]]`,
+  )
+  const out = [...testCase.warnings, ...testCase.logs, ...attachments]
   if (out.length > 0) children.push(`      <system-out>${escapeXmlText(out.join("\n"))}</system-out>`)
   return children.length === 0 ? `${head}/>` : `${head}>\n${children.join("\n")}\n    </testcase>`
 }
 
 /** JUnit XML: `<testsuites>` → one `<testsuite>` per workflow run → `<testcase>` per node. */
-export function buildJUnitReport(input: ReportInput): string {
-  const report = toReport(input)
+export function buildJUnitReport(input: ReportInput, evidence?: ReportEvidenceLookup): string {
+  const report = toReport(input, evidence)
   const all = counts(report.suites.flatMap((suite) => suite.cases))
   const totalMs = report.suites.reduce((sum, suite) => sum + suite.durationMs, 0)
   const suites = report.suites.map((suite, index) => {
@@ -548,6 +621,34 @@ export function buildJUnitReport(input: ReportInput): string {
 
 const OUTCOME_LABEL: Record<Outcome, string> = { passed: "Passed", failed: "Failed", skipped: "Skipped" }
 
+/** Links to failed browser steps' files beside the report, and each screenshot shown from its file. */
+function htmlEvidence(evidence: readonly ReportEvidence[] | undefined): string {
+  const steps = evidence ?? []
+  if (steps.length === 0) return ""
+  const links = evidenceFiles(steps)
+    .map((file) => `<a href="${htmlHref(file.path)}">${escapeHtml(file.label)}</a>`)
+    .join(" · ")
+  const images = steps.flatMap((one) =>
+    one.screenshot === undefined
+      ? []
+      : [`<a href="${htmlHref(one.screenshot)}"><img class="shot" src="${htmlHref(one.screenshot)}" alt="The page when the step failed" loading="lazy"></a>`],
+  )
+  return `<div class="evidence">${links}</div>${images.join("")}`
+}
+
+/**
+ * A report path as an href. A relative path is its segments, each encoded. An
+ * absolute one — the evidence folder on another Windows drive, which
+ * `path.relative` cannot make relative — becomes a `file:///` URL, because
+ * encoding its `D:` segment would turn it into a path under the report.
+ */
+function htmlHref(file: string): string {
+  const drive = /^[A-Za-z]:\//.test(file)
+  if (!drive && !file.startsWith("/")) return file.split("/").map(encodeURIComponent).join("/")
+  const segments = file.split("/").map((segment, index) => (drive && index === 0 ? segment : encodeURIComponent(segment)))
+  return `file://${drive ? "/" : ""}${segments.join("/")}`
+}
+
 function htmlSuite(suite: ReportSuite): string {
   const { tests, failures, skipped } = counts(suite.cases)
   const rows = suite.cases
@@ -558,7 +659,7 @@ function htmlSuite(suite: ReportSuite): string {
           <td class="num">${seconds(testCase.durationMs)}s</td>
           <td>${testCase.message === null ? "" : `<div class="message">${escapeHtml(testCase.message)}</div>`}${testCase.details
             .map((line) => `<div class="detail">${escapeHtml(line)}</div>`)
-            .join("")}${testCase.logs.length === 0 ? "" : `<pre class="logs">${escapeHtml(testCase.logs.join("\n"))}</pre>`}</td>
+            .join("")}${testCase.logs.length === 0 ? "" : `<pre class="logs">${escapeHtml(testCase.logs.join("\n"))}</pre>`}${htmlEvidence(testCase.evidence)}</td>
         </tr>`,
     )
     .join("\n")
@@ -576,9 +677,12 @@ ${rows}
   </section>`
 }
 
-/** A single self-contained HTML page: inline CSS, no script, no external asset. */
-export function buildHtmlReport(input: ReportInput): string {
-  const report = toReport(input)
+/**
+ * A single self-contained HTML page: inline CSS, no script, no external asset
+ * other than the evidence files it links to, when `evidence` names any.
+ */
+export function buildHtmlReport(input: ReportInput, evidence?: ReportEvidenceLookup): string {
+  const report = toReport(input, evidence)
   const all = counts(report.suites.flatMap((suite) => suite.cases))
   const title = `${report.title} — APIWeave run report`
   return `<!DOCTYPE html>
@@ -609,6 +713,9 @@ export function buildHtmlReport(input: ReportInput): string {
   .message { color: var(--fail); } tr.skipped .message { color: var(--skip); }
   .logs { margin: 4px 0 0; white-space: pre-wrap; font-size: 0.78rem; color: var(--muted); }
   .detail { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; color: var(--muted); word-break: break-all; }
+  .evidence { margin-top: 4px; font-size: 0.8rem; }
+  .evidence a { color: inherit; }
+  .shot { display: block; max-width: 480px; width: 100%; margin-top: 6px; border: 1px solid var(--line); border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -642,15 +749,31 @@ function notRun(suite: ReportSuite): boolean {
   return suite.runId === null && !suite.cases.some((testCase) => testCase.outcome === "failed")
 }
 
+/** One step's line, then under a step that did not pass why, and under a failed one its details, logs and evidence files. */
+function consoleCase(testCase: ReportCase, width: number, paint: (style: string, text: string) => string): string[] {
+  const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
+  const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
+  const lines = [`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`]
+  if (testCase.outcome === "passed") return [...lines, ...testCase.warnings.map((line) => `      ${paint(ANSI.yellow, line)}`)]
+  if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
+  if (testCase.outcome === "skipped") return lines
+  return [
+    ...lines,
+    ...testCase.details.map((line) => `      ${paint(ANSI.dim, line)}`),
+    ...testCase.logs.map((line) => `      ${paint(ANSI.dim, `> ${line}`)}`),
+    ...evidenceFiles(testCase.evidence).map((file) => `      ${paint(ANSI.dim, `${file.label}: ${file.path}`)}`),
+  ]
+}
+
 /**
  * Plain text for a terminal or a CI log: one block per workflow run with a
  * line per step, failure messages and details under failed steps, then a
  * summary table. `color` adds ANSI colours; leave it off for NO_COLOR or a
  * non-TTY stream.
  */
-export function buildConsoleReport(input: ReportInput, color: boolean): string {
+export function buildConsoleReport(input: ReportInput, color: boolean, evidence?: ReportEvidenceLookup): string {
   const paint = (style: string, text: string): string => (color ? `${style}${text}${ANSI.reset}` : text)
-  const report = toReport(input)
+  const report = toReport(input, evidence)
   const lines: string[] = [paint(ANSI.bold, report.title) + paint(ANSI.dim, ` · ${report.status}`), ""]
   for (const suite of report.suites) {
     const suiteOutcome: Outcome = suite.status === "completed" ? "passed" : notRun(suite) ? "skipped" : "failed"
@@ -658,18 +781,7 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
       `${paint(CONSOLE_MARK[suiteOutcome].color, suite.name)}${paint(ANSI.dim, ` · ${suite.status} · ${seconds(suite.durationMs)}s`)}`,
     )
     const width = Math.max(0, ...suite.cases.map((testCase) => testCase.name.length))
-    for (const testCase of suite.cases) {
-      const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
-      const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
-      lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`)
-      if (testCase.outcome === "passed") {
-        for (const line of testCase.warnings) lines.push(`      ${paint(ANSI.yellow, line)}`)
-        continue
-      }
-      if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
-      if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
-      if (testCase.outcome === "failed") for (const line of testCase.logs) lines.push(`      ${paint(ANSI.dim, `> ${line}`)}`)
-    }
+    for (const testCase of suite.cases) lines.push(...consoleCase(testCase, width, paint))
     lines.push("")
   }
   const cases = counts(report.suites.flatMap((suite) => suite.cases))
@@ -702,8 +814,8 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
 
 // -------------------- Entry points --------------------
 
-export function buildReport(format: ReportFormat, input: ReportInput): string {
-  return format === "junit" ? buildJUnitReport(input) : buildHtmlReport(input)
+export function buildReport(format: ReportFormat, input: ReportInput, evidence?: ReportEvidenceLookup): string {
+  return format === "junit" ? buildJUnitReport(input, evidence) : buildHtmlReport(input, evidence)
 }
 
 /** Builds the report and writes it to `filePath`, replacing any file there. */

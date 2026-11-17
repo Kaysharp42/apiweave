@@ -297,7 +297,7 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 
 **Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over, every field a fill typed a secret into — an API key box, say — and every element that shows a masked value painted over too, because an image cannot be masked after it is taken.
 
-**The screenshot is stored with the run**, shown in the step's result pane, deleted when the run is deleted, and never part of an export, a JUnit report or an HTML report. It is taken only on failure, is at most 1 MB, and is dropped with a note when it is larger.
+**The screenshot is stored with the run**, shown in the step's result pane, and deleted when the run is deleted. It is taken only on failure, is at most 1 MB, and is dropped with a note when it is larger. It is not part of an export. On the CLI, `--evidence-dir` writes it and the ARIA snapshot to disk, and the reports link them. The reports show the expected and found values and the page's address, in the app's own export too.
 
 **One limitation worth knowing.** Pixels are covered, not masked. Password fields, and any element showing a value the run masks — a secret, a typed password, an OAuth token — are painted over before the JPEG is taken. Other sensitive text the page displays is not, and the covering reaches the main frame only, so a secret shown inside an iframe stays visible. See [Known Limitations](../reference/known-limitations.md#browser-steps).
 
@@ -337,8 +337,9 @@ apiweave run api.aweproject --env Staging --headed
 | --- | --- |
 | `--browser <chrome\|msedge\|chromium>` | Which browser to drive. Default: the first of `chrome`, `msedge`, `chromium` that starts |
 | `--headed` | Show the browser window while the steps run |
+| `--evidence-dir <dir>` | Write each failed step's screenshot and ARIA snapshot to this folder, which the reports link |
 
-The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chromium (`npx playwright install chromium`). A missing browser exits with an error naming it. The console, JUnit and HTML reports carry the step's error like any other node's, but not the screenshot yet. See [Run APIWeave Tests in CI](../guides/ci.md#browser-steps).
+The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chromium at the version the CLI uses (`npx playwright@1.64.1 install --with-deps chromium`). A missing browser exits with an error naming it. The console, JUnit and HTML reports carry the step's error like any other node's, and every report shows what a failed step expected, what it found and the page's address. With `--evidence-dir` the CLI also writes the failed step's screenshot and ARIA snapshot to disk, and the reports link them. The proxy reaches the browser too: `--proxy` or `HTTPS_PROXY`, with `NO_PROXY` for the hosts that bypass it, and `--insecure` makes the browser accept an untrusted certificate; in the app, the proxy in **Settings > Network** applies to browser steps, recording, re-pick and re-record. See [Run APIWeave Tests in CI](../guides/ci.md#browser-steps) for the flags, the evidence layout, a GitHub Actions job and a GitLab CI job.
 
 ## Limitations
 
@@ -347,7 +348,7 @@ The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chr
 - **No files.** Uploading and downloading files, and drag and drop, are not supported.
 - **No visual diffs.** Steps compare text, values and visibility, not pixels.
 - **No saved login state.** Every run starts signed out, so sign in with steps, ideally once, in a sub-workflow called through **Call Workflow**.
-- **Network settings do not apply.** `Settings > Network`'s proxy, CA certificates and client certificates are not used by browser steps; the browser uses the machine's own network configuration.
+- **Only the proxy reaches the browser.** `Settings > Network`'s proxy is used by browser steps, recording, re-pick and re-record. Its CA certificates and client certificates are not: the browser uses its own trust store, so a dev server with a private CA needs that CA installed there, or `--insecure` on the CLI.
 - **Recording covers one page.** Actions in a popup or a new tab, the toolbar's checkbox-state and ARIA snapshot checks, and file uploads are not recorded yet; each shows a warning toast once per recording.
 - **A recording always clicks OK on a dialog.** Record the flow, then set the step that opened the dialog to **Click Cancel** and re-record or edit the steps after it.
 - **Re-record replaces a straight line of browser steps.** It stops at another kind of step, a branch or a merge; the steps after that are kept.
@@ -367,7 +368,7 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 - **If a recorded check was not recorded**, its expected text would have held a secret or a password field's value, or it was a checkbox-state or ARIA snapshot check, which has no step. Add an expect step by hand, reading the value from `{{env.*}}` or `{{variables.*}}`.
 - **If Turn into extract is missing from a step's menu**, the step has no element — a page load, or a key press without one — or is already an extract, or ticks or unticks a checkbox (its element has no text, and its value is not its state), or its element is half-filled in.
 - **If the recording could not start**, the toast names the reason: the browser was not found, so choose another one in **Settings → Browser**, or the start page did not load.
-- **If a step fails with `no supported browser was found on this machine`**, install Google Chrome or Microsoft Edge, or run `npx playwright install chromium`, then pick it in **Settings > Browser**.
+- **If a step fails with `no supported browser was found on this machine`**, install Google Chrome or Microsoft Edge, or run `npx playwright@1.64.1 install chromium` (the version must match the app's), then pick it in **Settings > Browser**.
 - **If a step fails with `… was not found on this machine`**, the chosen browser is not installed. Choose another one, **Automatic**, or pass `--browser` on the CLI.
 - **If a step fails with `matches N elements; add hasText, nth or within to pick one`**, the locator is not specific enough. Add the visible text with `hasText`, pick one with `nth`, or scope it to a parent with `within`.
 - **If a step fails with `{{…}} is not set`**, that placeholder could not be resolved: the run's environment or the workflow has no such variable, the node a direct reference names has not run yet, or the function is unknown. Check the spelling and the namespace it reads from.

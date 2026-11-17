@@ -95,7 +95,9 @@ import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
 import { runSmokeTest, SMOKE_TEST_SWITCH } from "./smoke_test"
-import { loadBrowserDriver } from "../core/runner/browser/session"
+import { loadBrowserDriver, type BrowserLaunchSettings } from "../core/runner/browser/session"
+import { browserProxy } from "../core/runner/browser/proxy"
+import type { NetworkConfig } from "../core/runner/network"
 import {
   AGENT_RUN_APPROVAL_BUTTONS,
   AGENT_RUN_APPROVAL_TIMEOUT_MS,
@@ -592,14 +594,26 @@ if (!hasSingleInstanceLock) {
     // setting that no longer loads (a certificate file moved) leaves the
     // defaults in place; the Network page shows the problem.
     const networkSettings = new NetworkSettingsService(appSettings, keyfile.masterKek)
+    // What requests use now, kept for the browser: a page goes through the same proxy.
+    let networkConfig: NetworkConfig = {}
+    const applyNetwork = (config: NetworkConfig): void => {
+      http.configure(config)
+      networkConfig = config
+    }
     try {
-      http.configure(networkSettings.config())
+      applyNetwork(networkSettings.config())
     } catch (error) {
       bootstrapLog.warn(`network settings not applied: ${error instanceof Error ? error.message : String(error)}`)
     }
     // Settings > Browser: which installed browser a run drives and whether it
     // is visible. Read on every launch, so a change applies to the next run.
     const browserSettings = new BrowserSettingsService(appSettings)
+    /** The browser and proxy every run, recording and replay starts with; each decides whether it is shown. */
+    const browserLaunch = (): Omit<BrowserLaunchSettings, "headless"> => {
+      const { channel } = browserSettings.get()
+      const proxy = browserProxy(networkConfig)
+      return { ...(channel === undefined ? {} : { channel }), ...(proxy === undefined ? {} : { proxy }) }
+    }
     const functions = new DynamicFunctions(clock, rng)
     // Single run-event broker: the scheduler publishes raw transitions; the
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
@@ -642,10 +656,7 @@ if (!hasSingleInstanceLock) {
       saveArtifact: (artifact) => runArtifacts.save(artifact),
       // Settings > Browser, read at launch. The scheduler forces headless for an
       // agent-started run, so `showBrowser` only ever affects the user's own.
-      browser: () => {
-        const settings = browserSettings.get()
-        return { headless: !settings.showBrowser, ...(settings.channel ? { channel: settings.channel } : {}) }
-      },
+      browser: () => ({ ...browserLaunch(), headless: !browserSettings.get().showBrowser }),
       saveSecret: async (name, value, scope) => {
         await secretService.storePlaintext(scope.workspaceId, { ...scope, name, value, label: "OAuth 2.0 token" })
       },
@@ -1000,7 +1011,7 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       NETWORK_CHANNELS.save,
       requireTrustedSender((update: unknown) => {
-        http.configure(networkSettings.save(update))
+        applyNetwork(networkSettings.save(update))
         return networkSettings.state()
       }),
     )
@@ -1037,10 +1048,7 @@ if (!hasSingleInstanceLock) {
         list: (workspaceId, scopeType, scopeId) => secretService.list(workspaceId, scopeType, scopeId),
         resolvePlaintext: (name, chain) => secretService.resolvePlaintext(name, chain),
       },
-      launch: () => {
-        const { channel } = browserSettings.get()
-        return channel === undefined ? {} : { channel }
-      },
+      launch: browserLaunch,
       publish: (event) => {
         if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.webContents.send(BROWSER_RECORDING_CHANNEL, event)
       },
@@ -1050,8 +1058,7 @@ if (!hasSingleInstanceLock) {
       replay: (request, signal) => {
         const runs = scheduler
         if (runs === null) return Promise.reject(new Error("the run scheduler is not ready"))
-        const { channel } = browserSettings.get()
-        return replayToNode(runs, { ...(channel === undefined ? {} : { channel }), headless: false }, request, signal)
+        return replayToNode(runs, { ...browserLaunch(), headless: false }, request, signal)
       },
     })
     browserRecording = recordingService

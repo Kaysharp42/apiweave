@@ -1,0 +1,144 @@
+{
+  "workflow": {
+    "workflowId": "wf_web_login",
+    "name": "Web login",
+    "description": "",
+    "nodes": [
+      {
+        "nodeId": "start",
+        "type": "start",
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "nodeId": "b1",
+        "type": "browser",
+        "label": "Open the login page",
+        "position": {
+          "x": 240,
+          "y": 0
+        },
+        "config": {
+          "action": "navigate",
+          "url": "{{env.BASE_URL}}/web/login.html"
+        }
+      },
+      {
+        "nodeId": "b2",
+        "type": "browser",
+        "label": "Type the email",
+        "position": {
+          "x": 480,
+          "y": 0
+        },
+        "config": {
+          "action": "fill",
+          "locator": {
+            "kind": "role",
+            "role": "textbox",
+            "name": "Email"
+          },
+          "value": "{{env.TEST_EMAIL}}"
+        }
+      },
+      {
+        "nodeId": "b3",
+        "type": "browser",
+        "label": "Type the password",
+        "position": {
+          "x": 720,
+          "y": 0
+        },
+        "config": {
+          "action": "fill",
+          "locator": {
+            "kind": "label",
+            "value": "Password"
+          },
+          "value": "{{secrets.TEST_PASSWORD}}"
+        }
+      },
+      {
+        "nodeId": "b4",
+        "type": "browser",
+        "label": "Sign in",
+        "position": {
+          "x": 960,
+          "y": 0
+        },
+        "config": {
+          "action": "click",
+          "locator": {
+            "kind": "role",
+            "role": "button",
+            "name": "Sign in"
+          }
+        }
+      },
+      {
+        "nodeId": "b5",
+        "type": "browser",
+        "label": "Check the heading",
+        "position": {
+          "x": 1200,
+          "y": 0
+        },
+        "config": {
+          "action": "expect-text",
+          "locator": {
+            "kind": "role",
+            "role": "heading"
+          },
+          "text": "{{env.HEADING}}",
+          "match": "equals",
+          "timeoutMs": 5000
+        }
+      },
+      {
+        "nodeId": "end",
+        "type": "end",
+        "position": {
+          "x": 1440,
+          "y": 0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edgeId": "e1",
+        "source": "start",
+        "target": "b1"
+      },
+      {
+        "edgeId": "e2",
+        "source": "b1",
+        "target": "b2"
+      },
+      {
+        "edgeId": "e3",
+        "source": "b2",
+        "target": "b3"
+      },
+      {
+        "edgeId": "e4",
+        "source": "b3",
+        "target": "b4"
+      },
+      {
+        "edgeId": "e5",
+        "source": "b4",
+        "target": "b5"
+      },
+      {
+        "edgeId": "e6",
+        "source": "b5",
+        "target": "end"
+      }
+    ],
+    "variables": {},
+    "tags": [],
+    "selectedEnvironmentId": null
+  }
+}

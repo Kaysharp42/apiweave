@@ -10,7 +10,7 @@ import {
   type RecorderAction,
 } from "./recorded"
 import type { RecordingValues } from "./recording_values"
-import { BrowserSessionError, launchBrowser, PAGE_VIEWPORT, type BrowserLaunchSettings } from "./session"
+import { BrowserSessionError, contextOptions, launchBrowser, type BrowserLaunchSettings } from "./session"
 import { disarmDialog } from "./step"
 
 /**
@@ -113,7 +113,7 @@ export class BrowserRecording {
     const browser = await launchBrowser(options.launch)
     let recording: BrowserRecording | null = null
     try {
-      const context = await browser.newContext({ viewport: PAGE_VIEWPORT })
+      const context = await browser.newContext(contextOptions(options.launch))
       recording = new BrowserRecording(browser, context, options, false)
       await recording.listen()
       const page = await context.newPage()
