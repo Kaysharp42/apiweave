@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
-import { parseRecordedSelector } from "../selector_parse"
+import { parseRecordedSelector, roleSelectorWithName } from "../selector_parse"
 import events from "./fixtures/recorder-events.json"
 
 describe("parseRecordedSelector", () => {
@@ -78,5 +78,40 @@ describe("parseRecordedSelector", () => {
     for (const selector of selectors) {
       expect(parseRecordedSelector(selector)?.kind, selector).not.toBe("selector")
     }
+  })
+})
+
+describe("roleSelectorWithName", () => {
+  it("adds the accessible name to a bare role", () => {
+    const selector = roleSelectorWithName("internal:role=heading", "Mechanical keyboard")
+    expect(selector).toBe('internal:role=heading[name="Mechanical keyboard"i]')
+    expect(parseRecordedSelector(selector ?? "")).toEqual({ kind: "role", role: "heading", name: "Mechanical keyboard" })
+  })
+
+  it("escapes a name the way Playwright's attribute selectors do", () => {
+    const selector = roleSelectorWithName("internal:role=button", 'Say "hi" \\ now')
+    expect(selector).toBe('internal:role=button[name="Say \\"hi\\" \\\\ now"i]')
+    expect(parseRecordedSelector(selector ?? "")).toEqual({ kind: "role", role: "button", name: 'Say "hi" \\ now' })
+  })
+
+  it("trims the name the accessibility tree reports with whitespace around it", () => {
+    expect(roleSelectorWithName("internal:role=link", "  Add to bag\n")).toBe('internal:role=link[name="Add to bag"i]')
+  })
+
+  it("accepts a name of exactly the length limit", () => {
+    const name = "x".repeat(200)
+    expect(roleSelectorWithName("internal:role=heading", name)).toBe(`internal:role=heading[name="${name}"i]`)
+    expect(parseRecordedSelector(`internal:role=heading[name="${name}"i]`)).toEqual({ kind: "role", role: "heading", name })
+  })
+
+  it.each([
+    ["a role that already has a name", 'internal:role=button[name="Save"i]', "Save"],
+    ["a chain", "internal:role=heading >> nth=0", "Orders"],
+    ["a role with another property", "internal:role=heading[level=1]", "Orders"],
+    ["a selector that is not a bare role", "#msg", "Order 42 deleted"],
+    ["an empty name", "internal:role=heading", "   "],
+    ["a name longer than a locator should hold", "internal:role=heading", "x".repeat(201)],
+  ])("keeps %s as it is", (_case, selector, name) => {
+    expect(roleSelectorWithName(selector, name)).toBeNull()
   })
 })

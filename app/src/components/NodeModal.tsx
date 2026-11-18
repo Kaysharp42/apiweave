@@ -29,6 +29,7 @@ import {
   BrowserOutputPanel,
   HttpRequestOutputPanel,
   NodeOutputPanel,
+  SnapshotReview,
   AssertionConfigPanel,
   DelayConfigPanel,
   MergeConfigPanel,
@@ -37,6 +38,8 @@ import {
 } from "./node-modal";
 import { normalizeHttpRequestConfig } from "./node-modal/httpRequestConfigCompat";
 import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
+import { readSnapshotActual } from "../utils/snapshotActual";
+import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation";
 import type { HttpMethod } from "@shared/types/HttpMethod";
 import { HttpMethodSchema } from "@shared/zod-schemas/HttpMethodSchema";
 import type { NodeModalProps } from "../types/NodeModalProps";
@@ -70,6 +73,13 @@ import type {
 const EMPTY_CONFIG: Record<string, never> = {};
 
 const NO_CONFIG_TYPES: NodeModalNodeType[] = ["start", "end"];
+
+/** The rule evaluations an Assertion node's last result carries, if any. */
+function assertionEvaluations(result: unknown): readonly AssertionEvaluation[] {
+  if (typeof result !== "object" || result === null) return [];
+  const assertions = (result as { assertions?: unknown }).assertions;
+  return Array.isArray(assertions) ? (assertions as AssertionEvaluation[]) : [];
+}
 const HTTP_METHODS: HttpMethod[] = [
   "GET",
   "POST",
@@ -168,6 +178,7 @@ export function NodeModal({
   onNext,
   workspaceId,
   currentWorkflowId,
+  getNodeOutput,
 }: NodeModalProps) {
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
   // The draft as last applied to the node. Every edit replaces
@@ -527,6 +538,23 @@ export function NodeModal({
       <NodeOutputPanel
         output={node.data?.executionResult ?? null}
         executionStatus={node.data.executionStatus}
+        {...(node.type === "assertion"
+          ? {
+              review: (
+                <SnapshotReview
+                  nodeId={node.id}
+                  assertions={assertionEvaluations(node.data?.executionResult)}
+                  // An Assertion node's rule read another node's result: accept that value.
+                  readActual={(rule) =>
+                    rule.sourceNodeId === null
+                      ? undefined
+                      : readSnapshotActual(getNodeOutput(rule.sourceNodeId), rule)
+                  }
+                  showDifferences
+                />
+              ),
+            }
+          : {})}
       />
     );
 

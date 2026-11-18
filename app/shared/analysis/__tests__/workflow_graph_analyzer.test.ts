@@ -149,6 +149,112 @@ describe("workflow graph analyzer", () => {
     expect(codes).toContain("assertion_source_path_invalid")
   })
 
+  // A namespaced XPath declaration sits in a prefix block before the colon:
+  // `xpath[prefix=uri;…]:<expression>`. The runtime evaluates it (see
+  // `xpathQuery.ts`), so rejecting it here blocked a SOAP workflow that ran.
+  const namespacedXPath =
+    "xpath[s=http://schemas.xmlsoap.org/soap/envelope/;t=urn:temperature]:/s:Envelope/s:Body/t:GetTemperatureResponse/t:Reading"
+
+  it("accepts a namespaced XPath extractor and assertion path", () => {
+    const workflow = healthyWorkflow()
+    const withXPath = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? { ...node, config: { ...node.config, extractors: { reading: namespacedXPath } } }
+        : node.nodeId === "assert-login"
+          ? { ...node, config: { assertions: [{ source: "prev", path: namespacedXPath, operator: "exists" }] } }
+          : node),
+    })
+
+    const codes = analyzeWorkflowGraph(withXPath).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("extractor_path_invalid")
+    expect(codes).not.toContain("assertion_source_path_invalid")
+  })
+
+  it("still rejects a namespaced XPath whose prefix block does not parse", () => {
+    const workflow = healthyWorkflow()
+    const badXPath = "xpath[soap]:/soap:Envelope"
+    const withBadXPath = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? { ...node, config: { ...node.config, extractors: { bad: badXPath } } }
+        : node.nodeId === "assert-login"
+          ? { ...node, config: { assertions: [{ source: "prev", path: badXPath, operator: "exists" }] } }
+          : node),
+    })
+
+    const codes = analyzeWorkflowGraph(withBadXPath).diagnostics.map((item) => item.code)
+    expect(codes).toContain("extractor_path_invalid")
+    expect(codes).toContain("assertion_source_path_invalid")
+  })
+
+  // The executor stores a parsed SOAP fault at `response.fault`, so
+  // `response.fault.code` is a real path even though `fault` is not a body root.
+  it("accepts response.fault paths for a SOAP fault assertion", () => {
+    const workflow = healthyWorkflow()
+    const withFaultAssertions = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "assert-login"
+        ? {
+            ...node,
+            config: {
+              assertions: [
+                { source: "prev", path: "response.fault.code", operator: "equals", expectedValue: "soap:Server" },
+                { source: "prev", path: "response.fault.reason", operator: "contains", expectedValue: "unavailable" },
+              ],
+            },
+          }
+        : node),
+    })
+
+    expect(analyzeWorkflowGraph(withFaultAssertions).diagnostics.map((item) => item.code))
+      .not.toContain("assertion_source_path_invalid")
+  })
+
+  // Bare `fault.code` reads the top-level result, which carries no fault — the
+  // executor only stores it on the response object.
+  it("rejects an unprefixed fault path", () => {
+    const workflow = healthyWorkflow()
+    const withBareFault = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "assert-login"
+        ? { ...node, config: { assertions: [{ source: "prev", path: "fault.code", operator: "exists" }] } }
+        : node),
+    })
+
+    expect(analyzeWorkflowGraph(withBareFault).diagnostics.map((item) => item.code))
+      .toContain("assertion_source_path_invalid")
+  })
+
+  it("still rejects a path rooted at a member no result carries", () => {
+    const workflow = healthyWorkflow()
+    const withUnknownRoot = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "assert-login"
+        ? { ...node, config: { assertions: [{ source: "prev", path: "response.faults.code", operator: "exists" }] } }
+        : node),
+    })
+
+    expect(analyzeWorkflowGraph(withUnknownRoot).diagnostics.map((item) => item.code))
+      .toContain("assertion_source_path_invalid")
+  })
+
+  // `matchesSnapshot` compares against the baseline its first run records, so
+  // it takes no expectedValue — flagging it missing blocked a valid rule.
+  it("does not flag matchesSnapshot as missing an expected value", () => {
+    const workflow = healthyWorkflow()
+    const withSnapshot = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "assert-login"
+        ? { ...node, config: { assertions: [{ source: "prev", path: "response.body", operator: "matchesSnapshot" }] } }
+        : node),
+    })
+
+    const diagnosis = analyzeWorkflowGraph(withSnapshot)
+    expect(diagnosis.diagnostics.map((item) => item.code)).not.toContain("assertion_expected_missing")
+    expect(diagnosis.summary.errors).toBe(0)
+  })
+
   it("accepts an assertion immediately downstream from an SSE stream", () => {
     const workflow = healthyWorkflow()
     const streamWorkflow = WorkflowSchema.parse({
@@ -984,5 +1090,141 @@ describe("browser steps", () => {
     )
     expect(analyzeVariableProvenance(workflow.nodes)["orderId"]?.producers).toEqual([{ nodeId: "read", nodeLabel: "read", path: "page.attribute.data-id" }])
     expect(diagnose(workflow).map((item) => item.code)).not.toContain("variable_source_missing")
+  })
+})
+
+// A Call Workflow node's `outputMapping` writes its keys into the CALLER's
+// scope, so a variable used after the call has a producer even though no
+// extractor in this workflow names it.
+describe("Call Workflow output mapping", () => {
+  const workflow = WorkflowSchema.parse({
+    workflowId: "workflow-call",
+    workspaceId: "workspace-1",
+    name: "Caller",
+    nodes: [
+      { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+      {
+        nodeId: "auth",
+        type: "workflow",
+        label: "Sign in",
+        position: { x: 100, y: 0 },
+        config: { targetWorkflowId: "auth-flow", outputMapping: { token: "accessToken" } },
+      },
+      {
+        nodeId: "profile",
+        type: "http-request",
+        label: "Profile",
+        position: { x: 200, y: 0 },
+        config: {
+          method: "GET",
+          url: "https://example.test/profile",
+          headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+        },
+      },
+      { nodeId: "end", type: "end", position: { x: 300, y: 0 }, config: {} },
+    ],
+    edges: [
+      { edgeId: "e1", source: "start", target: "auth" },
+      { edgeId: "e2", source: "auth", target: "profile" },
+      { edgeId: "e3", source: "profile", target: "end" },
+    ],
+    variables: {},
+    tags: [],
+    nodeTemplates: [],
+    rev: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  })
+
+  it("registers each outputMapping key as a producer for its caller variable", () => {
+    expect(analyzeVariableProvenance(workflow.nodes)["token"]).toEqual({
+      producers: [{ nodeId: "auth", nodeLabel: "Sign in", path: "accessToken" }],
+      consumers: [{ nodeId: "profile", nodeLabel: "Profile", fields: ["headers"] }],
+    })
+  })
+
+  it("does not report the mapped variable as never produced or unresolved", () => {
+    const codes = analyzeWorkflowGraph(workflow).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("variable_source_missing")
+    expect(codes).not.toContain("variable_producer_not_upstream")
+  })
+})
+
+describe("analyzeWorkflowGraph — source handles", () => {
+  /**
+   * `start → source → after → end`. `after` is a plain HTTP node so the only
+   * thing under test is the edge leaving `source`.
+   */
+  function graph(source: { nodeId: string; type: string; config?: Record<string, unknown> }, sourceHandle?: string | null): Workflow {
+    return WorkflowSchema.parse({
+      workflowId: "workflow-handle",
+      workspaceId: "workspace-1",
+      name: "Handle",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { position: { x: 100, y: 0 }, ...source },
+        { nodeId: "after", type: "http-request", position: { x: 200, y: 0 }, config: { method: "GET", url: "https://example.test/after" } },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 }, config: {} },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: source.nodeId },
+        { edgeId: "e2", source: source.nodeId, target: "after", ...(sourceHandle === undefined ? {} : { sourceHandle }) },
+        { edgeId: "e3", source: "after", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+  const sse = { nodeId: "stream", type: "sse", config: { url: "https://example.test/events" } }
+  const streamingGrpc = { nodeId: "stream", type: "grpc", config: { callType: "server-streaming", target: "localhost:50051", service: "a.B", method: "Watch" } }
+  const unaryGrpc = { nodeId: "stream", type: "grpc", config: { target: "localhost:50051", service: "a.B", method: "Get" } }
+  const http = { nodeId: "stream", type: "http-request", config: { method: "GET", url: "https://example.test/x" } }
+  const codes = (workflow: Workflow) => analyzeWorkflowGraph(workflow).diagnostics.map((item) => item.code)
+
+  it.each<[string, { nodeId: string; type: string; config: Record<string, unknown> }, string | null]>([
+    ["an SSE ready edge", sse, "ready"],
+    ["an SSE complete edge", sse, "complete"],
+    ["a WebSocket complete edge", { nodeId: "stream", type: "websocket", config: { url: "wss://example.test" } }, "complete"],
+    ["a streaming gRPC complete edge", streamingGrpc, "complete"],
+    ["a unary gRPC edge with no handle", unaryGrpc, null],
+    ["an HTTP edge with no handle", http, null],
+  ])("accepts %s", (_case, source, handle) => {
+    const found = codes(graph(source, handle))
+    expect(found).not.toContain("stream_edge_handle_invalid")
+    expect(found).not.toContain("edge_source_handle_ignored")
+  })
+
+  it.each<[string, { nodeId: string; type: string; config: Record<string, unknown> }, string | null]>([
+    ["an SSE edge with no handle", sse, null],
+    ["an SSE edge from a handle it does not have", sse, "pass"],
+    ["a streaming gRPC edge with no handle", streamingGrpc, null],
+  ])("rejects %s", (_case, source, handle) => {
+    const diagnostic = analyzeWorkflowGraph(graph(source, handle)).diagnostics.find((item) => item.code === "stream_edge_handle_invalid")
+    expect(diagnostic).toMatchObject({
+      severity: "error",
+      category: "branch",
+      nodeIds: ["after", "stream"],
+      evidence: { edgeId: "e2", sourceType: source.type, sourceHandle: handle ?? "", expectedHandles: ["ready", "complete"] },
+      remediation: { kind: "set_edge_source_handle", edgeId: "e2" },
+    })
+    expect(diagnostic?.message).toContain('"ready" or "complete"')
+  })
+
+  it.each<[string, { nodeId: string; type: string; config: Record<string, unknown> }, string]>([
+    ["a unary gRPC edge from a handle it does not have", unaryGrpc, "complete"],
+    ["an HTTP edge from a handle it does not have", http, "pass"],
+  ])("warns about %s, which the canvas would not draw", (_case, source, handle) => {
+    const diagnostic = analyzeWorkflowGraph(graph(source, handle)).diagnostics.find((item) => item.code === "edge_source_handle_ignored")
+    expect(diagnostic).toMatchObject({
+      severity: "warning",
+      category: "topology",
+      evidence: { edgeId: "e2", sourceType: source.type, sourceHandle: handle },
+      remediation: { kind: "set_edge_source_handle", edgeId: "e2" },
+    })
+    expect(codes(graph(source, handle))).not.toContain("stream_edge_handle_invalid")
   })
 })

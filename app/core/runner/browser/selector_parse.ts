@@ -201,6 +201,29 @@ function readChain(parts: readonly string[]): BrowserLocator | null {
   return frame === undefined ? current : { ...current, frame }
 }
 
+/** The longest accessible name worth turning into a locator; a whole page's text is not one. */
+const ROLE_NAME_MAX_CHARS = 200
+
+/**
+ * `internal:role=heading` with the element's accessible name added:
+ * `internal:role=heading[name="Mechanical keyboard"i]`. Null unless the
+ * selector is exactly a bare role, and the name is short enough to be one.
+ *
+ * Playwright's recorder writes a bare role whenever that role is unique on the
+ * page at pick time, dropping the name the element has. The next page the run
+ * sees can hold a dozen headings — a client-side route change leaves the old
+ * page up for a moment — and the step then fails on strict mode or checks the
+ * wrong element. The name is how the accessibility tree already identifies
+ * what the user picked, so a recorded step keeps it.
+ */
+export function roleSelectorWithName(selector: string, name: string): string | null {
+  const match = /^internal:role=([a-z]+)$/.exec(selector)
+  const trimmed = name.trim()
+  if (match === null || trimmed === "" || trimmed.length > ROLE_NAME_MAX_CHARS) return null
+  const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+  return `internal:role=${match[1]}[name="${escaped}"i]`
+}
+
 /**
  * Turn a selector Playwright's recorder wrote (`internal:role=button[name="Sign in"i]`,
  * `… >> internal:control=enter-frame >> …`) into a structured locator: the

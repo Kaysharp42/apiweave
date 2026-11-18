@@ -8,6 +8,7 @@ export { BrowserConfigPanel } from "./BrowserConfigPanel";
 export { BrowserOutputPanel } from "./BrowserOutputPanel";
 export { HttpRequestOutputPanel } from "./HttpRequestOutputPanel";
 export { NodeOutputPanel } from "./NodeOutputPanel";
+export { SnapshotReview } from "./SnapshotReview";
 export { AssertionConfigPanel } from "./AssertionConfigPanel";
 export { DelayConfigPanel } from "./DelayConfigPanel";
 export { MergeConfigPanel } from "./MergeConfigPanel";

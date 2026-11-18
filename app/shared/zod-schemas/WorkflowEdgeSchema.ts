@@ -19,7 +19,7 @@ export const WorkflowEdgeSchema = z
       .nullable()
       .optional()
       .describe(
-        'Which output port of the source node this edge leaves from. Assertion edges must use exactly "pass" or "fail". SSE edges must use "ready" (after the stream handshake) or "complete" (after its final bounded result exists). An edge without its source node\'s documented handle is never followed. Omit (or null) sourceHandle only for single-output node types.',
+        'Which output port of the source node this edge leaves from. Assertion edges must use exactly "pass" or "fail". SSE, WebSocket and server-streaming gRPC edges must use "ready" (after the stream handshake) or "complete" (after its final bounded result exists). An edge without its source node\'s documented handle is never followed. Omit (or null) sourceHandle only for single-output node types.',
       ),
     targetHandle: z.string().nullable().optional().describe("Which input port of the target node this edge arrives at. Leave unset unless the target documents named inputs."),
     label: z.string().nullable().optional().describe("Optional display label shown on the canvas."),

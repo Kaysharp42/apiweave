@@ -212,6 +212,43 @@ describe("AssertionAuthoringService", () => {
     expect(validated.issues.map((issue) => issue.code)).not.toContain("expected_required")
   })
 
+  // `matchesSnapshot` compares against the baseline its first run records, so
+  // it is the third value-less operator: requiring expectedValue blocked it.
+  it("validates matchesSnapshot without an expectedValue", async () => {
+    const { workspaceId, workflow } = await seedWorkflow()
+    const validated = await authoring.validate(
+      workspaceId,
+      workflow.workflowId,
+      "request",
+      [{ source: "prev", path: "response.body", operator: "matchesSnapshot" }],
+    )
+    expect(validated.valid).toBe(true)
+    expect(validated.issues.map((issue) => issue.code)).not.toContain("expected_required")
+    expect(validated.preview).toEqual(["prev response.body matchesSnapshot"])
+  })
+
+  // The rule rebuild in `canonicalDraft` listed only source/path/operator/
+  // expectedValue, so a snapshot rule's ignore list was dropped on the way to
+  // both the validate echo and the stored rule — it compared more than asked.
+  it("keeps a matchesSnapshot rule's ignorePaths through validate and apply", async () => {
+    const { workspaceId, workflow } = await seedWorkflow()
+    const rule = {
+      source: "prev",
+      path: "response.body",
+      operator: "matchesSnapshot",
+      ignorePaths: ["$..updatedAt"],
+    } as const
+
+    const validated = await authoring.validate(workspaceId, workflow.workflowId, "request", [rule])
+    expect(validated.valid).toBe(true)
+    expect(validated.rules).toEqual([rule])
+    expect(validated.preview).toEqual(["prev response.body matchesSnapshot (ignoring $..updatedAt)"])
+
+    const applied = await authoring.apply(workspaceId, workflow.workflowId, workflow.rev, "assert-b", "replace", [rule])
+    const stored = applied.workflow.nodes.find((node) => node.nodeId === "assert-b")?.config?.assertions
+    expect(stored).toEqual([rule])
+  })
+
   // A browser step has a result of its own but no HTTP response, so it can
   // neither be an assertion's evidence source nor stand upstream of one.
   it("does not treat a browser step as a response source", async () => {

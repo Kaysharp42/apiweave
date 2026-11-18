@@ -11,10 +11,10 @@ import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutCanvasOnlyNodes } from "../graph/frames"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
-import { assertionExpectedProblem } from "./assertion_expected"
+import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
-import { isQueryPath, isValidJsonPath, isValidXPath } from "../extractors/extractorPath"
+import { isQueryPath, isXPath, isValidJsonPath, isValidXPath } from "../extractors/extractorPath"
 
 const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
@@ -67,32 +67,35 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
     map[name] = fresh
     return fresh
   }
+  const addProducer = (node: VariableProvenanceNode, variableName: string, path: string): void => {
+    const entry = ensure(variableName)
+    map[variableName] = {
+      producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
+      consumers: entry.consumers,
+    }
+  }
+  // A `{ variableName: path }` object: each string entry produces that variable.
+  const addMappedProducers = (node: VariableProvenanceNode, mapping: unknown): void => {
+    if (mapping === null || typeof mapping !== "object" || Array.isArray(mapping)) return
+    for (const [variableName, path] of Object.entries(mapping as Readonly<Record<string, unknown>>)) {
+      if (typeof path === "string") addProducer(node, variableName, path)
+    }
+  }
 
   for (const node of nodes) {
     const config = node.config as Readonly<Record<string, unknown>> | undefined
-    const extractors = node.config?.["extractors"]
-    if (extractors !== null && typeof extractors === "object" && !Array.isArray(extractors)) {
-      for (const [variableName, path] of Object.entries(extractors as Readonly<Record<string, unknown>>)) {
-        if (typeof path !== "string") continue
-        const entry = ensure(variableName)
-        map[variableName] = {
-          producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
-          consumers: entry.consumers,
-        }
-      }
-    }
+    addMappedProducers(node, config?.["extractors"])
 
     // A browser `extract` step writes the variable it names.
     if (node.type === "browser" && config?.["action"] === "extract" && typeof config["variable"] === "string") {
-      const variableName = config["variable"]
       const from = typeof config["from"] === "string" ? config["from"] : "text"
       const path = from === "attribute" && typeof config["attribute"] === "string" ? `page.attribute.${config["attribute"]}` : `page.${from}`
-      const entry = ensure(variableName)
-      map[variableName] = {
-        producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
-        consumers: entry.consumers,
-      }
+      addProducer(node, config["variable"], path)
     }
+
+    // A Call Workflow node's `outputMapping` names each variable it writes into
+    // the CALLER's scope; the value is the child variable it copies from.
+    if (node.type === "workflow") addMappedProducers(node, config?.["outputMapping"])
 
     const references = new Map<string, Set<string>>()
     forEachConfigString(config, (rootKey, value) => {
@@ -275,7 +278,7 @@ function pathTargetsResponseBody(path: string): boolean {
   // root is `body` (directly or via `response.body`), in dot or bracket form.
   if (path.startsWith("$")) return jsonPathTargetsResponseBody(path)
   // An XPath expression reads the XML body, so it always addresses it.
-  if (path.startsWith("xpath:")) return true
+  if (isXPath(path)) return true
   const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
   return normalized === "body" || normalized.startsWith("body.") || normalized.startsWith("body[")
 }
@@ -306,20 +309,24 @@ function jsonPathTargetsResponseBody(path: string): boolean {
  * a path one accepts and the other rejects is a trap an agent can only discover
  * by running the workflow.
  *
- * Mirrors `WorkflowExecutor.evaluateAssertion`, which strips a leading
- * `response.` and reads the rest off the node result — so `body.id`,
- * `response.body.id`, `response.headers.content-type`, `statusCode` and
- * `duration` all address something real, and anything else does not. A `$`
- * prefixed path is an RFC 9535 JSONPath expression rooted at the node result
- * and is valid whenever the parser accepts it; an `xpath:`-prefixed path is
- * XPath 1.0 over the XML body and is valid when its namespace block and
- * expression parse.
+ * Mirrors `WorkflowExecutor.evaluateAssertion`, which reads a `response.`-prefixed
+ * dot path off the node result's `response` object first and falls back to the
+ * top-level result, while an unprefixed one reads the result directly — so
+ * `body.id`, `response.body.id`, `response.headers.content-type`,
+ * `response.fault.code` (a parsed SOAP fault, which only the response object
+ * carries), `statusCode` and `duration` all address something real, and
+ * anything else does not. A `$` prefixed path is an RFC 9535 JSONPath
+ * expression rooted at the node result and is valid whenever the parser
+ * accepts it; an XPath path — `xpath:<expression>` or
+ * `xpath[prefix=uri;…]:<expression>` — is XPath 1.0 over the XML body and is
+ * valid when its namespace block and expression parse.
  */
 export function isValidRuntimePath(path: string, includeDuration: boolean): boolean {
   if (typeof path !== "string") return false
   if (path.startsWith("$")) return isValidJsonPath(path)
-  if (path.startsWith("xpath:")) return isValidXPath(path)
-  const normalized = path.startsWith("response.") ? path.slice("response.".length) : path
+  if (isXPath(path)) return isValidXPath(path)
+  const responsePrefixed = path.startsWith("response.")
+  const normalized = responsePrefixed ? path.slice("response.".length) : path
   const parts = normalized.split(".")
   if (parts.length === 0 || parts.some((part) => part.length === 0)) return false
   for (const part of parts) {
@@ -332,6 +339,10 @@ export function isValidRuntimePath(path: string, includeDuration: boolean): bool
     return parts.length === 1 && !parts[0]!.includes("[") && (root !== "duration" || includeDuration)
   }
   if (root === "status" || root === "statusMessage") return parts.length === 1 && !parts[0]!.includes("[")
+  // The parsed SOAP fault lives on the response object only — `response.fault.code`,
+  // `response.fault.reason`. An unprefixed `fault.…` reads the top-level result,
+  // which has no fault, so it is not a path that can resolve.
+  if (root === "fault") return responsePrefixed
   return root === "body" || root === "headers" || root === "trailers"
 }
 
@@ -359,6 +370,18 @@ function diagnostic(
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
+}
+
+/**
+ * The named outputs a node type has, or null when it has one unnamed output.
+ * Assertion nodes are handled by their own check; SSE, WebSocket and a
+ * server-streaming gRPC call have `ready` and `complete`, and the runner
+ * follows an edge from them only when it names one of the two.
+ */
+function namedOutputs(node: WorkflowNode): readonly string[] | null {
+  if (node.type === "sse" || node.type === "websocket") return ["ready", "complete"]
+  if (node.type === "grpc" && node.config?.callType === "server-streaming") return ["ready", "complete"]
+  return null
 }
 
 function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
@@ -420,6 +443,41 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
         { kind: "remove_or_reconnect_edge", edgeId: edge.edgeId },
       ))
     }
+  }
+
+  // A handle the source node does not have is invisible. On a stream node the
+  // run also skips the edge, so the branch never runs; on any other node the
+  // canvas drops it while the run still follows it, which reads as a missing
+  // branch. Assertion handles have their own diagnostic above.
+  for (const edge of workflow.edges) {
+    const source = nodesById.get(edge.source)
+    if (source === undefined || source.type === "assertion") continue
+    const handle = edge.sourceHandle ?? ""
+    const outputs = namedOutputs(source)
+    if (outputs === null) {
+      if (handle === "") continue
+      diagnostics.push(diagnostic(
+        "edge_source_handle_ignored",
+        "warning",
+        "topology",
+        [edge.source, edge.target],
+        `An edge from a ${source.type} node sets sourceHandle "${handle}", but that node has one unnamed output. The canvas does not draw the edge; a run still follows it. Clear the source handle.`,
+        { edgeId: edge.edgeId, sourceType: source.type, sourceHandle: handle },
+        { kind: "set_edge_source_handle", edgeId: edge.edgeId },
+      ))
+      continue
+    }
+    if (outputs.includes(handle)) continue
+    const expected = outputs.map((output) => `"${output}"`).join(" or ")
+    diagnostics.push(diagnostic(
+      "stream_edge_handle_invalid",
+      "error",
+      "branch",
+      [edge.source, edge.target],
+      `An edge from a ${source.type} stream node ${handle === "" ? "sets no sourceHandle" : `sets sourceHandle "${handle}"`}; a stream node has two outputs, ${expected}. The run never follows this edge.`,
+      { edgeId: edge.edgeId, sourceType: source.type, sourceHandle: handle, expectedHandles: [...outputs] },
+      { kind: "set_edge_source_handle", edgeId: edge.edgeId },
+    ))
   }
 
   if (starts.length > 0) {
@@ -535,7 +593,7 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
           { kind: "update_assertion_path", nodeId: node.nodeId, path },
         ))
       }
-      if (operatorValid && assertion.operator !== "exists" && assertion.operator !== "notExists" && assertion.expectedValue === undefined) {
+      if (operatorValid && !operatorTakesNoExpectedValue(assertion.operator) && assertion.expectedValue === undefined) {
         diagnostics.push(diagnostic(
           "assertion_expected_missing",
           "error",

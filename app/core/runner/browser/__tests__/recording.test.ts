@@ -29,6 +29,20 @@ const ORDERS_PAGE = `<!doctype html><title>Orders</title>
 <ul><li>Order 42 <button onclick="if (confirm('Delete order 42?')) { this.closest('li').remove(); document.getElementById('msg').textContent = 'Order 42 deleted' }">Delete</button></li></ul>
 <p id="msg">1 order</p>
 <label for="ref">Reference</label><input id="ref" value="ACME-7">`
+/**
+ * One element per role, so Playwright writes a bare `internal:role=…` for each:
+ * that is the selector the recording adds an accessible name to. The heading's
+ * name holds the two characters those selectors escape, and `#box` is an element
+ * no role names at all.
+ */
+const NAMES_PAGE = `<!doctype html><title>Names</title>
+<h1>Say "hi" \\ now</h1>
+<button>Continue</button>
+<div id="box" style="width:120px;height:40px;background:#ccc"></div>`
+const UNICODE_PAGE = `<!doctype html><title>Übersicht</title><h1>Café — Übersicht</h1>`
+/** A heading with no accessible name, because its only content is an image without alt text. */
+const NAMELESS_PAGE = `<!doctype html><title>Nameless</title>
+<h2><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></h2>`
 
 let channel: BrowserChannel | undefined
 let server: Server
@@ -41,6 +55,11 @@ beforeAll(async () => {
     else if (path === "/login") response.writeHead(200, { "content-type": "text/html" }).end(LOGIN_PAGE)
     else if (path === "/dashboard") response.writeHead(200, { "content-type": "text/html" }).end(DASHBOARD_PAGE)
     else if (path === "/orders") response.writeHead(200, { "content-type": "text/html" }).end(ORDERS_PAGE)
+    // UTF-8 declared: without it the browser reads the page as windows-1252 and
+    // every non-ASCII name it reports back is mojibake.
+    else if (path === "/names") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(NAMES_PAGE)
+    else if (path === "/unicode") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(UNICODE_PAGE)
+    else if (path === "/nameless") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(NAMELESS_PAGE)
     else response.writeHead(404).end()
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -106,6 +125,39 @@ async function replay(steps: readonly BrowserNodeData[], ctx: BrowserStepContext
   } finally {
     await session.close()
   }
+}
+
+/**
+ * Record on one page, from its start URL: `drive` does what the user does, in
+ * order, and what comes back are the steps the canvas would get, each step's
+ * last config once. The recording always starts with the navigate step.
+ */
+async function recordPage(
+  path: string,
+  drive: (page: Page) => Promise<void>,
+): Promise<{ steps: BrowserNodeData[]; env: { BASE_URL: string } }> {
+  const sent: RecordedBrowserStep[] = []
+  const env = { BASE_URL: base }
+  let next = 0
+  const recording = await BrowserRecording.start({
+    launch: { headless: true, ...(channel === undefined ? {} : { channel }) },
+    startUrl: `${base}${path}`,
+    values: { env, secrets: {} },
+    takenSecretNames: new Set(),
+    newStepId: () => `browser-test-${++next}`,
+    listener: { step: (step) => sent.push(step), warning: () => undefined, ended: () => undefined },
+    throttleMs: 20,
+  })
+  const page = recording.page
+  try {
+    if (page === null) throw new Error("no page")
+    await drive(page)
+  } finally {
+    await recording.stop()
+  }
+  const byId = new Map<string, BrowserNodeData>()
+  for (const step of sent) byId.set(step.stepId, step.config)
+  return { steps: [...byId.values()], env }
 }
 
 type RecorderWindow = Window & { __pw_recorderSetMode(mode: string): void }
@@ -180,6 +232,58 @@ describe("BrowserRecording", () => {
   )
 
   it(
+    "names the roles Playwright leaves bare, with quotes and a backslash intact, and leaves CSS alone",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const { steps, env } = await recordPage("/names", async (page) => {
+        await page.getByRole("heading", { name: 'Say "hi" \\ now' }).click()
+        await page.getByRole("button", { name: "Continue" }).click()
+        await page.locator("#box").click()
+      })
+      expect(steps).toEqual([
+        { action: "navigate", url: "{{env.BASE_URL}}/names" },
+        { action: "click", locator: { kind: "role", role: "heading", name: 'Say "hi" \\ now' } },
+        { action: "click", locator: { kind: "role", role: "button", name: "Continue" } },
+        { action: "click", locator: { kind: "css", value: "#box" } },
+      ])
+      expect(await replay(steps, replayContext(env, {}))).toBeUndefined()
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    "keeps a name that is not ASCII",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const { steps, env } = await recordPage("/unicode", async (page) => {
+        await page.getByRole("heading", { name: "Café — Übersicht" }).click()
+      })
+      expect(steps).toEqual([
+        { action: "navigate", url: "{{env.BASE_URL}}/unicode" },
+        { action: "click", locator: { kind: "role", role: "heading", name: "Café — Übersicht" } },
+      ])
+      expect(await replay(steps, replayContext(env, {}))).toBeUndefined()
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    "leaves a role with no accessible name bare",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const { steps, env } = await recordPage("/nameless", async (page) => {
+        await page.locator("h2").click()
+      })
+      expect(steps).toEqual([
+        { action: "navigate", url: "{{env.BASE_URL}}/nameless" },
+        { action: "click", locator: { kind: "role", role: "heading" } },
+      ])
+      expect(await replay(steps, replayContext(env, {}))).toBeUndefined()
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
     "records the toolbar's checks and a confirmed dialog, and the steps pass when run",
     async (context) => {
       if (channel === undefined) context.skip()
@@ -202,6 +306,9 @@ describe("BrowserRecording", () => {
       // The recording clicked OK: the delete went through, as the user meant it to.
       await page.getByText("Order 42 deleted").waitFor()
       await checkWithToolbar(page, "assertingVisibility", page.getByRole("heading", { name: "Orders" }))
+      // Playwright writes a bare `internal:role=heading` for a text check when
+      // the page holds one heading; the recording adds its accessible name.
+      await checkWithToolbar(page, "assertingText", page.getByRole("heading", { name: "Orders" }))
       await checkWithToolbar(page, "assertingText", page.locator("#msg"))
       await checkWithToolbar(page, "assertingValue", page.getByLabel("Reference"))
       await recording.stop()
@@ -209,12 +316,25 @@ describe("BrowserRecording", () => {
       const byId = new Map<string, BrowserNodeData>()
       for (const step of sent) byId.set(step.stepId, step.config)
       const steps = [...byId.values()]
-      expect(steps.map((step) => step.action)).toEqual(["navigate", "click", "expect-visible", "expect-text", "expect-value"])
+      expect(steps.map((step) => step.action)).toEqual([
+        "navigate",
+        "click",
+        "expect-visible",
+        "expect-text",
+        "expect-text",
+        "expect-value",
+      ])
       expect(steps[0]).toEqual({ action: "navigate", url: "{{env.BASE_URL}}/orders" })
       expect(steps[1]).toEqual({ action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept" })
       expect(steps[2]).toMatchObject({ locator: { kind: "role", role: "heading", name: "Orders" } })
-      expect(steps[3]).toEqual({ action: "expect-text", locator: { kind: "css", value: "#msg" }, text: "Order 42 deleted", match: "contains" })
-      expect(steps[4]).toMatchObject({ locator: { kind: "role", role: "textbox", name: "Reference" }, value: "ACME-7" })
+      expect(steps[3]).toEqual({
+        action: "expect-text",
+        locator: { kind: "role", role: "heading", name: "Orders" },
+        text: "Orders",
+        match: "contains",
+      })
+      expect(steps[4]).toEqual({ action: "expect-text", locator: { kind: "css", value: "#msg" }, text: "Order 42 deleted", match: "contains" })
+      expect(steps[5]).toMatchObject({ locator: { kind: "role", role: "textbox", name: "Reference" }, value: "ACME-7" })
       expect(warnings).toEqual([expect.stringContaining("The page showed a dialog")])
 
       expect(await replay(steps, replayContext(env, {}))).toBeUndefined()

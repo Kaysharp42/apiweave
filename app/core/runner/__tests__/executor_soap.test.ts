@@ -155,6 +155,46 @@ describe("WorkflowExecutor — SOAP bodies", () => {
     expect(output.extractedVariables["reason"]).toBe("Station unavailable")
   })
 
+  it("asserts on a SOAP fault through dot paths the response object holds", async () => {
+    const api = await startSoapServer(() => ({ status: 500, body: FAULT_ENVELOPE }))
+    server = api.server
+    const output = await makeExecutor().executeWorkflow({
+      nodes: [
+        { nodeId: "start", type: "start" },
+        {
+          nodeId: "soap",
+          type: "http-request",
+          config: {
+            method: "POST",
+            url: api.url,
+            bodyType: "soap",
+            // Wanted here, so the fault is read rather than stopping the branch.
+            expectedStatus: 500,
+            soap: { envelope: "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body/></soap:Envelope>" },
+          },
+        },
+        {
+          nodeId: "check",
+          type: "assertion",
+          config: {
+            assertions: [
+              { source: "prev", path: "response.fault.code", operator: "equals", expectedValue: "soap:Server" },
+              { source: "prev", path: "response.fault.reason", operator: "equals", expectedValue: "Station unavailable" },
+            ],
+          },
+        },
+        { nodeId: "end", type: "end" },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "soap" },
+        { edgeId: "e2", source: "soap", target: "check" },
+        { edgeId: "e3", source: "check", target: "end" },
+      ],
+    })
+    expect(output.status).toBe("passed")
+    expect(output.nodeStatuses["check"]).toBe("passed")
+  })
+
   it("does not treat a non-SOAP XML response as a fault", async () => {
     const api = await startSoapServer(() => ({ status: 200, body: '<?xml version="1.0"?><result><ok>true</ok></result>' }))
     server = api.server

@@ -202,6 +202,34 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A server-streaming gRPC node shows its two outputs.** The canvas drew one
+  socket for every gRPC call, so an edge leaving `ready` or `complete` was
+  invisible — and clearing its handle to make the edge appear silently skipped
+  the branch, which is how the demo's TrackShipment assertion stopped running.
+  The node now draws Ready and Complete sockets, as SSE and WebSocket nodes do.
+  Switching its call type rewires the edges leaving it in the same change: an
+  unnamed edge becomes `ready` when the call becomes server-streaming, and
+  `ready`/`complete` edges become unnamed when it goes back to unary, and the
+  canvas draws them on their new sockets at once rather than after a reopen.
+- **An edge that leaves a handle the node does not have is reported.** A
+  `sourceHandle` on a single-output node is a warning: the canvas hides that
+  edge while a run still follows it. A stream node's edge without `ready` or
+  `complete` is an error: the run never follows it, so the branch disappears.
+  Both name the edge and the outputs the node actually has. The canvas Run
+  button now refuses a workflow with that error, or with an assertion edge
+  that is neither `pass` nor `fail`, and marks the edge's source node.
+- **`assertion_apply` and `assertion_validate` keep `ignorePaths`.** Both
+  rebuilt each rule from its source, path, operator and expected value, so a
+  `matchesSnapshot` rule's ignore list was dropped without a word (and
+  `assertion_validate` refused it outright), and the snapshot compared fields
+  the caller had asked it to skip.
+- **A recorded check keeps the element's accessible name.** Playwright's
+  recorder writes a bare `internal:role=heading` when that role is unique on the
+  page at pick time, so a check on a product title became "some heading": once
+  the page held more than one, the step failed on strict mode or read the wrong
+  element. A recorded role locator now carries the name the accessibility tree
+  already gives the element (`heading "Mechanical keyboard"`), so the step waits
+  for that element instead of whatever shares its role.
 - **An agent can create a workspace.** `workspaces_create` without
   `isPersonal` handed back the existing Personal workspace instead of creating
   one, because a create that did not say otherwise was taken to mean the
@@ -220,6 +248,30 @@ project adheres to [Semantic Versioning](https://semver.org/).
   locator could hold the first characters of a secret. A step whose locator
   shows a secret, or ends in four or more characters of one, is now not
   recorded, and neither is a picked element.
+- **`response.status` and `response.fault.*` reach the values they name.** A
+  dot path dropped `response.` and read the node result, so on a gRPC node
+  `response.status` read the node's own `success` and on a SOAP node
+  `response.fault.code` read nothing. Assertions and merge conditions now read
+  the response object first, as JSONPath and extractors already did.
+- **The analyzer no longer flags valid assertions.** A namespaced
+  `xpath[prefix=uri]:` path, a `response.fault.*` path and a `matchesSnapshot`
+  rule with no expected value were reported as errors, and a variable written by
+  a Call Workflow node's `outputMapping` was reported as never produced.
+- **A failed Call Workflow says which step failed.** "Sub-workflow Login failed
+  in 1 node(s)" now names the first failed step and why: its error, its
+  failed assertions, or the status it failed on (`Status 401`, a gRPC
+  `UNAVAILABLE`), as the CLI reports the same step run on its own.
+- **Accept snapshot works for an Assertion node.** The button existed only for
+  a `matchesSnapshot` rule written on the HTTP node itself, so a snapshot rule
+  on an Assertion node (the usual layout, and the one agents write) could only
+  be re-baselined from the CLI. An Assertion node's result now lists where each
+  failed snapshot differs and accepts the value the inspected node returned.
+- **Choosing a WSDL file imports it.** Import nodes → WSDL kept a chosen or
+  dropped file aside and imported only the text box, so the file was ignored
+  and Add to Nodes stayed disabled. The file now fills the box.
+- **A workspace an agent creates opens without a restart.** A workspace page
+  whose workspace was missing from the loaded list showed "Workspace
+  unavailable" until the app restarted; it now reloads the list once first.
 
 ## [1.0.0] — 2026-11-10
 

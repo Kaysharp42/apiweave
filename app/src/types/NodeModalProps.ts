@@ -14,4 +14,6 @@ export interface NodeModalProps {
   workspaceId: string;
   /** Excluded from the Call Workflow target picker — a workflow can't call itself. */
   currentWorkflowId: string;
+  /** Another node's result from the last run: what an Assertion node's rules inspected. */
+  getNodeOutput: (nodeId: string) => unknown;
 }

@@ -66,7 +66,7 @@ ${contextBlock}## Flow
 Each rule is \`{ source, path, operator, expectedValue? }\`:
 
 - **source** — one of: ${SOURCES}.
-- **operator** — one of: ${OPERATORS}. \`exists\`/\`notExists\` take no \`expectedValue\`; every other operator requires one.
+- **operator** — one of: ${OPERATORS}. \`exists\`/\`notExists\`/\`matchesSnapshot\` take no \`expectedValue\`; every other operator requires one. \`matchesSnapshot\` may carry \`ignorePaths\` (JSONPath expressions left out of the comparison).
 - **path** rules:
   - \`status\`: path MUST be empty; use a numeric operator (equals, notEquals, gt, gte, lt, lte). Example: \`{ "source": "status", "path": "", "operator": "equals", "expectedValue": 200 }\`.
   - \`prev\` (the upstream HTTP response): the path addresses the response object — \`response.body.<field>\` (dot notation, \`[0]\` for array indexes), \`response.headers.<name>\`, \`response.statusCode\` or \`response.duration\`. A bare field name like \`id\` is NOT a path; write \`response.body.id\`. Examples: \`response.body.token\` exists, \`response.body.items\` count 3, \`response.duration\` lte 500.

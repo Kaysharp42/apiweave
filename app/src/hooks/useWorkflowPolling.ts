@@ -24,6 +24,7 @@ import {
 } from "@shared/iteration-data/iterationData";
 import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer";
 import type { WorkflowGraphInput } from "@shared/types/WorkflowGraphInput";
+import type { WorkflowDiagnostic } from "@shared/types/WorkflowDiagnostic";
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge";
 import type { WorkflowNode } from "@shared/types/WorkflowNode";
 import useRunChoreography from "./useRunChoreography";
@@ -234,6 +235,41 @@ function buildAnalyzerGraphInput(
   });
 
   return { workflowId, nodes, edges };
+}
+
+/**
+ * A wired branch whose handle the source node does not have: the run never
+ * takes it. Unlike a topology error, this cannot be a half-dragged connection —
+ * ReactFlow only offers the sockets a node draws — so it is a graph that looks
+ * finished and silently does less than the picture says.
+ */
+const BRANCH_HANDLE_CODES = new Set([
+  "stream_edge_handle_invalid",
+  "assertion_branch_handle_invalid",
+]);
+
+/**
+ * The node a blocking diagnostic should mark. For a branch-handle error the
+ * edge itself is the problem, and `nodeIds` is sorted rather than ordered, so
+ * its first entry may be the target: read the source off the edge named in
+ * `evidence.edgeId`. Every other code marks its first node id as before.
+ */
+function blockingDiagnosticNodeId(
+  diagnostic: WorkflowDiagnostic,
+  edgeSources: ReadonlyMap<string, string>,
+): string | undefined {
+  if (!BRANCH_HANDLE_CODES.has(diagnostic.code)) {
+    return diagnostic.nodeIds[0];
+  }
+  const evidenceEdgeId = diagnostic.evidence["edgeId"];
+  const edgeId =
+    typeof evidenceEdgeId === "string"
+      ? evidenceEdgeId
+      : diagnostic.remediation?.edgeId;
+  return (
+    (edgeId === undefined ? undefined : edgeSources.get(edgeId)) ??
+    diagnostic.nodeIds[0]
+  );
 }
 
 interface FailedNodeOption {
@@ -670,10 +706,16 @@ export default function useWorkflowPolling({
       // while the MCP `assertion_validate` accepted them, so a valid workflow
       // was unrunnable from the canvas and the two paths disagreed.
       //
-      // Scope the run-block to `assertion`-category errors — the per-rule
-      // validity that `assertion_validate` covers. Topology errors (missing
-      // start/end, unreachable nodes, etc.) are not a reason to block a
-      // half-edited graph from a Run: the executor reports them as a failed
+      // Scope the run-block to errors that make the wired graph wrong at run
+      // time rather than mid-edit: the per-rule `assertion` validity that
+      // `assertion_validate` covers, plus a branch edge whose source node has
+      // no such output (`stream_edge_handle_invalid`,
+      // `assertion_branch_handle_invalid`). A handle is not a mid-drag state —
+      // ReactFlow only offers the sockets a node draws, so a hand-made
+      // connection always carries the right one — and a branch wired to a
+      // nonexistent output is drawn but silently never run. Topology errors
+      // (missing start/end, unreachable nodes, etc.) are not a reason to block
+      // a half-edited graph from a Run: the executor reports them as a failed
       // run, and the canvas is a workspace where graphs live mid-edit.
       //
       // `assertion_source_missing`/`assertion_source_ambiguous` share the
@@ -687,16 +729,25 @@ export default function useWorkflowPolling({
       const blocking = diagnosis.diagnostics.filter(
         (d) =>
           d.severity === "error" &&
-          d.category === "assertion" &&
-          d.code !== "assertion_source_missing" &&
-          d.code !== "assertion_source_ambiguous",
+          (BRANCH_HANDLE_CODES.has(d.code) ||
+            (d.category === "assertion" &&
+              d.code !== "assertion_source_missing" &&
+              d.code !== "assertion_source_ambiguous")),
       );
 
       if (blocking.length > 0) {
+        const edgeSources = new Map<string, string>();
+        for (const edge of edges) {
+          edgeSources.set(
+            edge.id ?? `${edge.source}->${edge.target}`,
+            edge.source,
+          );
+        }
+        const blockerNodeIds = blocking.map((d) =>
+          blockingDiagnosticNodeId(d, edgeSources),
+        );
         const invalidIds = new Set(
-          blocking
-            .map((d) => d.nodeIds[0])
-            .filter((id): id is string => typeof id === "string"),
+          blockerNodeIds.filter((id): id is string => typeof id === "string"),
         );
         setNodes((nds) =>
           nds.map((node) =>
@@ -728,10 +779,10 @@ export default function useWorkflowPolling({
         }
 
         const details = blocking
-          .map((d) => {
-            const id = d.nodeIds[0] ?? "?";
-            return `${id}: ${d.message}`;
-          })
+          .map(
+            (d, index) =>
+              `${blockerNodeIds[index] ?? "?"}: ${d.message}`,
+          )
           .join(" | ");
 
         toast.error(`Run blocked: invalid workflow — ${details}`, {

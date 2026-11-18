@@ -1,4 +1,5 @@
 import type { NodeMetric } from "../types/NodeMetric";
+import type { NodeRunLine } from "../types/NodeRunLine";
 
 /**
  * Formatting helpers for the node run strip's metrics row.
@@ -14,6 +15,21 @@ export const METRIC_PLACEHOLDER = "—";
 
 /** Separator between metric cells. */
 export const METRIC_SEPARATOR = "·";
+
+/** `1 event`, `3 events`. */
+export function formatCount(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * A stream node's idle line: `until match` with its finish rule count when it
+ * has any, otherwise `collect` with how many items it stops after.
+ */
+export function formatStreamRestLine(finishRuleCount: number, limit: number, noun: string): NodeRunLine {
+  return finishRuleCount > 0
+    ? { operation: "until match", argument: formatCount(finishRuleCount, "finish rule") }
+    : { operation: "collect", argument: formatCount(limit, noun) };
+}
 
 /**
  * `831ms` below a second, `2.6s` at or above it.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { WorkflowExecutor, type WorkflowGraph } from "../executor"
+import { WorkflowExecutor, type ResolvedSubWorkflow, type WorkflowGraph } from "../executor"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
@@ -911,6 +911,26 @@ describe("WorkflowExecutor", () => {
       expect(gate(conds, "AND", [{ statusCode: 200 }, { body: { ok: false } }])).toThrow()
     })
 
+    it("reads a field only the response object holds, such as a gRPC or SOAP status", () => {
+      expect(
+        gate(
+          [{ branchIndex: 0, field: "response.status", operator: "equals", value: "OK" }],
+          "OR",
+          [{ status: "success", response: { status: "OK" } }],
+        ),
+      ).not.toThrow()
+    })
+
+    it("falls back to a top-level field the response object does not hold", () => {
+      expect(
+        gate(
+          [{ branchIndex: 0, field: "response.duration", operator: "equals", value: "120" }],
+          "OR",
+          [{ duration: 120, response: { statusCode: 200 } }],
+        ),
+      ).not.toThrow()
+    })
+
     it("no conditions means no gating", () => {
       expect(gate([], "AND", [{ statusCode: 500 }])).not.toThrow()
     })
@@ -1280,6 +1300,86 @@ describe("WorkflowExecutor", () => {
       const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "self" }))
       expect(output.status).toBe("failed")
       expect(output.failedNodes).toContain("call1")
+    })
+
+    /** The failure text the caller's node reports for the child workflow named "Login". */
+    async function callFailure(child: Omit<ResolvedSubWorkflow, "name">): Promise<string> {
+      const messages: string[] = []
+      const executor = new WorkflowExecutor({
+        ...makeDeps(),
+        emitProgress: (event) => {
+          if (event.kind === "node.status" && event.nodeId === "call1" && event.status === "failed" && event.message) messages.push(event.message)
+        },
+        resolveWorkflow: () => ({ name: "Login", ...child }),
+      })
+      const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "sub-1" }))
+      expect(output.status).toBe("failed")
+      expect(messages).toHaveLength(1)
+      return messages[0]!
+    }
+
+    it("names the step that failed inside the called workflow, with its error", async () => {
+      const message = await callFailure({
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "fill", type: "http-request", label: "Fill password", config: { url: "http://127.0.0.1:1/x" } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "fill" },
+          { edgeId: "e2", source: "fill", target: "end" },
+        ],
+      })
+      expect(message).toMatch(/^Sub-workflow Login failed at "Fill password": .+/)
+      expect(message).not.toContain("node(s)")
+    })
+
+    it("falls back to the failed node's id, and counts the others", async () => {
+      const message = await callFailure({
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "fill", type: "http-request", label: "Fill password", config: { url: "http://127.0.0.1:1/x", continueOnFail: true } },
+          { nodeId: "submit", type: "http-request", config: { url: "http://127.0.0.1:1/x", continueOnFail: true } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "fill" },
+          { edgeId: "e2", source: "fill", target: "submit" },
+          { edgeId: "e3", source: "submit", target: "end" },
+        ],
+      })
+      expect(message).toMatch(/^Sub-workflow Login failed at "Fill password": .+ \(\+1 more\)$/)
+      expect(message).not.toContain('at "submit"')
+    })
+
+    it("reports the HTTP status a child step failed on instead of 'no error reported'", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 404
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const message = await callFailure({
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "login", type: "http-request", label: "POST /auth/login", config: { method: "POST", url: `http://127.0.0.1:${port}/auth/login` } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "login" },
+            { edgeId: "e2", source: "login", target: "end" },
+          ],
+        })
+        // A status-only failure has no `error` text on the child result, so it
+        // read "no error reported" while the same step run directly said
+        // `Status 404`.
+        expect(message).toContain('failed at "POST /auth/login": Status 404')
+        expect(message).not.toContain("no error reported")
+      } finally {
+        server.close()
+      }
     })
   })
 

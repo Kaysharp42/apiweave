@@ -129,6 +129,7 @@ import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
 import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
+import { grpcCallType, reconcileGrpcStreamEdges } from "../utils/grpcStreamEdges";
 import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
@@ -1265,14 +1266,42 @@ function WorkflowCanvas({
 
   const handleModalSave = useCallback(
     (updatedNode: Node<WorkflowCanvasNodeData>) => {
+      const previousNode = nodesRef.current.find(
+        (n) => n.id === updatedNode.id,
+      );
       const replace = (nds: CanvasNode[]) =>
         nds.map((n) => (n.id === updatedNode.id ? updatedNode : n));
+
+      // A gRPC call's outputs *are* its call type: unary has one unnamed output,
+      // server-streaming has `ready` and `complete`. The edges leaving the node
+      // are wired to those sockets, so switching the type without rewiring them
+      // leaves a branch ReactFlow draws but the run never follows — or one it
+      // follows but the canvas does not draw. Rewritten inside this same save,
+      // so autosave and undo capture the node and its edges as one change.
+      if (updatedNode.type === "grpc" && previousNode?.type === "grpc") {
+        const callType = grpcCallType(updatedNode.data.config);
+        if (grpcCallType(previousNode.data.config) !== callType) {
+          const nextEdges = reconcileGrpcStreamEdges(
+            edgesRef.current,
+            updatedNode.id,
+            callType,
+          );
+          if (nextEdges !== edgesRef.current) {
+            // Same reason as `nodesRef` below: Ctrl+S in the editor saves right
+            // after applying, before the re-render refreshes `edgesRef` — which
+            // is the graph that save writes.
+            edgesRef.current = nextEdges;
+            setEdges(nextEdges);
+          }
+        }
+      }
+
       // Ctrl+S in the node editor saves right after applying, before the
       // re-render that refreshes `nodesRef` — which is what the save reads.
       nodesRef.current = replace(nodesRef.current);
       setNodes(replace);
     },
-    [setNodes],
+    [setEdges, setNodes],
   );
 
   // ── Canvas drop ─────────────────────────────────────────────────────
@@ -2369,6 +2398,9 @@ function WorkflowCanvas({
             onSaveWorkflow={() => void saveWorkflow(false)}
             workspaceId={scope.workspaceId ?? ""}
             currentWorkflowId={workflowId ?? ""}
+            getNodeOutput={(nodeId) =>
+              nodesRef.current.find((candidate) => candidate.id === nodeId)?.data.executionResult
+            }
           />
         </Suspense>
       )}
