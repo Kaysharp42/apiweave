@@ -76,6 +76,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 - [Workflows and Nodes](features/workflows-and-nodes.md): build, edit, and run workflows on the canvas.
 - [Browser Steps](features/browser-steps.md): drive a web page in a real browser as part of a workflow.
 - [Variables and Extractors](features/variables-and-extractors.md): pass data between steps with the four placeholder namespaces.
+- [Load Runs](features/load-runs.md): run one workflow many times at once, with latency percentiles, throughput and thresholds.
 - [Node Presets](features/node-presets.md): a saved, workspace-wide library of reusable node configurations.
 - [Visualization and Debugging](features/visualization-and-debugging.md): timeline, provenance, secret confidence, and the run camera.
 - [Projects](features/projects.md): group workflows into ordered runs and export them as `.aweproject` bundles.
@@ -86,7 +87,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 
 ## Guides
 
-- [Run Tests in CI](guides/ci.md): the headless `apiweave run` command, secrets from CI variables, and a GitHub Actions job.
+- [Run Tests in CI](guides/ci.md): the headless `apiweave run` command, secrets from CI variables, browser steps with their screenshot and ARIA snapshot evidence, load runs with thresholds, and GitHub Actions and GitLab CI jobs.
 - [Keep Tests in a Git Repository](guides/git-workflows.md): the workspace repository layout, local version history, and running a repository in CI.
 
 ## Reference
