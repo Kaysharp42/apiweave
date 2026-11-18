@@ -56,4 +56,15 @@ describe("LoadRunDialog", () => {
       expect.objectContaining({ iterations: 2, rows: [{ user: "ann" }, { user: "bob" }] }),
     );
   });
+
+  it("drops the data file's rows once it is removed", async () => {
+    const { onStart } = setup();
+    const file = new File(["user\nann\nbob\n"], "users.csv", { type: "text/csv" });
+
+    fireEvent.change(screen.getByLabelText("Data file for the load run"), { target: { files: [file] } });
+    await userEvent.click(await screen.findByRole("button", { name: "Remove data file" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start load run" }));
+
+    expect(onStart).toHaveBeenCalledWith(expect.not.objectContaining({ rows: expect.anything() }));
+  });
 });
