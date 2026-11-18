@@ -207,11 +207,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
   invisible — and clearing its handle to make the edge appear silently skipped
   the branch, which is how the demo's TrackShipment assertion stopped running.
   The node now draws Ready and Complete sockets, as SSE and WebSocket nodes do.
+  Switching its call type rewires the edges leaving it in the same change: an
+  unnamed edge becomes `ready` when the call becomes server-streaming, and
+  `ready`/`complete` edges become unnamed when it goes back to unary, and the
+  canvas draws them on their new sockets at once rather than after a reopen.
 - **An edge that leaves a handle the node does not have is reported.** A
   `sourceHandle` on a single-output node is a warning: the canvas hides that
   edge while a run still follows it. A stream node's edge without `ready` or
   `complete` is an error: the run never follows it, so the branch disappears.
-  Both name the edge and the outputs the node actually has.
+  Both name the edge and the outputs the node actually has. The canvas Run
+  button now refuses a workflow with that error, or with an assertion edge
+  that is neither `pass` nor `fail`, and marks the edge's source node.
+- **`assertion_apply` and `assertion_validate` keep `ignorePaths`.** Both
+  rebuilt each rule from its source, path, operator and expected value, so a
+  `matchesSnapshot` rule's ignore list was dropped without a word (and
+  `assertion_validate` refused it outright), and the snapshot compared fields
+  the caller had asked it to skip.
 - **A recorded check keeps the element's accessible name.** Playwright's
   recorder writes a bare `internal:role=heading` when that role is unique on the
   page at pick time, so a check on a product title became "some heading": once
@@ -247,7 +258,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   rule with no expected value were reported as errors, and a variable written by
   a Call Workflow node's `outputMapping` was reported as never produced.
 - **A failed Call Workflow says which step failed.** "Sub-workflow Login failed
-  in 1 node(s)" now names the first failed step and its error.
+  in 1 node(s)" now names the first failed step and why: its error, its
+  failed assertions, or the status it failed on (`Status 401`, a gRPC
+  `UNAVAILABLE`), as the CLI reports the same step run on its own.
 - **Accept snapshot works for an Assertion node.** The button existed only for
   a `matchesSnapshot` rule written on the HTTP node itself, so a snapshot rule
   on an Assertion node (the usual layout, and the one agents write) could only
