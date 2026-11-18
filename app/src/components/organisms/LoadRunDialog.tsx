@@ -26,6 +26,62 @@ function secondsToMs(text: string): number | undefined | null {
   return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : null;
 }
 
+interface DataFileRowProps {
+  file: File | null;
+  rows: IterationRow[] | undefined;
+  onSelect: (picked: File) => void;
+  onClear: () => void;
+}
+
+/** The data file's one-line summary, with the controls that choose, replace or remove it. */
+function DataFileRow({ file, rows, onSelect, onClear }: DataFileRowProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasFile = file !== null;
+
+  return (
+    <div className="flex items-center gap-3 rounded-sm border border-border px-3 py-2.5 dark:border-border-dark">
+      <FileSpreadsheet className="h-4 w-4 shrink-0 text-text-muted dark:text-text-muted-dark" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-text-primary dark:text-text-primary-dark">
+          {hasFile ? file.name : "No data file"}
+        </p>
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+          {hasFile
+            ? `${rows?.length ?? 0} rows, reused in order`
+            : "CSV or JSON; each row is available as {{data.<column>}}"}
+        </p>
+      </div>
+      {hasFile && (
+        <IconButton
+          tooltip="Remove data file"
+          size="sm"
+          onClick={() => {
+            onClear();
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          }}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </IconButton>
+      )}
+      <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+        {hasFile ? "Replace…" : "Choose file…"}
+      </Button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,.json,text/csv,application/json"
+        aria-label="Data file for the load run"
+        tabIndex={-1}
+        className="hidden"
+        onChange={(event) => {
+          const picked = event.target.files?.[0];
+          if (picked) onSelect(picked);
+        }}
+      />
+    </div>
+  );
+}
+
 /** Collects a load run's settings: iterations or a data file, concurrency, duration, ramp-up and thresholds. */
 export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) {
   const formId = useId();
@@ -37,7 +93,6 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<IterationRow[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pickFile = async (picked: File) => {
     setError(undefined);
@@ -89,8 +144,9 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
   const clearFile = () => {
     setFile(null);
     setRows(undefined);
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  const iterationsHint = rows === undefined ? "Total runs to make" : `Set from ${rows.length} data rows`;
 
   return (
     <Modal
@@ -128,7 +184,7 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
           <div className="grid grid-cols-2 gap-x-4">
             <FormField
               label="Iterations"
-              hint={rows === undefined ? "Total runs to make" : `Set from ${rows.length} data rows`}
+              hint={iterationsHint}
             >
               <Input aria-label="Iterations" size="sm" type="number" min={1} value={iterations} onChange={(event) => setIterations(event.target.value)} />
             </FormField>
@@ -167,46 +223,7 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
 
         <fieldset>
           <legend className={SECTION_HEADING}>Data · optional</legend>
-          <div className="flex items-center gap-3 rounded-sm border border-border px-3 py-2.5 dark:border-border-dark">
-            <FileSpreadsheet className="h-4 w-4 shrink-0 text-text-muted dark:text-text-muted-dark" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              {file === null ? (
-                <>
-                  <p className="text-sm text-text-primary dark:text-text-primary-dark">No data file</p>
-                  <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                    CSV or JSON; each row is available as {"{{data.<column>}}"}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="truncate text-sm text-text-primary dark:text-text-primary-dark">{file.name}</p>
-                  <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                    {rows?.length ?? 0} rows, reused in order
-                  </p>
-                </>
-              )}
-            </div>
-            {file !== null && (
-              <IconButton tooltip="Remove data file" size="sm" onClick={clearFile}>
-                <X className="h-4 w-4" aria-hidden="true" />
-              </IconButton>
-            )}
-            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-              {file === null ? "Choose file…" : "Replace…"}
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.json,text/csv,application/json"
-              aria-label="Data file for the load run"
-              tabIndex={-1}
-              className="hidden"
-              onChange={(event) => {
-                const picked = event.target.files?.[0];
-                if (picked) void pickFile(picked);
-              }}
-            />
-          </div>
+          <DataFileRow file={file} rows={rows} onSelect={(picked) => void pickFile(picked)} onClear={clearFile} />
         </fieldset>
       </form>
     </Modal>
