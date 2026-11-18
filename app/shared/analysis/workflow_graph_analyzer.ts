@@ -384,10 +384,19 @@ function namedOutputs(node: WorkflowNode): readonly string[] | null {
   return null
 }
 
-function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
-  const nodeCounts = new Map<string, number>()
-  for (const node of workflow.nodes) nodeCounts.set(node.nodeId, (nodeCounts.get(node.nodeId) ?? 0) + 1)
-  for (const [nodeId, count] of nodeCounts) {
+/** How many times each id appears, in first-seen order. */
+function countIds<T>(items: readonly T[], idOf: (item: T) => string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    const id = idOf(item)
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return counts
+}
+
+/** Pushes one error per node id that appears more than once. */
+function addDuplicateNodeIdDiagnostics(nodes: readonly WorkflowNode[], diagnostics: WorkflowDiagnostic[]): void {
+  for (const [nodeId, count] of countIds(nodes, (node) => node.nodeId)) {
     if (count > 1) {
       diagnostics.push(diagnostic(
         "duplicate_node_id",
@@ -400,10 +409,11 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
       ))
     }
   }
+}
 
-  const edgeCounts = new Map<string, number>()
-  for (const edge of workflow.edges) edgeCounts.set(edge.edgeId, (edgeCounts.get(edge.edgeId) ?? 0) + 1)
-  for (const [edgeId, count] of edgeCounts) {
+/** Pushes one error per edge id that appears more than once. */
+function addDuplicateEdgeIdDiagnostics(edges: readonly WorkflowEdge[], diagnostics: WorkflowDiagnostic[]): void {
+  for (const [edgeId, count] of countIds(edges, (edge) => edge.edgeId)) {
     if (count > 1) {
       diagnostics.push(diagnostic(
         "duplicate_edge_id",
@@ -416,9 +426,15 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
       ))
     }
   }
+}
 
-  const starts = workflow.nodes.filter((node) => node.type === "start").map((node) => node.nodeId)
-  const ends = workflow.nodes.filter((node) => node.type === "end").map((node) => node.nodeId)
+/**
+ * Pushes the missing-start, duplicate-start and missing-end diagnostics, and
+ * returns the start node ids for the reachability check.
+ */
+function addStartAndEndNodeDiagnostics(nodes: readonly WorkflowNode[], diagnostics: WorkflowDiagnostic[]): readonly string[] {
+  const starts = nodes.filter((node) => node.type === "start").map((node) => node.nodeId)
+  const ends = nodes.filter((node) => node.type === "end").map((node) => node.nodeId)
   if (starts.length === 0) {
     diagnostics.push(diagnostic("missing_start_node", "error", "topology", [], "The workflow has no start node.", {}, { kind: "add_start_node" }))
   } else if (starts.length > 1) {
@@ -427,9 +443,16 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   if (ends.length === 0) {
     diagnostics.push(diagnostic("missing_end_node", "error", "topology", [], "The workflow has no end node.", {}, { kind: "add_end_node" }))
   }
+  return starts
+}
 
-  const { nodesById, successors } = buildGraph(workflow.nodes, workflow.edges)
-  for (const edge of workflow.edges) {
+/** Pushes one error per edge whose source or target node id does not exist. */
+function addDanglingEdgeDiagnostics(
+  edges: readonly WorkflowEdge[],
+  nodesById: ReadonlyMap<string, WorkflowNode>,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  for (const edge of edges) {
     const missing = [!nodesById.has(edge.source) ? edge.source : null, !nodesById.has(edge.target) ? edge.target : null]
       .filter((nodeId): nodeId is string => nodeId !== null)
     if (missing.length > 0) {
@@ -444,12 +467,23 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
       ))
     }
   }
+}
 
-  // A handle the source node does not have is invisible. On a stream node the
-  // run also skips the edge, so the branch never runs; on any other node the
-  // canvas drops it while the run still follows it, which reads as a missing
-  // branch. Assertion handles have their own diagnostic above.
-  for (const edge of workflow.edges) {
+/**
+ * Pushes the handle diagnostics for edges leaving a node that does not have the
+ * handle the edge names.
+ *
+ * A handle the source node does not have is invisible. On a stream node the
+ * run also skips the edge, so the branch never runs; on any other node the
+ * canvas drops it while the run still follows it, which reads as a missing
+ * branch. Assertion handles have their own diagnostic above.
+ */
+function addEdgeSourceHandleDiagnostics(
+  edges: readonly WorkflowEdge[],
+  nodesById: ReadonlyMap<string, WorkflowNode>,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  for (const edge of edges) {
     const source = nodesById.get(edge.source)
     if (source === undefined || source.type === "assertion") continue
     const handle = edge.sourceHandle ?? ""
@@ -479,23 +513,33 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
       { kind: "set_edge_source_handle", edgeId: edge.edgeId },
     ))
   }
+}
 
-  if (starts.length > 0) {
-    const reachable = traverse(starts, successors)
-    const unreachable = [...nodesById.keys()].filter((nodeId) => !reachable.has(nodeId)).sort()
-    if (unreachable.length > 0) {
-      diagnostics.push(diagnostic(
-        "unreachable_nodes",
-        "warning",
-        "topology",
-        unreachable,
-        "Some nodes cannot be reached from a start node.",
-        { count: unreachable.length },
-        { kind: "connect_or_remove_nodes" },
-      ))
-    }
+/** Pushes one warning listing every node that cannot be reached from a start node. */
+function addUnreachableNodeDiagnostics(
+  starts: readonly string[],
+  nodesById: ReadonlyMap<string, WorkflowNode>,
+  successors: ReadonlyMap<string, ReadonlySet<string>>,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  if (starts.length === 0) return
+  const reachable = traverse(starts, successors)
+  const unreachable = [...nodesById.keys()].filter((nodeId) => !reachable.has(nodeId)).sort()
+  if (unreachable.length > 0) {
+    diagnostics.push(diagnostic(
+      "unreachable_nodes",
+      "warning",
+      "topology",
+      unreachable,
+      "Some nodes cannot be reached from a start node.",
+      { count: unreachable.length },
+      { kind: "connect_or_remove_nodes" },
+    ))
   }
+}
 
+/** Pushes one error listing every node that lies on a cycle. */
+function addCycleDiagnostics(successors: ReadonlyMap<string, ReadonlySet<string>>, diagnostics: WorkflowDiagnostic[]): void {
   const cycleNodes = cycleNodeIds(successors).sort()
   if (cycleNodes.length > 0) {
     diagnostics.push(diagnostic(
@@ -508,6 +552,18 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
       { kind: "remove_cycle_edge" },
     ))
   }
+}
+
+function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
+  addDuplicateNodeIdDiagnostics(workflow.nodes, diagnostics)
+  addDuplicateEdgeIdDiagnostics(workflow.edges, diagnostics)
+  const starts = addStartAndEndNodeDiagnostics(workflow.nodes, diagnostics)
+
+  const { nodesById, successors } = buildGraph(workflow.nodes, workflow.edges)
+  addDanglingEdgeDiagnostics(workflow.edges, nodesById, diagnostics)
+  addEdgeSourceHandleDiagnostics(workflow.edges, nodesById, diagnostics)
+  addUnreachableNodeDiagnostics(starts, nodesById, successors, diagnostics)
+  addCycleDiagnostics(successors, diagnostics)
 }
 
 function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
