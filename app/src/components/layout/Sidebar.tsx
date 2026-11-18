@@ -20,6 +20,7 @@ import { apiweave } from "../../utils/apiweaveClient";
 import type { Workflow } from "../../types/Workflow";
 import type { Project } from "../../types/Project";
 import { noteLocalWorkflowRemoval } from "../../utils/localWorkflowRemovals";
+import { projectInWorkspace } from "../../utils/projectInWorkspace";
 import useNavigationStore from "../../stores/NavigationStore";
 import { useScopeContext } from "../../hooks/useScopeContext";
 import { useNavigationSelection } from "../../hooks/useNavigationControls";
@@ -353,10 +354,18 @@ export function Sidebar() {
   }, [workflows, searchQuery]);
 
   const filteredProjects = useMemo(() => {
-    if (!searchQuery) return projects;
+    // Dropped during render, not in the effect that clears the store: a
+    // workspace switch hands this component the new id and the previous
+    // workspace's rows in the same commit, and the one row that must not
+    // render from it is the one that would fire `agents:resolveLocalPath`
+    // with the new workspace and the old workspace's project.
+    const inWorkspace = projects.filter((p) =>
+      projectInWorkspace(p, workspaceId),
+    );
+    if (!searchQuery) return inWorkspace;
     const q = searchQuery.toLowerCase();
-    return projects.filter((p) => p.name?.toLowerCase().includes(q));
-  }, [projects, searchQuery]);
+    return inWorkspace.filter((p) => p.name?.toLowerCase().includes(q));
+  }, [projects, searchQuery, workspaceId]);
 
   const toggleProject = (projectId: string) => {
     setExpandedProjects((prev) => {

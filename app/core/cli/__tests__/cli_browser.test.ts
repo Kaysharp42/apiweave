@@ -115,18 +115,29 @@ describe("apiweave run with browser steps", () => {
     expect(failed.stdout).toContain("Browser step: the text of getByRole('heading') did not equal the expected text within 2s")
     expect(failed.stdout).toContain('      Expected: "Dashboard"\n      Found: "Something else"\n')
 
-    // The failed step's screenshot and ARIA snapshot, one folder per run, linked from every report.
+    // Every step's screenshot and ARIA snapshot, passed or failed, one folder per run, linked from every report.
     const [runDir, ...others] = fs.readdirSync(path.join(dir, "evidence"))
     expect(others).toEqual([])
-    expect(fs.readdirSync(path.join(dir, "evidence", runDir!)).sort()).toEqual(["b5.aria.yml", "b5.jpg"])
+    expect(fs.readdirSync(path.join(dir, "evidence", runDir!)).sort()).toEqual([
+      "b1.aria.yml", "b1.jpg", "b2.aria.yml", "b2.jpg", "b3.aria.yml", "b3.jpg",
+      "b4.aria.yml", "b4.jpg", "b5.aria.yml", "b5.jpg",
+    ])
     const shot = fs.readFileSync(path.join(dir, "evidence", runDir!, "b5.jpg"))
     expect(shot.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
     expect(fs.readFileSync(path.join(dir, "evidence", runDir!, "b5.aria.yml"), "utf8")).toContain("Something else")
     expect(failed.stdout).toContain(`      Screenshot: evidence/${runDir}/b5.jpg\n      ARIA snapshot: evidence/${runDir}/b5.aria.yml\n`)
+    // A passed step's evidence is linked too.
+    expect(failed.stdout).toContain(`      Screenshot: evidence/${runDir}/b1.jpg\n      ARIA snapshot: evidence/${runDir}/b1.aria.yml\n`)
     expect(fs.readFileSync(path.join(dir, "reports", "junit.xml"), "utf8")).toContain(`[[ATTACHMENT|evidence/${runDir}/b5.jpg]]`)
     expect(fs.readFileSync(path.join(dir, "reports", "report.html"), "utf8")).toContain(`<img class="shot" src="../evidence/${runDir}/b5.jpg"`)
 
-    const everything = [failed.stdout, failed.stderr, ...["reports/junit.xml", "reports/report.html", `evidence/${runDir}/b5.aria.yml`].map((file) => fs.readFileSync(path.join(dir, file), "utf8"))]
+    const everything = [
+      failed.stdout,
+      failed.stderr,
+      ...["reports/junit.xml", "reports/report.html", ...[1, 2, 3, 4, 5].map((step) => `evidence/${runDir}/b${step}.aria.yml`)].map((file) =>
+        fs.readFileSync(path.join(dir, file), "utf8"),
+      ),
+    ]
     for (const text of everything) expect(text).not.toContain(PASSWORD)
   })
 

@@ -23,7 +23,7 @@ function normalizeStatus(status: string): StatusBadgeProps["status"] {
   return status === "running" || status === "success" || status === "error" || status === "warning" ? status : "idle";
 }
 
-/** The failed step's screenshot, read from the run's artifacts when the pane shows it. */
+/** The step's screenshot, read from the run's artifacts when the pane shows it. */
 function Screenshot({ workspaceId, artifactId }: { workspaceId: string; artifactId: string }) {
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,7 @@ function Screenshot({ workspaceId, artifactId }: { workspaceId: string; artifact
   return (
     <img
       src={source}
-      alt="The page when the step failed. Password fields are painted over."
+      alt="The page after the step ran. Password fields are painted over."
       className="w-full rounded-xs border border-border dark:border-border-dark"
     />
   );

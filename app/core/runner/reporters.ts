@@ -40,7 +40,7 @@ import type { LoadRun } from "@shared/types/LoadRun"
 export type ReportWorkflow = Pick<Workflow, "workflowId" | "name" | "nodes">
 
 /**
- * A failed browser step's evidence, written next to the report (`apiweave run
+ * A browser step's evidence, written next to the report (`apiweave run
  * --evidence-dir`): each path as this report should name it — relative to the
  * HTML file for HTML, to the working directory otherwise. The report links
  * the files and never holds their content.
@@ -53,9 +53,9 @@ export interface ReportEvidence {
 }
 
 /**
- * The evidence written for one node of one run, if any: one entry per failed
+ * The evidence written for one node of one run, if any: one entry per
  * browser step. A browser node has at most its own; a Call Workflow node has
- * one per failed step of every workflow it reached, iterations included.
+ * one per step of every workflow it reached, iterations included.
  */
 export type ReportEvidenceLookup = (runId: string, nodeId: string) => readonly ReportEvidence[] | undefined
 
@@ -114,7 +114,7 @@ interface ReportCase {
   readonly logs: readonly string[]
   /** Contract violations recorded on a node that still passed (contract mode `warn`). */
   readonly warnings: readonly string[]
-  /** Failed browser steps' files, when they were written. */
+  /** Browser steps' evidence files, when they were written. */
   readonly evidence?: readonly ReportEvidence[]
 }
 
@@ -377,13 +377,13 @@ function nodeCase(name: string, type: string, result: RunResult | undefined, ent
     attempts: result?.attempts?.length ?? null,
     logs: (result?.scripts ?? []).flatMap((script) => script.logs),
     warnings: outcome === "passed" ? (result?.assertions ?? []).filter((rule) => rule.outcome === "fail").flatMap(describeRule).map((line) => `Contract warning: ${line}`) : [],
-    ...evidenceOf(outcome, evidence),
+    ...evidenceOf(evidence),
   }
 }
 
-/** Evidence is a failed step's only. */
-function evidenceOf(outcome: Outcome, evidence: readonly ReportEvidence[] | undefined): { evidence?: readonly ReportEvidence[] } {
-  return outcome === "failed" && evidence !== undefined && evidence.length > 0 ? { evidence } : {}
+/** Evidence files belong to their step, whether it passed or failed. */
+function evidenceOf(evidence: readonly ReportEvidence[] | undefined): { evidence?: readonly ReportEvidence[] } {
+  return evidence !== undefined && evidence.length > 0 ? { evidence } : {}
 }
 
 /** Stands in for a run that did not complete with no failed node to show for it. */
@@ -577,7 +577,7 @@ function junitCase(suite: ReportSuite, testCase: ReportCase): string {
   } else if (testCase.outcome === "skipped") {
     children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
-  // The attachment convention GitLab and Jenkins read: a failed browser step's screenshot shows with the test.
+  // The attachment convention GitLab and Jenkins read: a browser step's screenshot shows with the test.
   // GitLab shows only the first attachment, so every screenshot precedes every ARIA snapshot.
   const files = evidenceFiles(testCase.evidence)
   const attachments = [...files.filter((file) => file.screenshot), ...files.filter((file) => !file.screenshot)].map(
@@ -621,7 +621,7 @@ export function buildJUnitReport(input: ReportInput, evidence?: ReportEvidenceLo
 
 const OUTCOME_LABEL: Record<Outcome, string> = { passed: "Passed", failed: "Failed", skipped: "Skipped" }
 
-/** Links to failed browser steps' files beside the report, and each screenshot shown from its file. */
+/** Links to browser steps' files beside the report, and each screenshot shown from its file. */
 function htmlEvidence(evidence: readonly ReportEvidence[] | undefined): string {
   const steps = evidence ?? []
   if (steps.length === 0) return ""
@@ -631,7 +631,7 @@ function htmlEvidence(evidence: readonly ReportEvidence[] | undefined): string {
   const images = steps.flatMap((one) =>
     one.screenshot === undefined
       ? []
-      : [`<a href="${htmlHref(one.screenshot)}"><img class="shot" src="${htmlHref(one.screenshot)}" alt="The page when the step failed" loading="lazy"></a>`],
+      : [`<a href="${htmlHref(one.screenshot)}"><img class="shot" src="${htmlHref(one.screenshot)}" alt="The page after the step ran" loading="lazy"></a>`],
   )
   return `<div class="evidence">${links}</div>${images.join("")}`
 }
@@ -749,12 +749,17 @@ function notRun(suite: ReportSuite): boolean {
   return suite.runId === null && !suite.cases.some((testCase) => testCase.outcome === "failed")
 }
 
-/** One step's line, then under a step that did not pass why, and under a failed one its details, logs and evidence files. */
+/** One step's line, then under a step that did not pass why, under a failed one its details and logs, and under any step with files its evidence. */
 function consoleCase(testCase: ReportCase, width: number, paint: (style: string, text: string) => string): string[] {
   const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
   const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
   const lines = [`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`]
-  if (testCase.outcome === "passed") return [...lines, ...testCase.warnings.map((line) => `      ${paint(ANSI.yellow, line)}`)]
+  if (testCase.outcome === "passed")
+    return [
+      ...lines,
+      ...testCase.warnings.map((line) => `      ${paint(ANSI.yellow, line)}`),
+      ...evidenceFiles(testCase.evidence).map((file) => `      ${paint(ANSI.dim, `${file.label}: ${file.path}`)}`),
+    ]
   if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
   if (testCase.outcome === "skipped") return lines
   return [

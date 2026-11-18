@@ -23,7 +23,7 @@ import { MCP_GUIDES } from "./guide"
  *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
  *    history; the user's call from the History panel, never an agent's.
  *  - `runs.getArtifact` — a screenshot as a base64 string in JSON text. An
- *    agent gets a failed step's screenshot from `runs_getNodeResult`
+ *    agent gets a browser step's screenshot from `runs_getNodeResult`
  *    (`screenshot: true`) as MCP image content, and `browser_inspect` the
  *    same way; both images are capped and painted over where they are taken.
  *  - `runs.listByWorkflow`, `runs.listByWorkspace`, `runs.getLatest`,

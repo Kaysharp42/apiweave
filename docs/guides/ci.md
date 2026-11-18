@@ -84,7 +84,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `-r, --reporter <list>` | `cli`, `junit`, `html`, comma separated. Default `cli`. |
 | `--reporter-junit-export <path>` | Where to write JUnit XML (default `apiweave-report.xml`). Naming a path turns the JUnit report on. |
 | `--reporter-html-export <path>` | Where to write the HTML report (default `apiweave-report.html`). Naming a path turns the HTML report on. |
-| `--evidence-dir <dir>` | Write each failed browser step's screenshot and ARIA snapshot to this folder; the reports link them. See [Browser steps](#browser-steps). |
+| `--evidence-dir <dir>` | Write each browser step's screenshot and ARIA snapshot to this folder; the reports link them. See [Browser steps](#browser-steps). |
 | `-d, --iteration-data <file>` | Run once per row of a CSV or JSON array file; each row's values are `{{data.<column>}}`. See [Data-driven runs](#data-driven-runs). |
 | `-n, --iteration-count <n>` | Run `n` times; with `--iteration-data`, its first `n` rows. |
 | `-c, --concurrency <n>` | Load mode: run `n` iterations at once and report latency percentiles. Needs one workflow (`--workflow`). See [Load runs](#load-runs). |
@@ -245,7 +245,7 @@ The workflow reads the password as `{{secrets.TEST_PASSWORD}}`. A missing secret
 
 ### Evidence
 
-`--evidence-dir <dir>` writes what each failed browser step left behind, so the files outlive the run and a pipeline can publish them:
+`--evidence-dir <dir>` writes what each browser step left behind, so the files outlive the run and a pipeline can publish them:
 
 ```bash
 apiweave run api.aweproject --env Dev \
@@ -255,7 +255,7 @@ apiweave run api.aweproject --env Dev \
   --evidence-dir reports/evidence
 ```
 
-For a failed browser step the CLI writes `<dir>/<runId>/<nodeId>.jpg`, the screenshot, and `<dir>/<runId>/<nodeId>.aria.yml`, the page's ARIA (accessibility) snapshot. A character in an id that is not a letter, a digit, `.`, `_` or `-` becomes `_`. Every run has a new id and nothing in the folder is deleted. Without the flag nothing is written.
+For each browser step, passed or failed, the CLI writes `<dir>/<runId>/<nodeId>.jpg`, the screenshot, and `<dir>/<runId>/<nodeId>.aria.yml`, the page's ARIA (accessibility) snapshot. A character in an id that is not a letter, a digit, `.`, `_` or `-` becomes `_`. Every run has a new id and nothing in the folder is deleted. Without the flag nothing is written.
 
 A step that fails inside a workflow reached through Call Workflow is written under that call's own run id — one per iteration of a `forEach` call — and linked from the Call Workflow node's test case instead, labelled with the called workflow and step: `Screenshot (Login › Check heading)`.
 

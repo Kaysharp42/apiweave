@@ -261,9 +261,14 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       actual: "Welcome ada@example.com",
       url: `${base}/dashboard?<REDACTED>`,
       title: "Dashboard",
+      // A passed step keeps its evidence too: the fifth browser step's screenshot.
+      screenshotArtifactId: "artifact-5",
     })
+    expect(result(stored, "greets")?.browser?.ariaSnapshot).toContain('heading "Welcome')
     expect(JSON.stringify(stored)).not.toContain(SECRET_PASSWORD)
-    expect(artifacts).toHaveLength(0)
+    expect(artifacts).toHaveLength(9)
+    expect(artifacts[4]).toMatchObject({ runId: stored.runId, nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
+    expect([...artifacts[4]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
   })
 
   it.each([
@@ -280,13 +285,14 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(stored.status).toBe("failed")
     const failed = result(stored, "greets")!
     expect(failed.error).toBe("Browser step: the text of getByRole('heading') did not equal the expected text within 0.6s")
-    expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-1" })
+    expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-4" })
     expect(failed.browser?.ariaSnapshot).toContain('textbox "Password": <SECRET>')
     expect(failed.browser?.ariaSnapshot).toContain("ada@example.com")
     expect(JSON.stringify(stored)).not.toContain(typed)
-    expect(artifacts).toHaveLength(1)
-    expect(artifacts[0]).toMatchObject({ runId: stored.runId, nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
-    expect([...artifacts[0]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
+    // Every browser step kept its evidence; the failed check is the fourth.
+    expect(artifacts).toHaveLength(4)
+    expect(artifacts[3]).toMatchObject({ runId: stored.runId, nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
+    expect([...artifacts[3]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
   })
 
   it("keeps the screenshot when a secret was typed into an ordinary text field", async () => {
@@ -300,12 +306,13 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
 
     expect(stored.status).toBe("failed")
     const failed = result(stored, "greets")!
-    expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-1" })
+    expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-3" })
     expect(failed.browser?.evidenceNote).toBeUndefined()
     expect(failed.browser?.ariaSnapshot).toContain('textbox "Email": <SECRET>')
     expect(JSON.stringify(stored)).not.toContain(SECRET_PASSWORD)
-    expect(artifacts).toHaveLength(1)
-    expect([...artifacts[0]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
+    expect(artifacts).toHaveLength(3)
+    expect(artifacts[2]).toMatchObject({ nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
+    expect([...artifacts[2]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
   })
 
   it("answers a confirm() only when the step says so", async () => {

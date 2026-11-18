@@ -172,10 +172,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   GitLab** in **Create workspace** is on by default once one of your git
   accounts is signed in. See [Git workflows](docs/guides/git-workflows.md).
 - **Browser workflows in CI.** `apiweave run --evidence-dir <dir>` writes each
-  failed browser step's screenshot to `<dir>/<runId>/<nodeId>.jpg` and its
+  browser step's screenshot to `<dir>/<runId>/<nodeId>.jpg` and its
   ARIA snapshot to `<dir>/<runId>/<nodeId>.aria.yml`, and every report links the
   files instead of carrying the page's content: the console report lists the two
-  paths under the failed step, JUnit adds `[[ATTACHMENT|…]]` lines GitLab and
+  paths under the step, JUnit adds `[[ATTACHMENT|…]]` lines GitLab and
   Jenkins show beside the test, and the HTML report shows the screenshot. A
   step that fails inside a workflow reached through Call Workflow is written
   under that call's own run id and linked from the Call Workflow node's case,
@@ -187,6 +187,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Browser step evidence is kept for every step, pass or fail.** A browser
+  step's screenshot and ARIA snapshot used to be captured only when the step
+  failed; the runner now takes them after every step that runs to completion,
+  so the result pane shows what the page looked like at each step of a passing
+  run too. Agents read a passed step's evidence the same way
+  (`runs_getNodeResult` with `sections: ["browser"]`, the screenshot with
+  `screenshot: true`), and `apiweave run --evidence-dir` writes every step's
+  files, which the console, JUnit and HTML reports link. A cancelled run
+  still captures nothing: its browser is already closed.
 - **The proxy and `--insecure` reach browser steps.** The proxy configured in
   **Settings → Network**, or `--proxy` / `HTTPS_PROXY` with `NO_PROXY` on the
   CLI, is now the browser's proxy too, for runs, recording, re-pick and
@@ -242,7 +251,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   time: the declared id when no workflow holds it, otherwise an id derived from
   the workflow's name. A project bundle's workflows keep their declared ids the
   same way, and an id already held (in any workspace) still gets a fresh one.
-
+- **Switching workspace no longer shows the previous one's projects.** The
+  sidebar clears its project and workflow lists one commit after the route
+  changes, so for that commit it held the old workspace's rows while the
+  selected workspace was already the new one. The sidebar and **Projects**
+  manager now drop a row that names another workspace during render, which
+  stops the row from resolving a local folder with the new workspace and the
+  old workspace's project.
 - **Recorded locators no longer keep the start of a secret.** Playwright
   shortens an element's name to a unique prefix when it builds a locator, so a
   locator could hold the first characters of a secret. A step whose locator

@@ -17,7 +17,7 @@ export const NodeEvidencePageSchema = z
     omittedBodyCount: z.number().int().nonnegative(),
     budgetBytes: z.number().int().nonnegative(),
     budgetLimitBytes: z.number().int().positive(),
-    /** A failed browser step's screenshot, when asked for. Agents receive it as image content, outside the text budget. */
+    /** A browser step's screenshot, when asked for. Agents receive it as image content, outside the text budget. */
     screenshot: RunArtifactSchema.optional(),
   })
   .strict()

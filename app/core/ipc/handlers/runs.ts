@@ -97,7 +97,7 @@ const nodeResultInput = z.object({
   maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per text payload in bytes (default 2048): request/response bodies, a browser step's ARIA snapshot, and its expected/actual text."),
   start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
   end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
-  screenshot: z.boolean().optional().describe("Also return a failed browser step's screenshot as image content (JPEG, at most 1 MB, password fields and secret values painted over), when its browser section says hasScreenshot. One node only: pass nodeId alone."),
+  screenshot: z.boolean().optional().describe("Also return a browser step's screenshot as image content (JPEG, at most 1 MB, password fields and secret values painted over), when its browser section says hasScreenshot. One node only: pass nodeId alone."),
 }).strict().superRefine((value, context) => {
   if (value.nodeId === undefined && value.nodeIds === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "Name a node: nodeId for one, nodeIds for several." })
@@ -237,7 +237,7 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
         ...(start !== undefined ? { start } : {}),
         ...(end !== undefined ? { end } : {}),
       })
-      const image = screenshot === true && nodeId !== undefined ? await failureScreenshot(deps, workspaceId, runId, nodeId) : undefined
+      const image = screenshot === true && nodeId !== undefined ? await stepScreenshot(deps, workspaceId, runId, nodeId) : undefined
       return image !== undefined ? { ...page, screenshot: image } : page
     },
   })
@@ -333,11 +333,11 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
 }
 
 /**
- * The screenshot a failed browser step stored, or undefined when it has none.
+ * The screenshot a browser step stored, or undefined when it has none.
  * Its size is capped where it is taken (`SCREENSHOT_MAX_BYTES`), and it was
  * painted over there: an image cannot be masked afterwards.
  */
-async function failureScreenshot(deps: HandlerDeps, workspaceId: string, runId: string, nodeId: string): Promise<RunArtifact | undefined> {
+async function stepScreenshot(deps: HandlerDeps, workspaceId: string, runId: string, nodeId: string): Promise<RunArtifact | undefined> {
   const run = await deps.runs.get(workspaceId, runId)
   const artifactId = run.results.find((result) => result.nodeId === nodeId)?.browser?.screenshotArtifactId
   // By the artifact's own id: a rerun's copied result points at the source run's screenshot.
