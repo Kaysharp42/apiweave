@@ -53,6 +53,17 @@ sequenceDiagram
     Agent-->>You: Report: workflows, results, API bugs with evidence
 ```
 
+## API and UI Tests in One Run
+
+A workflow can also drive a web page. A **browser step** is one action in a real Chrome, Edge or Playwright Chromium: open a page, click, type, choose an option, check that text, a value or the address matches, or save a value into a variable. Browser steps sit on the same canvas as your requests, so one run can create an order through the API, sign in to the dev site and check that the order shows up.
+
+- **Recorded, not hand-written.** Click **Record** in the canvas toolbar and use the page. Each action arrives on the canvas as a step while you work, and the recorder toolbar's checks become expect steps.
+- **No credential in the workflow.** A typed value that matches an environment variable or a secret is saved as `{{env.NAME}}` or `{{secrets.NAME}}`. A password that matches no secret gets a **needs secret** badge and a **Save as secret** button, and the typed value is discarded.
+- **Fix one step, not the whole recording.** Right-click a step to **Re-pick element**, **Re-record from here** or **Turn into extract**.
+- **Evidence for every step.** Each step keeps the page address, its accessibility tree and a screenshot with password fields painted over. `apiweave run --evidence-dir` writes them to disk for CI, and agents read them over MCP. `browser_inspect` shows an agent the real page, so it picks locators instead of guessing them.
+
+See [Browser Steps](docs/features/browser-steps.md).
+
 ## Install
 
 Download the installer for your OS from the **[latest release](https://github.com/Kaysharp42/apiweave/releases/latest)**. No Python, Node.js, database or Docker is needed to run the app.
@@ -170,6 +181,7 @@ Beyond the slash commands, a connected agent has the whole workspace at its disp
 - Rerun only the failed branch, or start again from one node, reusing the upstream results.
 - Read one node's stored request and response, with secrets redacted, to explain a failure.
 - Suggest assertions verified against a real response, and run whole projects in order.
+- Look at the page a browser step left open (`browser_inspect`), or list a gRPC server's services (`grpc_discover`), before writing the next step.
 
 The full tool inventory, the guides served to agents and the security model are in [MCP Integration](docs/features/mcp-integration.md).
 
@@ -185,14 +197,17 @@ The full tool inventory, the guides served to agents and the security model are 
 
 ## Everything Else in the Box
 
-- **[Workflows and Nodes](docs/features/workflows-and-nodes.md)**: HTTP, SSE, assertion, delay, merge, call-workflow, start and end nodes, with notes and groups on a React Flow canvas.
-- **[Variables and Extractors](docs/features/variables-and-extractors.md)**: chain requests with `{{variables.x}}`, `{{env.x}}`, `{{prev.x}}`, `{{secrets.x}}` and [dynamic functions](docs/reference/dynamic-functions.md).
+- **[Workflows and Nodes](docs/features/workflows-and-nodes.md)**: HTTP, SSE, WebSocket, gRPC, browser, assertion, delay, merge, call-workflow, start and end nodes, with notes and groups on a React Flow canvas.
+- **Protocols beyond REST**: GraphQL, JSON-RPC 2.0 and SOAP bodies with [WSDL import](docs/features/workflows-and-nodes.md#http-request); [WebSocket](docs/features/workflows-and-nodes.md#websocket) and [gRPC](docs/features/workflows-and-nodes.md#grpc-call) nodes, unary or server streaming, with **Discover** from server reflection or `.proto` files.
+- **[Variables and Extractors](docs/features/variables-and-extractors.md)**: chain requests with `{{variables.x}}`, `{{env.x}}`, `{{prev.x}}`, `{{secrets.x}}` and [dynamic functions](docs/reference/dynamic-functions.md). Paths take dot notation, RFC 9535 JSONPath (`$..id`) or XPath (`xpath:`).
+- **Snapshot and contract checks**: a [`matchesSnapshot`](docs/features/workflows-and-nodes.md#snapshots) rule records a baseline and fails when the response changes, with `ignorePaths` for timestamps and ids. OpenAPI-imported requests are [checked against their response schemas](docs/features/workflows-and-nodes.md#response-schemas) (`off`, `warn` or `fail`).
 - **[Scripting](docs/features/scripting.md)**: sandboxed pre-request and post-response JavaScript.
-- **[Data-Driven Runs](docs/features/data-driven-runs.md)**: run a workflow once per row of a CSV or JSON file.
+- **[Data-Driven Runs](docs/features/data-driven-runs.md)**: run a workflow once per row of a CSV or JSON file, or call a workflow once per item of a list with **For each** on a Call Workflow node.
+- **[Load Runs](docs/features/load-runs.md)**: run one workflow many times at once, with per-step latency percentiles, error rate and throughput, and thresholds such as `p95<500` that fail the build.
 - **[Visualization and Debugging](docs/features/visualization-and-debugging.md)**: run timeline, variable provenance and camera-follow during runs, plus rerun from any node.
 - **[Projects](docs/features/projects.md)**: ordered suites of workflows, with `.aweproject` export and import.
 - **[Environments and Secrets](docs/features/environments-and-secrets.md)**: environments that inherit from a base environment, and an encrypted secret store.
-- **[Keep Tests in Git](docs/guides/git-workflows.md)**: sync a workspace with GitHub, GitLab or any remote, with built-in sign-in and branches.
+- **[Keep Tests in Git](docs/guides/git-workflows.md)**: sync a workspace with GitHub, GitLab or any remote, with built-in sign-in and branches. A new workspace, including one an agent creates, can start out with its own repository.
 - **[Run Tests in CI](docs/guides/ci.md)**: the headless `apiweave run` CLI, with no Electron and no window.
 - **[Swagger / OpenAPI Import](docs/features/swagger-import.md)** and **[Postman Import](docs/guides/migrating-from-postman.md)**.
 - **[Network](docs/features/network.md)**: proxies, private certificate authorities and client certificates.
@@ -207,14 +222,24 @@ npm install -g ./apiweave-cli.tgz            # Node.js 22.12+
 
 export APIWEAVE_SECRET_API_TOKEN="$TOKEN"    # secrets come from CI variables
 apiweave run ./tests --env Staging --reporter cli,junit
+
+# browser steps: pick the browser and keep each step's screenshot and ARIA snapshot
+apiweave run ./tests --env Dev --browser chrome --evidence-dir reports/evidence
+
+# fail on contract violations, and compare snapshots against the committed baselines
+apiweave run ./tests --env Staging --contract fail --snapshots .apiweave-snapshots.json
+
+# load run: 20 at a time for 60 seconds, failing the build if p95 goes over 500 ms
+apiweave run ./tests --workflow "Search" --concurrency 20 --duration 60s --threshold "p95<500"
 ```
 
-Exit code `0` means every test passed, `1` means a test failed and `2` means a usage or configuration error. See [Run Tests in CI](docs/guides/ci.md).
+Exit code `0` means every test passed, `1` means a test failed or a load threshold was breached, and `2` means a usage or configuration error. `--update-snapshots` records new baselines when a response change is intended. See [Run Tests in CI](docs/guides/ci.md).
 
 ## Documentation
 
 - **[Documentation Hub](docs/README.md)**: start here.
 - **[Your First Workflow](docs/getting-started/first-workflow.md)**: a five-minute tour of the canvas.
+- **[Browser Steps](docs/features/browser-steps.md)** and **[Load Runs](docs/features/load-runs.md)**: UI checks in the same run as your API tests, and the same workflow under load.
 - **[MCP Integration](docs/features/mcp-integration.md)** and **[Coding Agents](docs/features/coding-agents.md)**: everything about agents.
 - **[Compatibility policy](docs/reference/compatibility.md)**: what 1.x keeps stable for MCP tools, workspace repositories, `.aweproject` bundles and the CLI.
 - **[Known limitations](docs/reference/known-limitations.md)** and **[Releases and updates](docs/reference/release-and-updates.md)**.
