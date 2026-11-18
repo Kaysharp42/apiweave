@@ -1351,6 +1351,36 @@ describe("WorkflowExecutor", () => {
       expect(message).toMatch(/^Sub-workflow Login failed at "Fill password": .+ \(\+1 more\)$/)
       expect(message).not.toContain('at "submit"')
     })
+
+    it("reports the HTTP status a child step failed on instead of 'no error reported'", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.statusCode = 404
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const message = await callFailure({
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "login", type: "http-request", label: "POST /auth/login", config: { method: "POST", url: `http://127.0.0.1:${port}/auth/login` } },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "login" },
+            { edgeId: "e2", source: "login", target: "end" },
+          ],
+        })
+        // A status-only failure has no `error` text on the child result, so it
+        // read "no error reported" while the same step run directly said
+        // `Status 404`.
+        expect(message).toContain('failed at "POST /auth/login": Status 404')
+        expect(message).not.toContain("no error reported")
+      } finally {
+        server.close()
+      }
+    })
   })
 
   describe("http-request response bodies", () => {

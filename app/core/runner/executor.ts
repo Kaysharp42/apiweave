@@ -2809,9 +2809,9 @@ export class WorkflowExecutor {
 
   /**
    * The Call Workflow node's failure text: the first node that failed inside
-   * the callee, named by its label (or id) with that node's own error, plus a
-   * count of any others. "Failed in 2 node(s)" left the caller unable to tell
-   * which step broke or why.
+   * the callee, named by its label (or id) with that node's own error or the
+   * status it failed on, plus a count of any others. "Failed in 2 node(s)" left
+   * the caller unable to tell which step broke or why.
    */
   private subWorkflowFailureMessage(targetLabel: string, target: ResolvedSubWorkflow, childOutput: ExecutorOutput): string {
     const failedNodeId = childOutput.failedNodes[0]
@@ -2820,11 +2820,32 @@ export class WorkflowExecutor {
     }
     const stepName = target.nodes.find((node) => node.nodeId === failedNodeId)?.label || failedNodeId
     const result = childOutput.results.find((entry) => entry.nodeId === failedNodeId)
-    // A failed assertion node reports no `error`; its rules say how many failed.
-    const failedRules = result?.assertions?.filter((assertion) => assertion.outcome === "fail").length ?? 0
-    const cause = (result?.error ?? (failedRules > 0 ? `${failedRules} assertion${failedRules === 1 ? "" : "s"} failed` : "no error reported")).slice(0, 300)
+    const cause = this.failedNodeCause(result).slice(0, 300)
     const others = childOutput.failedNodes.length - 1
     return `Sub-workflow ${targetLabel} failed at "${stepName}": ${cause}${others > 0 ? ` (+${others} more)` : ""}`
+  }
+
+  /**
+   * Why a child node failed, read from its recorded result: its own `error`,
+   * else its failed assertion count, else the status it failed on — an
+   * http-request node that failed on 401 records no `error`, only the code, and
+   * "no error reported" told the caller nothing. `Status 401` is the CLI
+   * reporter's wording for the same node, so the two reports agree.
+   */
+  private failedNodeCause(result: RunResult | undefined): string {
+    if (result?.error) return result.error
+    const failedRules = result?.assertions?.filter((assertion) => assertion.outcome === "fail").length ?? 0
+    if (failedRules > 0) return `${failedRules} assertion${failedRules === 1 ? "" : "s"} failed`
+    const response = isJsonRecord(result?.response) ? result.response : undefined
+    // gRPC answers with a status *name* (`UNAVAILABLE`) and its message;
+    // `statusCode` beside it is the numeric code, which reads worse.
+    const status = response?.["status"]
+    if (typeof status === "string" && status !== "") {
+      const message = response?.["statusMessage"]
+      return typeof message === "string" && message !== "" ? `${status}: ${message}` : status
+    }
+    const statusCode = response?.["statusCode"]
+    return typeof statusCode === "number" ? `Status ${statusCode}` : "no error reported"
   }
 
   /**
