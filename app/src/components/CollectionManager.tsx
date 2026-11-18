@@ -2,6 +2,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ChangeEvent,
   type DragEvent,
 } from "react";
@@ -32,6 +33,7 @@ import {
   PresetCollectionColors,
 } from "../constants/CollectionColors";
 import { useScopeContext } from "../hooks/useScopeContext";
+import { projectInWorkspace } from "../utils/projectInWorkspace";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
 import { apiweave } from "../utils/apiweaveClient";
@@ -104,7 +106,6 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
   const { workspaceId, isReady } = useScopeContext();
 
   const {
-    projects,
     workflows,
     selectedProject,
     isEditing,
@@ -120,6 +121,19 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
     (project: ExtendedProject): string =>
       project.projectId ?? project.collectionId,
     [],
+  );
+
+  /**
+   * The rows rendered are filtered to the current workspace during render:
+   * `state.projects` is refetched in an effect after the workspace changes, so
+   * until that lands the state still holds the previous workspace's rows —
+   * and a row from it is what fires `agents:resolveLocalPath` with the new
+   * workspace and the old workspace's project ("project not found" on every
+   * switch). Same fix as `useWorkspaceTabs` applies to the open tabs.
+   */
+  const visibleProjects = useMemo(
+    () => state.projects.filter((p) => projectInWorkspace(p, workspaceId)),
+    [state.projects, workspaceId],
   );
 
   const fetchWorkflows = useCallback(async (): Promise<Workflow[]> => {
@@ -702,7 +716,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
             </div>
           ) : (
             <div className="space-y-2">
-              {projects.length === 0 ? (
+              {visibleProjects.length === 0 ? (
                 <div className="text-center py-8 text-text-secondary dark:text-text-secondary-dark">
                   <p>No projects yet</p>
                   <p className="text-sm mt-2">
@@ -710,7 +724,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   </p>
                 </div>
               ) : (
-                projects.map((project) => (
+                visibleProjects.map((project) => (
                   <div
                     key={getProjectId(project)}
                     className="p-3 border border-border dark:border-border-dark rounded-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
