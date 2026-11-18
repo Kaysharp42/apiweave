@@ -601,6 +601,15 @@ describe("a failed browser step", () => {
     expect(buildHtmlReport(input)).not.toContain("<img")
   })
 
+  it("links a passed step's evidence too: the console names it, JUnit attaches it, HTML shows it", () => {
+    const passed = (runId: string, nodeId: string) =>
+      runId === "run_1" && nodeId === "b1" ? [{ screenshot: "evidence/run 1/b1.jpg" }] : undefined
+    expect(buildConsoleReport(input, false, passed)).toContain("      Screenshot: evidence/run 1/b1.jpg\n")
+    const first = all(all(parseXml(buildJUnitReport(input, passed)), "testsuite")[0]!, "testcase")[0]!
+    expect(all(first, "system-out")[0]!.text).toBe("[[ATTACHMENT|evidence/run 1/b1.jpg]]")
+    expect(buildHtmlReport(input, passed)).toContain('<img class="shot" src="evidence/run%201/b1.jpg"')
+  })
+
   it("makes an absolute evidence path a file:// URL, so a report on another drive can still link it", () => {
     const drive = (runId: string, nodeId: string) =>
       runId === "run_1" && nodeId === "b2" ? [{ screenshot: "D:/ev/run 1/b2.jpg", ariaSnapshot: "D:/ev/run 1/b2.aria.yml" }] : undefined

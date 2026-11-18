@@ -29,7 +29,7 @@ export interface WrittenEvidence {
 const EXTENSIONS: Readonly<Record<string, string>> = { "image/jpeg": ".jpg", "image/png": ".png" }
 
 /**
- * `--evidence-dir`: each failed browser step's screenshot and ARIA snapshot as
+ * `--evidence-dir`: each browser step's screenshot and ARIA snapshot as
  * files, `<dir>/<runId>/<nodeId>.jpg` and `<nodeId>.aria.yml`, so a pipeline
  * can keep them with the reports, which link them. `input` is the masked
  * report input, so the snapshot is the masked one; the screenshot was painted
@@ -49,19 +49,19 @@ export function writeEvidence(dir: string, input: ReportInput, source: EvidenceS
     else steps.push(step)
   }
 
-  /** Every failed browser step of `run`, filed under its own run id, under the case key of each result. */
+  /** Every browser step of `run`, filed under its own run id, under the case key of each result. */
   const writeRun = (run: Run, caseKeyOf: (nodeId: string) => string, name: ((nodeId: string) => string) | undefined): void => {
     const names = new Set<string>()
     const runName = fileName(run.runId, new Set())
     for (const result of run.results) {
-      const browser = result.status === "failed" ? result.browser : undefined
+      const browser = result.browser
       const shot = browser?.screenshotArtifactId === undefined ? undefined : source.artifact(browser.screenshotArtifactId)
       const files = writeStep(() => path.join(dir, runName, fileName(result.nodeId, names)), shot, browser?.ariaSnapshot)
       if (files !== undefined) add(caseKeyOf(result.nodeId), { files, ...(name === undefined ? {} : { step: name(result.nodeId) }) })
     }
   }
 
-  /** The failed steps of every run `run` calls, at the top-level case that is the calling node, however deep. */
+  /** The steps of every run `run` calls, at the top-level case that is the calling node, however deep. */
   const followCalls = (run: Run, topCaseKeyOf: (nodeId: string) => string): void => {
     for (const result of run.results) {
       const called = childRunIds(result)

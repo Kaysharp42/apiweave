@@ -83,30 +83,32 @@ const callSummary = (workflowId: string, runId: string): NonNullable<RunResult["
 })
 
 describe("writeEvidence", () => {
-  it("writes each failed browser step's screenshot and snapshot, and names them from where a report is", () => {
+  it("writes each browser step's screenshot and snapshot, passed or failed, and names them from where a report is", () => {
     const one = run("run_1", [
       failed("b/1", { action: "click", screenshotArtifactId: "art", ariaSnapshot: "- button \"Save\"" }),
       failed("b:1", { action: "click", ariaSnapshot: "- heading" }),
       failed("http", undefined),
-      { ...failed("b2", { action: "click", ariaSnapshot: "passed" }), status: "passed" },
+      { ...failed("b2", { action: "click", ariaSnapshot: "kept" }), status: "passed" },
       failed("gone", { action: "click", screenshotArtifactId: "missing" }),
     ])
     const written = writeEvidence(dir, { kind: "iterations", title: "t", iterations: [{ kind: "run", run: one, workflow: null }] }, source())
 
-    expect(written.fileCount).toBe(3)
+    expect(written.fileCount).toBe(4)
     expect(fs.readFileSync(path.join(dir, "run_1", "b_1.jpg"))).toEqual(JPEG)
     expect(fs.readFileSync(path.join(dir, "run_1", "b_1.aria.yml"), "utf8")).toBe("- button \"Save\"")
     // Two ids that clean up to the same name each keep their own file.
     expect(fs.readFileSync(path.join(dir, "run_1", "b_1-2.aria.yml"), "utf8")).toBe("- heading")
-    expect(fs.readdirSync(path.join(dir, "run_1")).sort()).toEqual(["b_1-2.aria.yml", "b_1.aria.yml", "b_1.jpg"])
+    // A passed step's evidence is written too.
+    expect(fs.readFileSync(path.join(dir, "run_1", "b2.aria.yml"), "utf8")).toBe("kept")
+    expect(fs.readdirSync(path.join(dir, "run_1")).sort()).toEqual(["b2.aria.yml", "b_1-2.aria.yml", "b_1.aria.yml", "b_1.jpg"])
 
     expect(written.relativeTo(dir)("run_1", "b/1")).toEqual([{ screenshot: "run_1/b_1.jpg", ariaSnapshot: "run_1/b_1.aria.yml" }])
     expect(written.relativeTo(path.join(dir, "reports"))("run_1", "b:1")).toEqual([{ ariaSnapshot: "../run_1/b_1-2.aria.yml" }])
     expect(written.relativeTo(dir)("run_1", "http")).toBeUndefined()
-    expect(written.relativeTo(dir)("run_1", "b2")).toBeUndefined()
+    expect(written.relativeTo(dir)("run_1", "b2")).toEqual([{ ariaSnapshot: "run_1/b2.aria.yml" }])
   })
 
-  it("writes nothing for a run without a failed browser step", () => {
+  it("writes nothing for a run without a browser step", () => {
     const written = writeEvidence(dir, { kind: "run", run: run("run_2", [failed("http", undefined)]), workflow: null }, source())
     expect(written.fileCount).toBe(0)
     expect(fs.readdirSync(dir)).toEqual([])

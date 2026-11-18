@@ -193,7 +193,7 @@ which use the browser's own trust store.
   shadow roots; text inside a closed shadow root cannot be read from script, so
   it is not painted over, and a frame that cannot be read at all means no
   screenshot is taken. Other sensitive text the page renders is still visible. A
-  failed step's screenshot is stored with the run and never travels in an
+  step's screenshot is stored with the run and never travels in an
   export; `apiweave run --evidence-dir` writes it and the ARIA snapshot to disk
   for the reports to link, `browser_inspect` takes one only when asked, and hands
   it to the agent without storing it.

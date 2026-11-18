@@ -127,7 +127,7 @@ export interface SchedulerDeps {
    * Absent: headless, the first installed of Chrome, Edge and Chromium.
    */
   readonly browser?: () => BrowserLaunchSettings
-  /** Stores a failed browser step's screenshot (the run_artifacts table). Absent: screenshots are not kept. */
+  /** Stores each browser step's screenshot (the run_artifacts table). Absent: screenshots are not kept. */
   readonly saveArtifact?: ExecutorDeps["saveArtifact"]
   /**
    * Writes a secret back into the scope it resolved from — a refreshed OAuth

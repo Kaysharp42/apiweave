@@ -64,7 +64,7 @@ export const DEBUG_CONTEXT_DEFAULT_ERROR_BYTES = 2048
 export const DEBUG_CONTEXT_MAX_ERROR_BYTES = 8192
 
 /**
- * Bytes of a failed browser step's ARIA snapshot carried inline per evidence
+ * Bytes of a browser step's ARIA snapshot carried inline per evidence
  * entry. A snapshot runs to 64 KiB, so the debug read carries its opening only —
  * enough to see the page's structure near the top — and states the full size;
  * the whole window is a `runs_getNodeResult` call away. The same cap applies to

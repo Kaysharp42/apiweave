@@ -19,11 +19,11 @@ export const BrowserStepResultSchema = z
     actual: z.string().optional(),
     /** On failure: Playwright's own account of the failure, capped. */
     detail: z.string().optional(),
-    /** On failure: the page's ARIA (accessibility) snapshot, capped. */
+    /** The page's ARIA (accessibility) snapshot after the step, capped. */
     ariaSnapshot: z.string().optional(),
-    /** On failure: the screenshot's id in run artifacts, read with `runs.getArtifact`. */
+    /** The screenshot's id in run artifacts, read with `runs.getArtifact`. */
     screenshotArtifactId: z.string().min(1).optional(),
-    /** On failure: why evidence is missing or incomplete. */
+    /** Why evidence is missing or incomplete. */
     evidenceNote: z.string().optional(),
   })
   .strict()

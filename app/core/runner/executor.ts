@@ -209,7 +209,7 @@ export interface ExecutorDeps {
    * closes it itself (and can read the page after the run, see `stopBeforeNodeId`).
    */
   readonly browserSession?: BrowserSession
-  /** Stores a failed browser step's screenshot and returns its artifact id. Absent: screenshots are not kept. */
+  /** Stores each browser step's screenshot and returns its artifact id. Absent: screenshots are not kept. */
   readonly saveArtifact?: (artifact: RunArtifactInput) => string | undefined
   /** OAuth 2.0 tokens fetched so far — shared across runs when the caller keeps one. Absent: per executor. */
   readonly oauthTokens?: OAuthTokenCache
@@ -239,7 +239,7 @@ export interface ExecutorDeps {
   }
 }
 
-/** A file a run produced as evidence, such as a failed browser step's screenshot. */
+/** A file a run produced as evidence, such as a browser step's screenshot. */
 export interface RunArtifactInput {
   readonly runId: string
   readonly nodeId: string
@@ -1219,7 +1219,9 @@ export class WorkflowExecutor {
     try {
       return await this.browserSession.run(async (page): Promise<NodeResult> => {
         const outcome = await runBrowserStep(page, config, context)
-        const evidence = outcome.passed || cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId)
+        // Evidence is kept for every step that ran, pass or fail; a cancelled
+        // run's browser is already closed, so there is no page to capture.
+        const evidence = cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId)
         return {
           status: outcome.passed ? "success" : "error",
           duration: Date.now() - startTime,
@@ -1239,7 +1241,7 @@ export class WorkflowExecutor {
     }
   }
 
-  /** A failed step's ARIA snapshot and stored screenshot, or a note saying what is missing. */
+  /** A step's ARIA snapshot and stored screenshot, pass or fail, or a note saying what is missing. */
   private async browserEvidence(page: Page, nodeId: string): Promise<Pick<BrowserStepResult, "ariaSnapshot" | "screenshotArtifactId" | "evidenceNote">> {
     const evidence = await capturePage(page, this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}))
     const notes = evidence.note !== undefined ? [evidence.note] : []

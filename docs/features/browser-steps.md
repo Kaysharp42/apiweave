@@ -284,7 +284,7 @@ The `diagnosis` member of every graph write can see the called workflows, so it 
 
 ## When a Step Fails
 
-A failed step's error is one value-free sentence starting with `Browser step:` that names the action and the locator as Playwright code, for example `Browser step: the text of getByRole('heading', { name: 'Dashboard' }) did not contain the expected text within 10s`. Page content and resolved values are not in it. The step's result pane carries the evidence:
+A failed step's error is one value-free sentence starting with `Browser step:` that names the action and the locator as Playwright code, for example `Browser step: the text of getByRole('heading', { name: 'Dashboard' }) did not contain the expected text within 10s`. Page content and resolved values are not in it. The step's result pane carries the evidence, kept for every step, pass or fail, so a passed step's pane shows the same page address, structure and screenshot:
 
 | Item | What it holds |
 | --- | --- |
@@ -297,7 +297,7 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 
 **Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over, every field a fill typed a secret into — an API key box, say — and every element that shows a masked value painted over too, because an image cannot be masked after it is taken.
 
-**The screenshot is stored with the run**, shown in the step's result pane, and deleted when the run is deleted. It is taken only on failure, is at most 1 MB, and is dropped with a note when it is larger. It is not part of an export. On the CLI, `--evidence-dir` writes it and the ARIA snapshot to disk, and the reports link them. The reports show the expected and found values and the page's address, in the app's own export too.
+**The screenshot is stored with the run**, shown in the step's result pane, and deleted when the run is deleted. It is taken after every step, pass or fail, is at most 1 MB, and is dropped with a note when it is larger. It is not part of an export. On the CLI, `--evidence-dir` writes each step's screenshot and ARIA snapshot to disk, and the reports link them. The reports show the expected and found values and the page's address under a failed step, in the app's own export too.
 
 **One limitation worth knowing.** Pixels are covered, not masked. Password fields, and any element showing a value the run masks — a secret, a typed password, an OAuth token — are painted over before the JPEG is taken. Other sensitive text the page displays is not, and the covering reaches the main frame only, so a secret shown inside an iframe stays visible. See [Known Limitations](../reference/known-limitations.md#browser-steps).
 
@@ -306,7 +306,7 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 An agent connected over MCP can build and repair browser steps by looking at the page, instead of guessing locators from the frontend code.
 
 - **`browser_inspect`** runs the workflow headless up to a browser step — or the whole workflow when no step is given — and returns the page it left open: address, title and the page's accessibility tree, with secrets masked. The agent reads role and label locators from that tree, which is the same one Playwright's own recorder picks locators from. It sends real traffic and records a run, like `runs_create`, and asks before sending secrets (`deniedByUser: true` when the user refuses, which the agent must report without retrying). The wait is bounded (`waitMs`, default 10 s, max 30 s): on deadline it returns `terminal: false` with the run id, and another call with `runId` keeps waiting without starting a run or asking again; a timeout or disconnect never cancels the run. There is no way to open an arbitrary address: add an **Open a page** step and inspect after it.
-- **Failure evidence** reaches the agent from `workflows_debugContext` and from `runs_getNodeResult` with `sections: ["browser"]`: the expected and found values, Playwright's message, the page address and title, and the masked accessibility snapshot at the failure. The screenshot is opt-in (`screenshot: true` with one step) and arrives as an image rather than text.
+- **Step evidence** reaches the agent from `runs_getNodeResult` with `sections: ["browser"]`: the expected and found values, the page address and title, and the masked accessibility snapshot after the step, kept for a passed step too. A failed step adds Playwright's message, and `workflows_debugContext` carries a failed step's evidence in one read. The screenshot is opt-in (`screenshot: true` with one step) and arrives as an image rather than text.
 - **The loop.** Write the page address and the login steps, inspect the page, add the next steps from what it shows, and run. On a failure, patch only the failing step and rerun: a rerun that reaches a browser step replays the chain from its first step.
 
 Agent runs are always headless, and a run that sends secrets is confined to the hosts the user approved for it — see [Agent runs](#settings--browser) and [MCP Integration](mcp-integration.md).
@@ -337,9 +337,9 @@ apiweave run api.aweproject --env Staging --headed
 | --- | --- |
 | `--browser <chrome\|msedge\|chromium>` | Which browser to drive. Default: the first of `chrome`, `msedge`, `chromium` that starts |
 | `--headed` | Show the browser window while the steps run |
-| `--evidence-dir <dir>` | Write each failed step's screenshot and ARIA snapshot to this folder, which the reports link |
+| `--evidence-dir <dir>` | Write each step's screenshot and ARIA snapshot to this folder, which the reports link |
 
-The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chromium at the version the CLI uses (`npx playwright@1.64.1 install --with-deps chromium`). A missing browser exits with an error naming it. The console, JUnit and HTML reports carry the step's error like any other node's, and every report shows what a failed step expected, what it found and the page's address. With `--evidence-dir` the CLI also writes the failed step's screenshot and ARIA snapshot to disk, and the reports link them. The proxy reaches the browser too: `--proxy` or `HTTPS_PROXY`, with `NO_PROXY` for the hosts that bypass it, and `--insecure` makes the browser accept an untrusted certificate; in the app, the proxy in **Settings > Network** applies to browser steps, recording, re-pick and re-record. See [Run APIWeave Tests in CI](../guides/ci.md#browser-steps) for the flags, the evidence layout, a GitHub Actions job and a GitLab CI job.
+The machine needs Google Chrome or Microsoft Edge installed, or Playwright's Chromium at the version the CLI uses (`npx playwright@1.64.1 install --with-deps chromium`). A missing browser exits with an error naming it. The console, JUnit and HTML reports carry the step's error like any other node's, and every report shows what a failed step expected, what it found and the page's address. With `--evidence-dir` the CLI also writes each step's screenshot and ARIA snapshot to disk, and the reports link them. The proxy reaches the browser too: `--proxy` or `HTTPS_PROXY`, with `NO_PROXY` for the hosts that bypass it, and `--insecure` makes the browser accept an untrusted certificate; in the app, the proxy in **Settings > Network** applies to browser steps, recording, re-pick and re-record. See [Run APIWeave Tests in CI](../guides/ci.md#browser-steps) for the flags, the evidence layout, a GitHub Actions job and a GitLab CI job.
 
 ## Limitations
 

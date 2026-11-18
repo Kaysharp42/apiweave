@@ -36,7 +36,7 @@ export interface RunArtifactBody {
 }
 
 /**
- * A run's stored evidence files (migration 033): a failed browser step's
+ * A run's stored evidence files (migration 033): each browser step's
  * screenshot. Bodies are only ever read by id, so listing a run never loads an
  * image; rows disappear with their run through the foreign key cascade.
  */
