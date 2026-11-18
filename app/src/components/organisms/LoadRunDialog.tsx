@@ -1,8 +1,10 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { FileSpreadsheet, X } from "lucide-react";
+import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
 import { TextArea } from "../atoms/TextArea";
 import { FormField } from "../molecules/FormField";
-import { ImportFilePicker } from "../molecules/ImportFilePicker";
 import { Modal } from "../molecules/Modal";
 import { ModalFormFooter } from "../molecules/ModalFormFooter";
 import {
@@ -13,6 +15,9 @@ import {
 import type { LoadRunDialogProps, LoadRunRequest } from "../../types";
 
 const MAX_ITERATIONS = 100_000;
+
+const SECTION_HEADING =
+  "mb-2 text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark";
 
 /** Whole seconds typed in a field, as milliseconds; undefined when blank, null when not a positive number. */
 function secondsToMs(text: string): number | undefined | null {
@@ -32,6 +37,7 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
   const [file, setFile] = useState<File | null>(null);
   const [rows, setRows] = useState<IterationRow[] | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const pickFile = async (picked: File) => {
     setError(undefined);
@@ -80,6 +86,12 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
     onClose();
   };
 
+  const clearFile = () => {
+    setFile(null);
+    setRows(undefined);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -96,41 +108,106 @@ export function LoadRunDialog({ isOpen, onClose, onStart }: LoadRunDialogProps) 
         />
       }
     >
-      <form id={formId} noValidate onSubmit={submit} className="flex flex-col gap-3">
+      <form id={formId} noValidate onSubmit={submit} className="flex flex-col gap-6 p-5">
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          Runs the workflow many times at once and reports per-step latency
+          Runs the workflow many times in parallel and reports per-step latency
           percentiles and throughput. Only the first failure of each step is kept.
         </p>
-        <div className="grid grid-cols-2 gap-3">
-          <FormField label="Iterations" hint="Total runs; a data file's rows are reused in order">
-            <Input aria-label="Iterations" type="number" min={1} value={iterations} onChange={(event) => setIterations(event.target.value)} />
-          </FormField>
-          <FormField label="Concurrency" hint="Runs in flight at once">
-            <Input aria-label="Concurrency" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(event.target.value)} />
-          </FormField>
-          <FormField label="Duration (s)" hint="Optional: stop starting runs after this long">
-            <Input aria-label="Duration (s)" type="number" min={0} value={duration} onChange={(event) => setDuration(event.target.value)} />
-          </FormField>
-          <FormField label="Ramp-up (s)" hint="Optional: grow from 1 to the concurrency over this long">
-            <Input aria-label="Ramp-up (s)" type="number" min={0} value={rampUp} onChange={(event) => setRampUp(event.target.value)} />
-          </FormField>
-        </div>
-        <FormField label="Thresholds" hint="One per line, e.g. p95<500 or errors<1%. A breach fails the run.">
-          <TextArea aria-label="Thresholds" rows={3} value={thresholds} onChange={(event) => setThresholds(event.target.value)} />
-        </FormField>
-        <ImportFilePicker
-          title="Data file (optional)"
-          hint="CSV or JSON: each row is {{data.<column>}}"
-          accept=".csv,.json,text/csv,application/json"
-          inputAriaLabel="Data file for the load run"
-          file={file}
-          onFileSelect={(picked) => void pickFile(picked)}
-        />
+
         {error !== undefined && (
-          <p role="alert" className="text-sm text-status-error">
+          <div
+            role="alert"
+            className="rounded-sm border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20"
+          >
             {error}
-          </p>
+          </div>
         )}
+
+        <fieldset>
+          <legend className={SECTION_HEADING}>Load</legend>
+          <div className="grid grid-cols-2 gap-x-4">
+            <FormField
+              label="Iterations"
+              hint={rows === undefined ? "Total runs to make" : `Set from ${rows.length} data rows`}
+            >
+              <Input aria-label="Iterations" size="sm" type="number" min={1} value={iterations} onChange={(event) => setIterations(event.target.value)} />
+            </FormField>
+            <FormField label="Concurrency" hint="Runs in flight at once">
+              <Input aria-label="Concurrency" size="sm" type="number" min={1} value={concurrency} onChange={(event) => setConcurrency(event.target.value)} />
+            </FormField>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend className={SECTION_HEADING}>Pacing · optional</legend>
+          <div className="grid grid-cols-2 gap-x-4">
+            <FormField label="Duration (s)" hint="Stop starting runs after this long">
+              <Input aria-label="Duration (s)" size="sm" type="number" min={0} placeholder="No limit" value={duration} onChange={(event) => setDuration(event.target.value)} />
+            </FormField>
+            <FormField label="Ramp-up (s)" hint="Grow from 1 to full concurrency">
+              <Input aria-label="Ramp-up (s)" size="sm" type="number" min={0} placeholder="Start at full concurrency" value={rampUp} onChange={(event) => setRampUp(event.target.value)} />
+            </FormField>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend className={SECTION_HEADING}>Pass criteria · optional</legend>
+          <FormField label="Thresholds" hint="One per line. A breach fails the run.">
+            <TextArea
+              aria-label="Thresholds"
+              size="sm"
+              rows={3}
+              placeholder={"p95<500\nerrors<1%"}
+              className="font-mono"
+              value={thresholds}
+              onChange={(event) => setThresholds(event.target.value)}
+            />
+          </FormField>
+        </fieldset>
+
+        <fieldset>
+          <legend className={SECTION_HEADING}>Data · optional</legend>
+          <div className="flex items-center gap-3 rounded-sm border border-border px-3 py-2.5 dark:border-border-dark">
+            <FileSpreadsheet className="h-4 w-4 shrink-0 text-text-muted dark:text-text-muted-dark" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              {file === null ? (
+                <>
+                  <p className="text-sm text-text-primary dark:text-text-primary-dark">No data file</p>
+                  <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                    CSV or JSON; each row is available as {"{{data.<column>}}"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="truncate text-sm text-text-primary dark:text-text-primary-dark">{file.name}</p>
+                  <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                    {rows?.length ?? 0} rows, reused in order
+                  </p>
+                </>
+              )}
+            </div>
+            {file !== null && (
+              <IconButton tooltip="Remove data file" size="sm" onClick={clearFile}>
+                <X className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
+            )}
+            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              {file === null ? "Choose file…" : "Replace…"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.json,text/csv,application/json"
+              aria-label="Data file for the load run"
+              tabIndex={-1}
+              className="hidden"
+              onChange={(event) => {
+                const picked = event.target.files?.[0];
+                if (picked) void pickFile(picked);
+              }}
+            />
+          </div>
+        </fieldset>
       </form>
     </Modal>
   );
