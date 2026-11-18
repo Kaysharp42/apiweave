@@ -98,6 +98,12 @@ describe("roleSelectorWithName", () => {
     expect(roleSelectorWithName("internal:role=link", "  Add to bag\n")).toBe('internal:role=link[name="Add to bag"i]')
   })
 
+  it("accepts a name of exactly the length limit", () => {
+    const name = "x".repeat(200)
+    expect(roleSelectorWithName("internal:role=heading", name)).toBe(`internal:role=heading[name="${name}"i]`)
+    expect(parseRecordedSelector(`internal:role=heading[name="${name}"i]`)).toEqual({ kind: "role", role: "heading", name })
+  })
+
   it.each([
     ["a role that already has a name", 'internal:role=button[name="Save"i]', "Save"],
     ["a chain", "internal:role=heading >> nth=0", "Orders"],
