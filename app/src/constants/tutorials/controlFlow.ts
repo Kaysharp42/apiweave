@@ -1,14 +1,15 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 3 — Control flow. Assertions, delay and merge, SSE streams, and
- * calling another workflow as a step.
+ * Chapter 3 — Control flow. Assertions, snapshot and contract checks, delay
+ * and merge, SSE streams, gRPC, WebSocket, SOAP and JSON-RPC, and calling
+ * another workflow as a step.
  */
 export const controlFlowChapter: TutorialChapter = {
   id: "control-flow",
   title: "Control flow",
   summary:
-    "Branch on results, pace and combine parallel work, listen to streams, and reuse a workflow as a step.",
+    "Branch on results, catch changed responses, pace and combine parallel work, listen to streams, call non-REST APIs, and reuse a workflow as a step.",
   lessons: [
     {
       id: "assertions",
@@ -30,6 +31,9 @@ export const controlFlowChapter: TutorialChapter = {
         "fail",
         "negative test",
         "expected status",
+        "regex",
+        "json schema",
+        "jsonpath",
       ],
       durationMinutes: 7,
       prerequisites: ["A workflow with an HTTP Request node and an End node."],
@@ -49,14 +53,14 @@ export const controlFlowChapter: TutorialChapter = {
           instruction:
             "For Previous result use a path such as response.body.id, response.headers.content-type or response.statusCode. For headers, cookies and variables use just the name. For Status code, leave the path empty.",
           detail:
-            "A bare field name is not a path: the top of a JSON body is response.body.id, not id.",
+            "A bare field name is not a path: the top of a JSON body is response.body.id, not id. A path starting with $ is JSONPath, such as $.response.body.items[*].id, and one starting with xpath: reads an XML body.",
         },
         {
           title: "Choose an operator",
           instruction:
-            "Pick from equals, notEquals, contains, notContains, gt, gte, lt, lte, count, exists and notExists.",
+            "Pick from equals, notEquals, contains, notContains, gt, gte, lt, lte, count, exists, notExists, matches, notMatches, type, matchesSchema and matchesSnapshot.",
           detail:
-            "count takes a non-negative integer and compares the length of an array or string. exists and notExists take no expected value. Status accepts only the numeric comparison operators.",
+            "count takes a non-negative integer and compares the length of an array or string. matches and notMatches take a regular expression, type a JSON type name such as string or array, and matchesSchema a JSON Schema. exists, notExists and matchesSnapshot take no expected value. Status accepts only the numeric comparison operators.",
         },
         {
           title: "Add multiple rules and a failure mode",
@@ -88,7 +92,7 @@ export const controlFlowChapter: TutorialChapter = {
       example: {
         caption: "A house rule set on one assertion node",
         language: "json",
-        code: "[\n  { \"source\": \"status\", \"path\": \"\", \"operator\": \"equals\", \"expectedValue\": 200 },\n  { \"source\": \"prev\", \"path\": \"response.body.token\", \"operator\": \"exists\" },\n  { \"source\": \"headers\", \"path\": \"content-type\", \"operator\": \"contains\", \"expectedValue\": \"application/json\" },\n  { \"source\": \"prev\", \"path\": \"response.body.items\", \"operator\": \"count\", \"expectedValue\": 3 }\n]",
+        code: "[\n  { \"source\": \"status\", \"path\": \"\", \"operator\": \"equals\", \"expectedValue\": 200 },\n  { \"source\": \"prev\", \"path\": \"response.body.token\", \"operator\": \"exists\" },\n  { \"source\": \"headers\", \"path\": \"content-type\", \"operator\": \"contains\", \"expectedValue\": \"application/json\" },\n  { \"source\": \"prev\", \"path\": \"response.body.items\", \"operator\": \"count\", \"expectedValue\": 3 },\n  { \"source\": \"prev\", \"path\": \"response.body.id\", \"operator\": \"type\", \"expectedValue\": \"string\" }\n]",
       },
       expectedResult:
         "A passing node fires the pass handle and renders green; a failing node fires the fail handle, renders red, and reports the failed rule and its reason.",
@@ -112,9 +116,113 @@ export const controlFlowChapter: TutorialChapter = {
       relatedLessonIds: [
         "http-requests",
         "variables-extractors",
-        "delay-merge",
+        "snapshots-contracts",
         "runs-history",
       ],
+    },
+    {
+      id: "snapshots-contracts",
+      chapterId: "control-flow",
+      title: "Snapshot and contract checks",
+      summary:
+        "Record a response as a baseline with matchesSnapshot, mask changing fields, accept intended changes, and check responses against their OpenAPI schemas.",
+      outcome:
+        "You can catch any unexpected change in a response without writing a rule per field, and hold imported endpoints to their spec.",
+      keywords: [
+        "snapshot",
+        "matchesSnapshot",
+        "baseline",
+        "ignore paths",
+        "accept snapshot",
+        "update snapshots",
+        "contract",
+        "contract check",
+        "response schema",
+        "openapi",
+        "regression",
+      ],
+      durationMinutes: 7,
+      prerequisites: [
+        "The Assertions lesson, or familiarity with assertion rules.",
+        "For contract checks, a request imported from an OpenAPI spec.",
+      ],
+      steps: [
+        {
+          title: "Add a snapshot rule",
+          instruction:
+            "In an Assertion node's Rules tab, add a rule with source Previous result, a path such as response.body, and the operator matchesSnapshot. It takes no expected value.",
+          detail:
+            "The baseline belongs to the rule, so one node can snapshot several values separately.",
+        },
+        {
+          title: "Mask what changes every run",
+          instruction:
+            "Fill Ignore paths with JSONPath expressions for values that differ on every run, separated by commas, for example $..updatedAt, $..requestId.",
+          detail:
+            "A location an ignore path selects is treated as equal on both sides, whatever it holds.",
+        },
+        {
+          title: "Record the baseline",
+          instruction:
+            "Run the workflow. The first run has no baseline yet, so it records the value at the rule's path and passes.",
+        },
+        {
+          title: "Read a changed response",
+          instruction:
+            "Run again after the API changes. A different value fails the rule and lists the locations that differ, with the baseline value and the new one.",
+        },
+        {
+          title: "Accept an intended change",
+          instruction:
+            "Open the node after the run. Each failed snapshot rule lists where it differs and offers Accept snapshot #N, which records the value just received as the new baseline.",
+          detail:
+            "In the app, baselines live in the local database.",
+        },
+        {
+          title: "Share baselines with CI",
+          instruction:
+            "apiweave run reads and writes .apiweave-snapshots.json, or the file named by --snapshots <file>. Commit it so CI compares against what you accepted, and use --update-snapshots to record every baseline again when a change is intended.",
+        },
+        {
+          title: "Set a contract check",
+          instruction:
+            "Open an HTTP Request node's Settings tab and find the Contract check card. Set Mode to Off, Warn or Fail, or leave Default (fail for imported endpoints).",
+          detail:
+            "The body is checked against the node's response schema for the status: the exact code, then its class such as 2XX, then default. A status the spec does not declare is itself a violation. Warn records violations without failing the node.",
+        },
+        {
+          title: "Override the contract in CI",
+          instruction:
+            "Pass --contract off, warn or fail to apiweave run to override every node's setting for that run. The HTML and JUnit reports list the violations.",
+          detail:
+            "A negative test is checked too: a request expecting 404 is checked against the 404 (or 4XX) schema, so a negative test of an undeclared status needs Warn or Off.",
+        },
+      ],
+      example: {
+        caption: "Snapshot the body, ignoring the fields that change every run",
+        language: "json",
+        code: "[\n  { \"source\": \"status\", \"path\": \"\", \"operator\": \"equals\", \"expectedValue\": 200 },\n  { \"source\": \"prev\", \"path\": \"response.body\", \"operator\": \"matchesSnapshot\", \"ignorePaths\": [\"$..updatedAt\", \"$..requestId\"] }\n]",
+      },
+      expectedResult:
+        "The first run records the baseline and passes; a later run with a changed body fails and names the differing locations, and Accept snapshot makes the new body the baseline.",
+      troubleshooting: [
+        {
+          title: "A snapshot fails on every run",
+          instruction:
+            "A field such as a timestamp or an id changes every time. Add its JSONPath to Ignore paths.",
+        },
+        {
+          title: "CI records a new baseline every run",
+          instruction:
+            "The snapshots file was not committed, or --snapshots points somewhere else. Commit .apiweave-snapshots.json next to the tests.",
+        },
+        {
+          title: "A hand-built request is never checked against its schema",
+          instruction:
+            "Contract checks default to off on a node that was not imported from OpenAPI. Set Mode to Warn or Fail.",
+        },
+      ],
+      relatedLessonIds: ["assertions", "openapi", "git-ci"],
     },
     {
       id: "delay-merge",
@@ -265,7 +373,7 @@ export const controlFlowChapter: TutorialChapter = {
           instruction:
             "On the Finish tab, add rules with Event path, Operator and Expected value. All rules must match the same event to close the stream.",
           detail:
-            "Paths support event, id, raw data, and JSON data fields. Use data.status for a JSON field, or data, event and id for the raw event fields.",
+            "Paths support event, id, raw data, and JSON data fields. Use data.status for a JSON field, or data, event and id for the raw event fields. The WebSocket node and a server-streaming gRPC Call share the same Finish tab, Ready and Complete outputs, and finish-rule editor.",
         },
         {
           title: "Set the timeout",
@@ -316,7 +424,126 @@ export const controlFlowChapter: TutorialChapter = {
             "Use data.status for a JSON field, or data / event / id for the raw event fields, and check that every rule can match the same event.",
         },
       ],
-      relatedLessonIds: ["http-requests", "assertions", "delay-merge"],
+      relatedLessonIds: ["http-requests", "assertions", "protocols"],
+    },
+    {
+      id: "protocols",
+      chapterId: "control-flow",
+      title: "Call gRPC, WebSocket, SOAP and JSON-RPC",
+      summary:
+        "JSON-RPC and SOAP bodies on the HTTP node, WSDL import, the WebSocket node, and the gRPC Call node with Discover, unary or server streaming.",
+      outcome:
+        "You can test an API that does not speak plain REST, with the same extractors, assertions and Ready/Complete outputs as the rest of the canvas.",
+      keywords: [
+        "grpc",
+        "protobuf",
+        "proto",
+        "reflection",
+        "discover",
+        "server streaming",
+        "websocket",
+        "ws",
+        "soap",
+        "wsdl",
+        "xml",
+        "xpath",
+        "json-rpc",
+        "jsonrpc",
+      ],
+      durationMinutes: 9,
+      prerequisites: [
+        "The HTTP Request and SSE lessons, or familiarity with nodes that have Ready and Complete outputs.",
+        "A service that speaks the protocol you want to test.",
+      ],
+      steps: [
+        {
+          title: "Call a JSON-RPC 2.0 method",
+          instruction:
+            "On an HTTP Request node's Body tab, choose JSON-RPC. Fill Method, and Params as a JSON object (by name) or array (by position). Turn on Send as a notification for a call with no reply.",
+          detail:
+            "The request is POSTed as application/json with an id that increases through the run. A response with an error member fails the node with its code and message unless Allow error responses is on; then assert on response.body.error.code.",
+        },
+        {
+          title: "Send a SOAP envelope",
+          instruction:
+            "On the Body tab, choose SOAP. Pick the SOAP version (1.1 or 1.2), fill Action, and paste the complete Envelope.",
+          detail:
+            "Each version gets the Content-Type and SOAPAction it prescribes. A SOAP Fault fails the node unless its status is the expected one, with the fault's code and reason on response.fault.",
+        },
+        {
+          title: "Read XML with XPath",
+          instruction:
+            "Write an extractor or assertion path that starts with xpath:, for example xpath://*[local-name()=\"Total\"]/text().",
+          detail:
+            "An unprefixed name never matches a namespaced element, so use local-name() or declare prefixes inline: xpath[s=http://schemas.xmlsoap.org/soap/envelope/]:/s:Envelope.",
+        },
+        {
+          title: "Import a WSDL",
+          instruction:
+            "Open Import to Add Nodes, choose the WSDL tab, and paste or choose a WSDL 1.1 document. Each operation becomes a POST node addressed from its port's soap:address, with an envelope skeleton.",
+        },
+        {
+          title: "Open a WebSocket",
+          instruction:
+            "Drag WebSocket from the Streaming palette section. On the Endpoint tab set the WebSocket URL (ws:// or wss://) and any Subprotocols, on the Headers tab the handshake headers, and on the Messages tab the outbound messages to send in order.",
+          detail:
+            "Each message has Data, a Type of text or binary (base64), and an optional Delay before send (ms). On the Settings tab, Timeout (seconds) and Messages to collect bound the connection.",
+        },
+        {
+          title: "Assert on the collected frames",
+          instruction:
+            "Wire a trigger to Ready and an Assertion to Complete, as with SSE. Assert on response.body.messages, messageCount, termination, closeCode or closeReason.",
+        },
+        {
+          title: "Add a gRPC Call and discover the schema",
+          instruction:
+            "Drag gRPC Call from the gRPC palette section. On the Endpoint tab set Target to host:port, choose Schema source (Server reflection or Proto files), and click Discover. Pick a Service and a Method; the Message tab is filled with a skeleton of the request.",
+          detail:
+            "Proto files are stored inside the workflow, so they travel in exports and git; reflection needs the server to be reachable. Use TLS takes its CA and client certificate from Settings → Network.",
+        },
+        {
+          title: "Check the gRPC status",
+          instruction:
+            "Read response.body for the decoded message and response.status for the code name. On the Settings tab, set Expected status to a code such as NOT_FOUND for a negative test; empty expects OK.",
+          detail:
+            "response.statusCode, response.statusMessage, response.headers and response.trailers are there too, and $ JSONPath works on them like on an HTTP response.",
+        },
+        {
+          title: "Stream from a gRPC server",
+          instruction:
+            "Set Call type to Server streaming. The node gets Ready and Complete outputs, collects responses into response.body.messages, and closes when the server ends the stream, a Finish rule matches, Max responses is reached or the deadline expires.",
+        },
+      ],
+      example: {
+        caption: "Three non-REST calls on one canvas",
+        language: "text",
+        code: "HTTP Request, Body: JSON-RPC   method = subtract   params = [42, 23]\n  -> assert response.body.result equals 19\n\nWebSocket  wss://{{env.HOST}}/socket   message: {\"action\":\"subscribe\"}\n  --Complete-> assert response.body.messageCount gte 1\n\ngRPC Call  {{env.GRPC_HOST}}:443   shop.Orders / GetOrder   Expected status: OK\n  -> assert response.body.order_id exists",
+      },
+      expectedResult:
+        "Each node reports a pass or fail like an HTTP request, the streaming ones fire Ready then Complete, and their results are read with the same dot, JSONPath and XPath paths.",
+      troubleshooting: [
+        {
+          title: "Discover fails with server reflection",
+          instruction:
+            "The server does not expose reflection or is not reachable. Switch Schema source to Proto files and add the .proto files instead.",
+        },
+        {
+          title: "A gRPC call ignores the proxy",
+          instruction:
+            "A gRPC channel is not proxied: Settings → Network's proxy does not apply to it, only its CAs and client certificates.",
+        },
+        {
+          title: "A JSON-RPC call fails although the server answered 200",
+          instruction:
+            "The body carries an error member. Fix the call, or turn on Allow error responses and assert on response.body.error.",
+        },
+        {
+          title: "An XPath path never matches",
+          instruction:
+            "The element is namespaced. Use *[local-name()=\"Name\"], or declare the prefix inline in xpath[prefix=uri]:.",
+        },
+      ],
+      relatedLessonIds: ["sse", "http-requests", "variables-extractors", "assertions"],
     },
     {
       id: "call-workflow",
@@ -335,6 +562,9 @@ export const controlFlowChapter: TutorialChapter = {
         "recursion",
         "nesting",
         "inline",
+        "for each",
+        "loop",
+        "iteration",
       ],
       durationMinutes: 6,
       prerequisites: [
@@ -365,6 +595,13 @@ export const controlFlowChapter: TutorialChapter = {
             "On the Output mapping card, add entries as caller variable = sub-workflow variable, for example authToken = accessToken.",
           detail:
             "An output entry is applied only when the sub-workflow actually produced that variable. Anything you did not map stays inside the sub-workflow.",
+        },
+        {
+          title: "Run it once per item with For each",
+          instruction:
+            "On the For each card, turn on Run once per item. Set Items to a placeholder or JSON array literal such as {{variables.userIds}}, Item variable to the name the target reads each item as, and optionally Index variable, Concurrency (1 to 16) and Stop on failure.",
+          detail:
+            "Items also takes a $ JSONPath such as $.variables.users[?@.active==true].id. Each iteration is its own run of the target, every output-mapping variable becomes an array in item order, at most 1000 items run, and the node passes only if every iteration passes.",
         },
         {
           title: "Let the sub-workflow resolve env and secrets itself",

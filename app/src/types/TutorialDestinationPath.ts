@@ -9,6 +9,7 @@ export type TutorialDestinationPath =
   | "secrets"
   | "agents"
   | "canvas-settings"
+  | "browser-settings"
   | "mcp-server"
   | "version-history"
   | "git-accounts"

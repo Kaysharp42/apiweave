@@ -26,11 +26,17 @@ const EXPECTED_LESSON_IDS = [
   "environments",
   "secrets",
   "assertions",
+  "snapshots-contracts",
   "delay-merge",
   "sse",
+  "protocols",
   "call-workflow",
   "runs-history",
   "visual-debugging",
+  "load-runs",
+  "browser-record",
+  "browser-run",
+  "browser-fix",
   "presets",
   "projects",
   "import-export",
@@ -114,6 +120,11 @@ describe("tutorial curriculum", () => {
       "provenance",
       "briefing",
       "references only",
+      "record",
+      "matchesSnapshot",
+      "load run",
+      "grpc",
+      "for each",
     ]) {
       expect(keywords.has(term)).toBe(true);
     }
@@ -207,6 +218,12 @@ describe("tutorial destinations", () => {
     expect(
       tutorialDestinationHref("git-accounts", "personal", "acme"),
     ).toBe("/personal/acme/settings/git-accounts");
+  });
+
+  it("maps browser-settings to the app's Browser settings route", () => {
+    expect(
+      tutorialDestinationHref("browser-settings", "personal", "acme"),
+    ).toBe("/personal/acme/settings/browser");
   });
 
   it("builds workspace, library and lesson hrefs", () => {

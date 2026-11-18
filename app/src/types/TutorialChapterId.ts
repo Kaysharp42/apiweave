@@ -4,6 +4,7 @@ export type TutorialChapterId =
   | "requests-and-data"
   | "control-flow"
   | "debug-and-observe"
+  | "browser-steps"
   | "organize"
   | "version-history"
   | "agents"

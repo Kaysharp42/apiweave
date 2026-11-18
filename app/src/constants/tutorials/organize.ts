@@ -1,7 +1,7 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 5 — Organize and reuse. Presets, projects, workflow JSON and
+ * Chapter 6 — Organize and reuse. Presets, projects, workflow JSON and
  * project export/import, and the two import surfaces.
  */
 export const organizeChapter: TutorialChapter = {
