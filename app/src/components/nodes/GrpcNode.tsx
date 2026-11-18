@@ -1,4 +1,5 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
+import { useUpdateNodeInternals } from "@xyflow/react";
 import { Waypoints } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { StreamOutputHandle } from "../atoms/flow/StreamOutputHandle";
@@ -8,6 +9,14 @@ import type { GrpcNodeProps } from "../../types/GrpcNodeProps";
 function GrpcNode({ id, data, selected }: GrpcNodeProps) {
   const { target, service, method, expectedStatus, callType } = data.config ?? {};
   const streaming = callType === "server-streaming";
+  // ReactFlow measures a node's sockets once and draws edges against that
+  // measurement. Switching the call type swaps one unnamed output for `ready`
+  // and `complete` (or back), so the node is re-measured, or an edge rewired to
+  // a new socket stays undrawn until the workflow is reopened.
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, streaming, updateNodeInternals]);
   const status = data.executionStatus ?? "idle";
   const grpcStatus = data.executionResult?.response?.status;
   const icon = useMemo(() => <Waypoints className="h-4 w-4" />, []);

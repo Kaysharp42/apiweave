@@ -241,6 +241,7 @@ export type { BrowserNodeProps } from "./BrowserNodeProps";
 export type { BrowserOutputPanelProps } from "./BrowserOutputPanelProps";
 export type { BrowserStepDraft } from "./BrowserStepDraft";
 export type { NodeModalBrowserTabKey } from "./NodeModalBrowserTabKey";
+export type { GrpcCallType } from "./GrpcCallType";
 export type { GrpcNodeData } from "./GrpcNodeData";
 export type { GrpcNodeProps } from "./GrpcNodeProps";
 export type { NodeModalGrpcConfig } from "./NodeModalGrpcConfig";

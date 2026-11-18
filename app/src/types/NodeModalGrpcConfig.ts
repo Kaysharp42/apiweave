@@ -1,9 +1,10 @@
 import type { AuthConfig } from "@shared/types/AuthConfig";
 import type { KeyValuePair } from "@shared/types/KeyValuePair";
 import type { StreamFinishCondition } from "@shared/types/StreamFinishCondition";
+import type { GrpcCallType } from "./GrpcCallType";
 
 export interface NodeModalGrpcConfig {
-  callType: "unary" | "server-streaming";
+  callType: GrpcCallType;
   target: string;
   tls: boolean;
   sslVerify: boolean;

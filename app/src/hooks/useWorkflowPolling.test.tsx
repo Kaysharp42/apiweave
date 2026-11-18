@@ -54,7 +54,22 @@ const NODES: Node[] = [
   { id: "http-1", type: "http-request", position: { x: 200, y: 0 }, data: { label: "Get user" } },
 ];
 
-function setup() {
+type EdgeInput = {
+  id?: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+};
+
+type SetNodes = (updater: (nds: Node[]) => Node[]) => void;
+
+function setup(
+  options: {
+    nodes?: Node[];
+    edges?: EdgeInput[];
+    setNodes?: SetNodes;
+  } = {},
+) {
   const camera = {
     onRunStart: vi.fn(),
     onNodeShown: vi.fn(),
@@ -64,9 +79,9 @@ function setup() {
     useWorkflowPolling({
       workspaceId: "ws1",
       workflowId: "wf1",
-      nodes: NODES,
-      edges: [],
-      setNodes: vi.fn(),
+      nodes: options.nodes ?? NODES,
+      edges: options.edges ?? [],
+      setNodes: options.setNodes ?? vi.fn(),
       selectedEnvironment: null,
       reactFlowInstanceRef: { current: null },
       camera,
@@ -238,6 +253,155 @@ describe("useWorkflowPolling — running with data", () => {
 
     expect(createIterationsMock).not.toHaveBeenCalled();
     expect(toastErrorMock).toHaveBeenCalledWith(expect.stringContaining("array of objects"));
+  });
+});
+
+describe("useWorkflowPolling — the run gate refuses a branch that could never run", () => {
+  beforeEach(() => {
+    captureRunStarted();
+    onRunProgressMock.mockReset();
+    onRunProgressMock.mockReturnValue(() => undefined);
+    getLatestMock.mockReset();
+    getLatestMock.mockResolvedValue(undefined);
+    createMock.mockReset();
+    createMock.mockResolvedValue({ runId: "run-1", iteration: null });
+    toastErrorMock.mockReset();
+  });
+
+  function canvas(nodes: Node[], edges: EdgeInput[]) {
+    const box = { nodes };
+    const setNodes: SetNodes = (updater) => {
+      box.nodes = updater(box.nodes);
+    };
+    return { box, view: setup({ nodes, edges, setNodes }) };
+  }
+
+  const start = (): Node => ({ id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} });
+  const end = (): Node => ({ id: "a-end", type: "end", position: { x: 400, y: 0 }, data: {} });
+
+  it("refuses a server-streaming edge with no handle and marks its source node", async () => {
+    const nodes: Node[] = [
+      start(),
+      {
+        id: "z-grpc",
+        type: "grpc",
+        position: { x: 200, y: 0 },
+        data: {
+          config: {
+            callType: "server-streaming",
+            target: "localhost:50051",
+            service: "a.B",
+            method: "Watch",
+          },
+        },
+      },
+      end(),
+    ];
+    const { box, view } = canvas(nodes, [
+      { id: "e1", source: "start-1", target: "z-grpc" },
+      // The edge the bug left behind: drawn against `ready`, never followed.
+      { id: "e2", source: "z-grpc", target: "a-end" },
+    ]);
+
+    await act(async () => {
+      await view.result.current.runWorkflow();
+    });
+
+    expect(createMock).not.toHaveBeenCalled();
+    // `nodeIds` is sorted, so `a-end` comes first; the edge's source is what
+    // the user has to fix.
+    expect(box.nodes.find((node) => node.id === "z-grpc")?.data["invalid"]).toBe(true);
+    expect(box.nodes.find((node) => node.id === "a-end")?.data["invalid"]).toBeUndefined();
+
+    const message = toastErrorMock.mock.calls[0]?.[0] as string;
+    expect(message).toContain("Run blocked: invalid workflow");
+    expect(message).toContain("z-grpc: An edge from a grpc stream node sets no sourceHandle");
+  });
+
+  it("refuses an assertion edge without a pass or fail handle and marks the assertion", async () => {
+    const nodes: Node[] = [
+      start(),
+      {
+        id: "http-1",
+        type: "http-request",
+        position: { x: 200, y: 0 },
+        data: { config: { method: "GET", url: "https://example.test" } },
+      },
+      {
+        id: "z-assert",
+        type: "assertion",
+        position: { x: 300, y: 0 },
+        data: {
+          config: {
+            assertions: [{ source: "prev", path: "body.id", operator: "exists" }],
+          },
+        },
+      },
+      end(),
+    ];
+    const { box, view } = canvas(nodes, [
+      { id: "e1", source: "start-1", target: "http-1" },
+      { id: "e2", source: "http-1", target: "z-assert" },
+      // No handle: the assertion's branch stops silently at run time.
+      { id: "e3", source: "z-assert", target: "a-end" },
+    ]);
+
+    await act(async () => {
+      await view.result.current.runWorkflow();
+    });
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(box.nodes.find((node) => node.id === "z-assert")?.data["invalid"]).toBe(true);
+    expect(box.nodes.find((node) => node.id === "a-end")?.data["invalid"]).toBeUndefined();
+
+    const message = toastErrorMock.mock.calls[0]?.[0] as string;
+    expect(message).toContain("z-assert: An assertion edge must use the pass or fail source handle.");
+  });
+
+  it("still starts a run when the only error is a missing end node", async () => {
+    const nodes: Node[] = [
+      start(),
+      {
+        id: "http-1",
+        type: "http-request",
+        position: { x: 200, y: 0 },
+        data: { config: { method: "GET", url: "https://example.test" } },
+      },
+    ];
+    const { view } = canvas(nodes, [{ id: "e1", source: "start-1", target: "http-1" }]);
+
+    await act(async () => {
+      await view.result.current.runWorkflow();
+    });
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still starts a run for an assertion with no upstream response source", async () => {
+    const nodes: Node[] = [
+      start(),
+      {
+        id: "z-assert",
+        type: "assertion",
+        position: { x: 200, y: 0 },
+        data: {
+          config: {
+            assertions: [{ source: "prev", path: "body.id", operator: "exists" }],
+          },
+        },
+      },
+      end(),
+    ];
+    const { view } = canvas(nodes, [
+      { id: "e1", source: "start-1", target: "z-assert" },
+      { id: "e2", source: "z-assert", target: "a-end", sourceHandle: "pass" },
+    ]);
+
+    await act(async () => {
+      await view.result.current.runWorkflow();
+    });
+
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
 
