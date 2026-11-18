@@ -44,7 +44,7 @@ The library header shows the chapter outline, a search field, and the progress s
 ```text
 Tutorials
 Learn the workflow, one feature at a time.
-0 of 24 completed
+0 of 35 completed
 [ Search lessons... ]
 ```
 
@@ -52,7 +52,21 @@ Learn the workflow, one feature at a time.
 
 ### Library and reader layout
 
-The library groups lessons into eight chapters in reading order: First steps, Requests and data, Control flow, Debug and observe, Organize and reuse, Version history and sync, Agents, and App. Each lesson shows its status and estimated duration. When you open a lesson, the article presents the outcome, prerequisites, numbered steps, an example, the expected result, troubleshooting, and related lessons.
+The library groups its 35 lessons into nine chapters in reading order:
+
+| Chapter | Lessons |
+| --- | --- |
+| First steps | First workflow, workspaces, the canvas |
+| Requests and data | HTTP requests, variables and extractors, placeholders and functions, environments, secrets |
+| Control flow | Assertions, snapshot and contract checks, delay and merge, SSE streams, gRPC, WebSocket, SOAP and JSON-RPC, calling another workflow (with For each) |
+| Debug and observe | Runs and history, visual debugging, load runs |
+| Browser steps | Recording steps, running them with API requests and reading the evidence, fixing one step |
+| Organize and reuse | Presets, projects, import and export, OpenAPI, cURL and HAR |
+| Version history and sync | Tracking, git accounts, remotes, opening a repository, merging, running a repository in CI |
+| Agents | Embedded agents, MCP |
+| App | Settings, updates |
+
+Each lesson shows its status and estimated duration. When you open a lesson, the article presents the outcome, prerequisites, numbered steps, an example, the expected result, troubleshooting, and related lessons.
 
 The split between the outline and the article is based on the width of the tutorial container, not the viewport:
 
@@ -173,7 +187,7 @@ All lesson content ships in the renderer bundle under `app/src/constants/tutoria
 
 ### Schema-validated examples
 
-Structured examples (JSON a reader is expected to paste) are validated against the schemas the app actually ships. A malformed example fails the test suite rather than shipping. When you change a schema, update the matching tutorial example and the content-example test together.
+Structured examples (JSON a reader is expected to paste) are validated against the schemas the app actually ships: the assertion rules of the Assertions and Snapshot and contract checks lessons against `AssertionItemSchema`, the browser steps of the Record browser steps and Fix one browser step lessons against `BrowserNodeDataSchema`, and the Import and export lesson's secret references against what bundle import requires. A malformed example fails the test suite rather than shipping. When you change a schema, update the matching tutorial example and the content-example test together.
 
 ### Verify with tests
 
@@ -181,7 +195,7 @@ Keep the behavior protected without duplicating lesson prose. Run the tutorial-f
 
 ```bash
 cd app
-npm test -- src/constants/tutorials src/pages/TutorialPage.test.tsx src/components/TutorialCompanion.test.tsx
+npm test -- src/constants/tutorials src/pages/TutorialPage.test.tsx src/components/TutorialCompanion.test.tsx src/stores/TutorialStore.test.ts
 npm run typecheck
 npm run lint
 npx playwright test e2e/tutorial.spec.ts --workers=1
