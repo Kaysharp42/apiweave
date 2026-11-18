@@ -291,6 +291,7 @@ export type { NodeModalVerticalTabsProps } from "./NodeModalVerticalTabsProps";
 export type { NodeModalResponsePaneProps } from "./NodeModalResponsePaneProps";
 export type { NodeOutputPanelProps } from "./NodeOutputPanelProps";
 export type { SnapshotReviewProps } from "./SnapshotReviewProps";
+export type { ValueViolationsProps } from "./ValueViolationsProps";
 export type { AssertionConfigPanelProps } from "./AssertionConfigPanelProps";
 export type { AssertionRulesEditorProps } from "./AssertionRulesEditorProps";
 export type { NodeModalHttpRetryConfig } from "./NodeModalHttpRetryConfig";

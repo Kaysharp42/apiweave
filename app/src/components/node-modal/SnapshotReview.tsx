@@ -5,6 +5,7 @@ import useSidebarStore from "../../stores/SidebarStore";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation";
 import type { SnapshotReviewProps } from "../../types/SnapshotReviewProps";
+import { ValueViolations } from "./ValueViolations";
 
 /**
  * A node's `matchesSnapshot` rules after a run: where each failed one differs,
@@ -53,19 +54,7 @@ export function SnapshotReview({ nodeId, assertions, readActual, showDifferences
           </Button>
         ))}
       </div>
-      {differences.length > 0 && (
-        <ul
-          aria-label="Snapshot differences"
-          className="max-h-48 space-y-0.5 overflow-y-auto rounded-xs border border-border bg-surface-raised p-3 font-mono text-xs dark:border-border-dark dark:bg-surface-dark-raised"
-        >
-          {differences.map((difference, index) => (
-            <li key={index} className="text-text-primary dark:text-text-primary-dark">
-              <span className="text-status-error">{difference.path === "" ? "(root)" : difference.path}</span>{" "}
-              {difference.message}
-            </li>
-          ))}
-        </ul>
-      )}
+      <ValueViolations label="Snapshot differences" violations={differences} />
     </div>
   );
 }

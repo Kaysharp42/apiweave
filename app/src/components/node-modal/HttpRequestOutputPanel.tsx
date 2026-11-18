@@ -22,6 +22,7 @@ import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo";
 import type { BadgeProps, HttpRequestOutputPanelProps } from "../../types";
 import { readSnapshotActual } from "../../utils/snapshotActual";
 import { SnapshotReview } from "./SnapshotReview";
+import { ValueViolations } from "./ValueViolations";
 
 function formatBytes(bytes: number | undefined): string {
   if (bytes === undefined || !Number.isFinite(bytes)) return "Size unknown";
@@ -217,21 +218,11 @@ export function HttpRequestOutputPanel({
           assertions={assertions}
           readActual={(rule) => readSnapshotActual(output, rule)}
         />
-        {schemaErrors.length > 0 && (
-          <ul
-            aria-label={snapshotFailed ? "Snapshot differences" : "Schema violations"}
-            className="mb-3 max-h-48 space-y-0.5 overflow-y-auto rounded-xs border border-border bg-surface-raised p-3 font-mono text-xs dark:border-border-dark dark:bg-surface-dark-raised"
-          >
-            {schemaErrors.map((violation, index) => (
-              <li key={index} className="text-text-primary dark:text-text-primary-dark">
-                <span className="text-status-error">
-                  {violation.path === "" ? "(root)" : violation.path}
-                </span>{" "}
-                {violation.message}
-              </li>
-            ))}
-          </ul>
-        )}
+        <ValueViolations
+          label={snapshotFailed ? "Snapshot differences" : "Schema violations"}
+          violations={schemaErrors}
+          className="mb-3"
+        />
         {scripts.length > 0 && <ScriptOutcomes scripts={scripts} />}
         {/* A response the inspector cannot draw must not close the node
             editor and its unapplied draft. */}

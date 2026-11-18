@@ -67,48 +67,35 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
     map[name] = fresh
     return fresh
   }
+  const addProducer = (node: VariableProvenanceNode, variableName: string, path: string): void => {
+    const entry = ensure(variableName)
+    map[variableName] = {
+      producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
+      consumers: entry.consumers,
+    }
+  }
+  // A `{ variableName: path }` object: each string entry produces that variable.
+  const addMappedProducers = (node: VariableProvenanceNode, mapping: unknown): void => {
+    if (mapping === null || typeof mapping !== "object" || Array.isArray(mapping)) return
+    for (const [variableName, path] of Object.entries(mapping as Readonly<Record<string, unknown>>)) {
+      if (typeof path === "string") addProducer(node, variableName, path)
+    }
+  }
 
   for (const node of nodes) {
     const config = node.config as Readonly<Record<string, unknown>> | undefined
-    const extractors = node.config?.["extractors"]
-    if (extractors !== null && typeof extractors === "object" && !Array.isArray(extractors)) {
-      for (const [variableName, path] of Object.entries(extractors as Readonly<Record<string, unknown>>)) {
-        if (typeof path !== "string") continue
-        const entry = ensure(variableName)
-        map[variableName] = {
-          producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
-          consumers: entry.consumers,
-        }
-      }
-    }
+    addMappedProducers(node, config?.["extractors"])
 
     // A browser `extract` step writes the variable it names.
     if (node.type === "browser" && config?.["action"] === "extract" && typeof config["variable"] === "string") {
-      const variableName = config["variable"]
       const from = typeof config["from"] === "string" ? config["from"] : "text"
       const path = from === "attribute" && typeof config["attribute"] === "string" ? `page.attribute.${config["attribute"]}` : `page.${from}`
-      const entry = ensure(variableName)
-      map[variableName] = {
-        producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
-        consumers: entry.consumers,
-      }
+      addProducer(node, config["variable"], path)
     }
 
     // A Call Workflow node's `outputMapping` names each variable it writes into
     // the CALLER's scope; the value is the child variable it copies from.
-    if (node.type === "workflow" && config !== undefined) {
-      const outputMapping = config["outputMapping"]
-      if (outputMapping !== null && typeof outputMapping === "object" && !Array.isArray(outputMapping)) {
-        for (const [variableName, path] of Object.entries(outputMapping as Readonly<Record<string, unknown>>)) {
-          if (typeof path !== "string") continue
-          const entry = ensure(variableName)
-          map[variableName] = {
-            producers: [...entry.producers, { nodeId: node.nodeId, nodeLabel: nodeLabel(node), path }],
-            consumers: entry.consumers,
-          }
-        }
-      }
-    }
+    if (node.type === "workflow") addMappedProducers(node, config?.["outputMapping"])
 
     const references = new Map<string, Set<string>>()
     forEachConfigString(config, (rootKey, value) => {

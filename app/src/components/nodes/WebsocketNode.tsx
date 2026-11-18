@@ -1,8 +1,8 @@
 import { memo, useMemo } from "react";
 import { Cable } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
-import { StreamOutputHandle } from "../atoms/flow/StreamOutputHandle";
-import { formatDuration } from "../../utils/formatNodeMetrics";
+import { STREAM_NODE_HANDLES } from "../atoms/flow/StreamOutputHandle";
+import { formatCount, formatDuration, formatStreamRestLine } from "../../utils/formatNodeMetrics";
 import type { WebsocketNodeProps } from "../../types/WebsocketNodeProps";
 
 // fallow-ignore-next-line complexity -- this presentational node derives labels and optional display slots directly from stream configuration; moving those branches to helpers would not simplify the rendered contract.
@@ -22,14 +22,12 @@ function WebsocketNode({ id, data, selected }: WebsocketNodeProps) {
       selected={selected ?? false}
       nodeId={id}
       presetNodeType="websocket"
-      handleLeft={{ type: "target" }}
-      handleRight={{ type: "source", id: "ready", style: { top: "calc(50% - 10px)" } }}
-      extraHandles={<StreamOutputHandle id="complete" label="complete" offsetY={10} />}
+      {...STREAM_NODE_HANDLES}
       collapsible={false}
       typeChip={<span className="rounded-node-chip bg-status-info/10 px-1.5 py-0.5 font-mono text-2xs text-status-info">WS</span>}
-      restLine={{ operation: finishRuleCount > 0 ? "until match" : "collect", argument: finishRuleCount > 0 ? `${finishRuleCount} finish rule${finishRuleCount === 1 ? "" : "s"}` : `${maxMessages} message${maxMessages === 1 ? "" : "s"}` }}
+      restLine={formatStreamRestLine(finishRuleCount, maxMessages, "message")}
       activityLine={{ operation: "listening" }}
-      {...(messageCount === undefined ? {} : { resultSummary: { operation: "received", argument: `${messageCount} message${messageCount === 1 ? "" : "s"}` } })}
+      {...(messageCount === undefined ? {} : { resultSummary: { operation: "received", argument: formatCount(messageCount, "message") } })}
       metrics={[
         { label: "messages", value: messageCount === undefined ? null : String(messageCount) },
         { label: "duration", value: formatDuration(data.executionResult?.duration) },
