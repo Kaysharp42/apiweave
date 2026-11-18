@@ -712,17 +712,16 @@ export const versionHistoryChapter: TutorialChapter = {
       ],
       durationMinutes: 7,
       prerequisites: [
-        "Node.js 22 or later on the CI machine.",
-        "A checkout of the APIWeave repository to build the command from: it is not published to npm yet.",
+        "Node.js 22.12 or later on the CI machine.",
         "A checkout of a repository that holds a workspace.",
       ],
       steps: [
         {
-          title: "Build the command",
+          title: "Install the command",
           instruction:
-            "In the APIWeave checkout's app/ folder run npm ci --ignore-scripts, then npm run build:cli, which writes dist/cli/apiweave.cjs. Run npm link in that folder to put apiweave on PATH, or call node dist/cli/apiweave.cjs instead.",
+            "Download the CLI package every release attaches, then install it: curl -fsSL -o apiweave-cli.tgz https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz, then npm install -g ./apiweave-cli.tgz. That puts apiweave on PATH.",
           detail:
-            "--ignore-scripts skips the Electron download, which the CLI does not need.",
+            "For a repeatable pipeline, replace latest/download with download/<tag> to pin a release. The package, @apiweave/cli, comes as that release tarball rather than from the npm registry, and holds no Electron. To build it from source instead, run npm ci --ignore-scripts and npm run build:cli in a checkout's app/ folder.",
         },
         {
           title: "Run the folder",
