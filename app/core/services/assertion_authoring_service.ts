@@ -298,6 +298,10 @@ function canonicalDraft(value: unknown): unknown {
     source,
     path,
     operator,
+    // A `matchesSnapshot` rule's ignore list is part of the rule, not evidence:
+    // rebuilding the draft field by field silently dropped it, so a rule applied
+    // through `assertion_apply` compared more than the caller asked for.
+    ...("ignorePaths" in draft ? { ignorePaths: draft["ignorePaths"] } : {}),
     ...(!operatorTakesNoExpectedValue(String(operator)) && "expectedValue" in draft
       ? { expectedValue: draft["expectedValue"] }
       : {}),
@@ -415,8 +419,16 @@ function missingPath(ruleIndex: number): ValidationIssue {
 
 function previewRule(rule: AssertionItem): string {
   const target = rule.source === "status" ? "HTTP status" : `${rule.source} ${rule.path}`
-  if (operatorTakesNoExpectedValue(rule.operator)) return `${target} ${rule.operator}`
-  return `${target} ${rule.operator} ${JSON.stringify(rule.expectedValue)}`
+  const ignores = ignoreSuffix(rule)
+  if (operatorTakesNoExpectedValue(rule.operator)) return `${target} ${rule.operator}${ignores}`
+  return `${target} ${rule.operator} ${JSON.stringify(rule.expectedValue)}${ignores}`
+}
+
+/** The rule's ignore list as the preview words it — only `matchesSnapshot` reads one. */
+function ignoreSuffix(rule: AssertionItem): string {
+  if (rule.operator !== "matchesSnapshot") return ""
+  const paths = rule.ignorePaths ?? []
+  return paths.length > 0 ? ` (ignoring ${paths.join(", ")})` : ""
 }
 
 function asUnknownRecord(value: unknown): Record<string, unknown> | undefined {

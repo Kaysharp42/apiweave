@@ -539,10 +539,14 @@ For \`headers\`, \`cookies\` and \`variables\` the path is just the name — no
 
 \`equals\`, \`notEquals\`, \`contains\`, \`notContains\`, \`gt\`, \`gte\`, \`lt\`,
 \`lte\`, \`count\`, \`exists\`, \`notExists\`, \`matches\`, \`notMatches\`,
-\`type\`, \`matchesSchema\`.
+\`type\`, \`matchesSchema\`, \`matchesSnapshot\`.
 
-- \`exists\` and \`notExists\` take no \`expectedValue\`; every other operator
-  requires one.
+- \`exists\`, \`notExists\` and \`matchesSnapshot\` take no \`expectedValue\`;
+  every other operator requires one.
+- \`matchesSnapshot\` compares the value at \`path\` with the baseline the
+  rule's first run recorded, and fails with a diff when it changes.
+  \`ignorePaths\` lists JSONPath expressions to leave out of the comparison
+  (\`["$..updatedAt"]\`).
 - \`count\` compares the length of an array or string and needs a non-negative
   integer.
 - \`matches\` / \`notMatches\` take a regular expression: bare (\`"^ord_"\`) or a

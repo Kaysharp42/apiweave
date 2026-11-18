@@ -19,6 +19,7 @@ const draftRule = z
     path: z.string().optional(),
     operator: z.string().min(1),
     expectedValue: JsonValueSchema.optional(),
+    ignorePaths: AssertionItemSchema.shape.ignorePaths,
   })
   .strict()
 
