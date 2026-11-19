@@ -16,7 +16,7 @@ import {
   INLINE_RESULT_BUDGET_BYTES,
   truncateUtf8,
 } from "./read_budgets"
-import { browserEvidenceSummary } from "./run_evidence"
+import { browserEvidenceSummary, callEvidenceSummary } from "./run_evidence"
 import type { EnvironmentService } from "./environment_service"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
@@ -404,6 +404,9 @@ function buildEvidence(
     assertionFailureCount: (result.assertions ?? []).filter((item) => item.outcome === "fail").length,
     extractorMissCount: (result.extractorOutcomes ?? []).filter((outcome) => !outcome.matched).length,
     ...(browser === undefined ? {} : { browser }),
+    // The called workflow's child runs: how an agent follows a failed call in
+    // — the debug read and the node-evidence read agree on the summary.
+    ...(result.subWorkflow === undefined ? {} : { call: callEvidenceSummary(result.subWorkflow) }),
     moreDetail: {
       tool: "runs_getNodeResult",
       args: {
@@ -421,7 +424,7 @@ function buildEvidence(
 
 type DebugEvidenceSections = WorkflowDebugContext["evidence"][number]["moreDetail"]["args"]["sections"]
 
-const EVIDENCE_SECTIONS: DebugEvidenceSections = ["error", "assertions", "extractors", "request", "response"]
+const EVIDENCE_SECTIONS: DebugEvidenceSections = ["error", "assertions", "extractors", "request", "response", "call"]
 const EVIDENCE_SECTIONS_WITH_BROWSER: DebugEvidenceSections = [...EVIDENCE_SECTIONS, "browser"]
 
 /**

@@ -5,7 +5,7 @@ import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunHistoryCursor } from "../repositories/RunRepository"
-import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, truncateUtf8, truncateUtf8Marked } from "./read_budgets"
+import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, CALL_EVIDENCE_MAX_ITERATIONS, truncateUtf8, truncateUtf8Marked } from "./read_budgets"
 import { sanitizeAgentReadValue } from "./secret_utils"
 import { assertCursorSnapshot, cursorScope, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
@@ -53,7 +53,7 @@ export function openHistoryCursor(
  * Targeted node evidence over one authorized run snapshot.
  * ------------------------------------------------------------------------- */
 
-export const EVIDENCE_SECTIONS = ["error", "assertions", "extractors", "request", "response", "browser"] as const
+export const EVIDENCE_SECTIONS = ["error", "assertions", "extractors", "request", "response", "browser", "call"] as const
 
 export type EvidenceSection = (typeof EVIDENCE_SECTIONS)[number]
 
@@ -137,9 +137,58 @@ function buildNodeEvidence(
     ...(wanted.has("request") ? { request: buildRequestEvidence(result.request, bounds) } : {}),
     ...(wanted.has("response") ? { response: buildResponseEvidence(result.response, bounds) } : {}),
     ...(wanted.has("browser") && result.browser !== undefined ? { browser: buildBrowserEvidence(result.browser, bounds) } : {}),
+    ...(wanted.has("call") && result.subWorkflow !== undefined ? { call: callEvidenceSummary(result.subWorkflow) } : {}),
     omittedSections: [],
     budgetOmitted: false,
   }
+}
+
+/**
+ * A Call Workflow node's child-run summary, as an agent reads it: the target,
+ * the child run id to follow the failure into, and — for a for-each call —
+ * each iteration's run id and status in item order. A for-each may run a
+ * thousand iterations, so the rows are capped; the cap keeps every
+ * failed/cancelled iteration first (they are the ones worth opening) and fills
+ * the rest with passed ones, counting what it left out in
+ * `omittedIterationCount`. Shared by the node-evidence read and the
+ * debug-context summary so the two agree on a call.
+ */
+export function callEvidenceSummary(
+  sub: NonNullable<RunResult["subWorkflow"]>,
+): NonNullable<NodeEvidence["call"]> {
+  return {
+    workflowId: sub.workflowId,
+    ...(sub.runId !== undefined ? { runId: sub.runId } : {}),
+    status: sub.status,
+    nodeCount: sub.nodeCount,
+    failedNodeCount: sub.failedNodeCount,
+    ...(sub.forEach === undefined ? {} : {
+      forEach: {
+        itemCount: sub.forEach.itemCount,
+        ranCount: sub.forEach.ranCount,
+        failedCount: sub.forEach.failedCount,
+        iterations: boundedIterations(sub.forEach),
+        omittedIterationCount: Math.max(0, sub.forEach.iterations.length - CALL_EVIDENCE_MAX_ITERATIONS),
+      },
+    }),
+  }
+}
+
+/** The iteration rows `callEvidenceSummary` carries: non-passing rows first, then passed ones, back in item order. */
+type CallIterationRow = NonNullable<NonNullable<NonNullable<NodeEvidence["call"]>["forEach"]>["iterations"][number]>
+
+function boundedIterations(
+  forEach: NonNullable<NonNullable<RunResult["subWorkflow"]>["forEach"]>,
+): CallIterationRow[] {
+  const rows = forEach.iterations
+  const keep = [...rows.filter((row) => row.status !== "passed"), ...rows.filter((row) => row.status === "passed")]
+    .slice(0, CALL_EVIDENCE_MAX_ITERATIONS)
+    .sort((left, right) => left.index - right.index)
+  return keep.map((iteration) => ({
+    index: iteration.index,
+    ...(iteration.runId !== undefined ? { runId: iteration.runId } : {}),
+    status: iteration.status,
+  }))
 }
 
 // fallow-ignore-next-line complexity
