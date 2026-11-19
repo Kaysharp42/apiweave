@@ -114,7 +114,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   // Workspaces
   tool("workspaces", "list", "read", "List all workspaces."),
   tool("workspaces", "get", "read", "Get a workspace by id."),
-  tool("workspaces", "create", "write", "Create a workspace."),
+  tool("workspaces", "create", "write", "Create a workspace. The app then offers the user to create a git repository for it — an agent cannot create one itself, so mention that option when you create a workspace."),
   tool("workspaces", "update", "write", "Update a workspace's name or settings.", { idempotent: true }),
   tool("workspaces", "delete", "write", "Delete a workspace and its contents.", { destructive: true, idempotent: true }),
   tool("workspaces", "map", "read", "Workspace map: every workflow's endpoints (METHOD /path), variables produced and consumed, env and secret reference names, sub-workflow calls and last run status, paged. Names and path templates only, never values. Orient here in an unfamiliar workspace."),
