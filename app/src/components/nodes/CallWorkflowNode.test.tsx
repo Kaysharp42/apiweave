@@ -57,7 +57,7 @@ describe("CallWorkflowNode", () => {
             },
             executionStatus: "error",
             executionResult: {
-              message: "Sub-workflow Log in failed in 1 node(s)",
+              error: 'Sub-workflow Log in failed at "Fill password": Status 404',
               subWorkflow: {
                 workflowId: "01MY_TARGET_WORKFLOW",
                 runId: "01CHILD_RUN",
@@ -73,6 +73,9 @@ describe("CallWorkflowNode", () => {
     );
 
     fireEvent.click(screen.getByTitle("Expand"));
+    // The failure text travels as the node result's `error`, and the summary
+    // shows it: which step inside the callee broke.
+    expect(screen.getByText('Sub-workflow Log in failed at "Fill password": Status 404')).toBeTruthy();
     fireEvent.click(screen.getByText("Open this run in the target workflow"));
 
     // The request is parked before the tab opens — the target canvas reads it

@@ -736,6 +736,7 @@ Clear every \`error\` before running.
 | \`http_request_failed\` | a request failed, and \`evidence.cause\` says why: \`transport\` (no response arrived), \`status\` (>= 400), \`expected_status\` (not one of the node's \`expectedStatus\`), \`rpc_error\` (a JSON-RPC \`error\` member), \`soap_fault\` (a SOAP Fault) or \`post_response\` (a failed post-response script, or a retry whose \`until\` condition never held). \`evidence.statusCode\` is present when a response arrived; \`evidence.blockedNodeIds\` lists what it stopped |
 | \`contract_violation\` | with the \`responseSchemas\` check failing the node, the body did not match the schema for its status, or the status is not declared at all; read the violations in the node result's \`assertions\` → \`schemaErrors\`, via \`runs_getNodeResult\` with \`sections: ["assertions"]\` |
 | \`grpc_call_failed\` | a gRPC call ended with a status other than the expected one; \`evidence.statusCode\` is the gRPC code number |
+| \`workflow_call_failed\` | a Call Workflow node failed inside the workflow it calls; \`evidence.childRunIds\` names the failed child run(s) — read one with \`runs_getNodeResult\` to see which step inside the callee failed |
 | \`assertion_failed\` | a rule compared false |
 | \`assertion_source_mismatch\` | the run resolved a different source node than static analysis expects |
 | \`extractor_path_missing\` / \`extractor_type_mismatch\` | the path did not match the real response shape |

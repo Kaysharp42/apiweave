@@ -1039,6 +1039,12 @@ const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [
   /^Called workflow [\w-]+ not found$/,
   /^Call Workflow node has no target workflow configured$/,
   /^Call Workflow recursion depth exceeded$/,
+  // The failure verdicts name the target, the step that failed inside it and
+  // that step's own diagnosis or status — the same text the child run stores
+  // for the same failure. Only the executor writes strings starting with
+  // "Sub-workflow ", and every other error producer prefixes its own text, so
+  // the anchored pattern cannot be reached from outside.
+  /^Sub-workflow .+ failed/,
 ]
 
 const RETRY_VERDICT = /^((?:Condition not met|Failed) after \d+ attempts)(?:: ([\s\S]*))?$/
@@ -1058,7 +1064,10 @@ function runnerDiagnosis(error: string): string | undefined {
   // and its code; resolved secret values are masked before this point.
   if (error.startsWith(NETWORK_ERROR_PREFIX)) return error
   if (error.startsWith(HTTPS_DOWNGRADE_MESSAGE)) return HTTPS_DOWNGRADE_MESSAGE
-  // The executor's own Call Workflow diagnoses carry at most the target's id.
+  // The executor's own Call Workflow diagnoses carry at most the target's id;
+  // its failure verdicts (the last pattern above) also name the target, the
+  // step that failed inside it, and that step's own runner diagnosis — the
+  // same text the child run already holds for the same failure.
   if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
   // Auth diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/auth_error.ts).
   if (/^(OAuth 2\.0|AWS Signature V4|Digest auth|JWT)\b/.test(error)) return error

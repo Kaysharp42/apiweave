@@ -32,6 +32,14 @@ export const RUN_HISTORY_MAX_LIMIT = 100
 export const EVIDENCE_PREVIEW_DEFAULT_BYTES = 2048
 export const EVIDENCE_PREVIEW_MAX_BYTES = 8192
 
+/**
+ * Per-iteration rows a Call Workflow node's `call` evidence section carries
+ * inline. A for-each may run a thousand iterations; the rows that do not fit
+ * are counted in `omittedIterationCount`, and a failed child's own run is
+ * reachable through the called workflow's run history.
+ */
+export const CALL_EVIDENCE_MAX_ITERATIONS = 20
+
 /** Default/maximum bounded wait for run observation (`runs.create` waitMs, `runs.wait`). */
 export const RUN_WAIT_DEFAULT_MS = 10_000
 export const RUN_WAIT_MAX_MS = 30_000

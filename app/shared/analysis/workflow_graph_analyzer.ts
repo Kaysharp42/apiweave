@@ -25,6 +25,14 @@ const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> =
   notice: 2,
 }
 
+/**
+ * Child run ids a `workflow_call_failed` diagnostic carries. A for-each call
+ * that fails every iteration would otherwise turn the evidence into a
+ * directory listing; the remainder is counted in `childRunIdOmittedCount` and
+ * every child run is listed in the called workflow's run history.
+ */
+const CALL_FAILURE_RUN_ID_LIMIT = 10
+
 /** Whether a node produces the response an assertion, merge or extractor reads. */
 function isResponseNode(
   node: WorkflowNode | undefined,
@@ -1249,6 +1257,42 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           ))
         }
       }
+    }
+
+    // A Call Workflow node's own result is a summary; the failure and its
+    // evidence live in the child run, so the verdict points there. Only a
+    // failed call is diagnosed — a passed call is the node doing its job.
+    if (node.type === "workflow" && result.status === "failed" && result.subWorkflow !== undefined) {
+      const sub = result.subWorkflow
+      // A for-each call failed in at least one of its iterations; a single
+      // call failed in its one child. Only the FAILED children are worth
+      // opening, so their run ids travel; the cap keeps a pathological
+      // for-each from turning the diagnostic into a directory listing, with
+      // the remainder counted rather than silently dropped.
+      const childRunIds = (sub.forEach === undefined
+        ? (sub.status === "failed" && sub.runId !== undefined ? [sub.runId] : [])
+        : sub.forEach.iterations
+          .filter((iteration) => iteration.status === "failed" && iteration.runId !== undefined)
+          .map((iteration) => iteration.runId!)
+      ).slice(0, CALL_FAILURE_RUN_ID_LIMIT)
+      const failedChildCount = sub.forEach?.failedCount ?? (sub.status === "failed" ? 1 : 0)
+      diagnostics.push(diagnostic(
+        "workflow_call_failed",
+        "error",
+        "execution",
+        [node.nodeId],
+        sub.forEach === undefined
+          ? "A Call Workflow node failed in the selected run; the failure happened inside the called workflow."
+          : "A Call Workflow node failed in the selected run; at least one iteration of the called workflow failed.",
+        {
+          targetWorkflowId: sub.workflowId,
+          ...(sub.forEach === undefined ? {} : { failedIterationCount: sub.forEach.failedCount }),
+          ...(childRunIds.length > 0 ? { childRunIds } : {}),
+          childRunIdCount: failedChildCount,
+          childRunIdOmittedCount: Math.max(0, failedChildCount - childRunIds.length),
+        },
+        { kind: "inspect_child_run", nodeId: node.nodeId },
+      ))
     }
 
     if (node.type === "assertion") {

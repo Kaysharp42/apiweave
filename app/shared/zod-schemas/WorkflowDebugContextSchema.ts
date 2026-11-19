@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { McpWorkflowDiagnosisSchema } from "./McpWorkflowDiagnosisSchema"
+import { EvidenceCallSchema } from "./NodeEvidenceSchema"
 import { RevisionSchema } from "./RevisionSchema"
 import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 import { TimestampSchema } from "./TimestampSchema"
@@ -71,7 +72,7 @@ const DebugEvidenceSelectorSchema = z
         workspaceId: z.string().min(1),
         runId: z.string().min(1),
         nodeIds: z.array(z.string().min(1)).min(1),
-        sections: z.array(z.enum(["error", "assertions", "extractors", "request", "response", "browser"])).min(1),
+        sections: z.array(z.enum(["error", "assertions", "extractors", "request", "response", "browser", "call"])).min(1),
       })
       .strict(),
   })
@@ -112,6 +113,8 @@ const DebugEvidenceSchema = z
     assertionFailureCount: z.number().int().nonnegative(),
     extractorMissCount: z.number().int().nonnegative(),
     browser: DebugBrowserSummarySchema.optional(),
+    /** A Call Workflow node's child runs — the same summary the evidence read carries. */
+    call: EvidenceCallSchema.optional(),
     moreDetail: DebugEvidenceSelectorSchema,
   })
   .strict()
@@ -168,7 +171,9 @@ const DebugNextReadSchema = z
  * placeholders, environment key presence with provenance, secret
  * names/resolution metadata only (never values), and bounded error evidence
  * with selectors for more detail — a failed browser step adds its action,
- * page URL/title, compared values and the start of its ARIA snapshot.
+ * page URL/title, compared values and the start of its ARIA snapshot, and a
+ * failed Call Workflow node adds its child-run summary (target, child runIds,
+ * per-iteration statuses) so the callee's own run is one read away.
  *
  * Held to a 32 KiB aggregate inline budget. Over-budget detail moves to
  * `omittedNodeIds`/`nextReads` with explicit continuation arguments — counts

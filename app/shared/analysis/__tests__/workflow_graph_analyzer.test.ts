@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { RunSchema } from "../../zod-schemas/RunSchema"
 import { WorkflowSchema } from "../../zod-schemas/WorkflowSchema"
+import type { Run } from "../../types/Run"
 import type { Workflow } from "../../types/Workflow"
 import { analyzeVariableProvenance, analyzeWorkflowGraph, cycleNodeIds, findCycles, successorMap, wouldCreateCycle } from "../workflow_graph_analyzer"
 
@@ -993,6 +994,132 @@ describe("workflow graph analyzer", () => {
       expect(failure?.message).toBe("An HTTP request failed after a response arrived.")
       expect(failure?.evidence).toMatchObject({ cause: "post_response", statusCode: 200 })
     })
+  })
+
+  /** A caller workflow whose one step calls `wf-child`. */
+  function callerWorkflow(): Workflow {
+    return WorkflowSchema.parse({
+      workflowId: "workflow-1",
+      workspaceId: "workspace-1",
+      name: "Caller",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        { nodeId: "call", type: "workflow", position: { x: 100, y: 0 }, config: { targetWorkflowId: "wf-child" } },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 }, config: {} },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "call" },
+        { edgeId: "e2", source: "call", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+
+  function runOver(results: unknown[], failedNodes: string[]): Run {
+    return RunSchema.parse({
+      runId: "run-call",
+      workspaceId: "workspace-1",
+      workflowId: "workflow-1",
+      status: "failed",
+      trigger: "manual",
+      variables: {},
+      results,
+      nodeStatuses: {},
+      failedNodes,
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+
+  it("diagnoses a failed Call Workflow node with the child run to inspect", () => {
+    const run = runOver([
+      { nodeId: "start", status: "passed", duration: 1 },
+      {
+        nodeId: "call",
+        status: "failed",
+        duration: 7,
+        error: 'Sub-workflow Login failed at "Fill password": Status 404',
+        subWorkflow: {
+          workflowId: "wf-child",
+          runId: "run-child-9",
+          status: "failed",
+          nodeCount: 3,
+          failedNodeCount: 1,
+          outputVariableNames: [],
+        },
+      },
+    ], ["call"])
+
+    const call = analyzeWorkflowGraph(callerWorkflow(), run).diagnostics
+      .find((item) => item.code === "workflow_call_failed")
+    expect(call).toMatchObject({ severity: "error", category: "execution", nodeIds: ["call"] })
+    expect(call?.message).toContain("inside the called workflow")
+    expect(call?.evidence).toEqual({
+      targetWorkflowId: "wf-child",
+      childRunIds: ["run-child-9"],
+      childRunIdCount: 1,
+      childRunIdOmittedCount: 0,
+    })
+    expect(call?.remediation).toMatchObject({ kind: "inspect_child_run", nodeId: "call" })
+  })
+
+  it("diagnoses a failed for-each call with each failed iteration's run id, capped and counted", () => {
+    const iterations = Array.from({ length: 25 }, (_, index) => ({
+      index,
+      runId: `run-child-${index}`,
+      status: index % 2 === 1 ? ("failed" as const) : ("passed" as const),
+    }))
+    const run = runOver([
+      { nodeId: "start", status: "passed", duration: 1 },
+      {
+        nodeId: "call",
+        status: "failed",
+        duration: 70,
+        error: "Sub-workflow Login: 12 of 25 iteration(s) failed",
+        subWorkflow: {
+          workflowId: "wf-child",
+          status: "failed",
+          nodeCount: 3,
+          failedNodeCount: 0,
+          outputVariableNames: [],
+          forEach: { itemCount: 25, ranCount: 25, failedCount: 12, iterations },
+        },
+      },
+    ], ["call"])
+
+    const call = analyzeWorkflowGraph(callerWorkflow(), run).diagnostics
+      .find((item) => item.code === "workflow_call_failed")
+    // 12 failed children exceed the run-id cap; the first ten travel and the
+    // rest are counted, not silently dropped.
+    expect(call?.evidence).toMatchObject({
+      targetWorkflowId: "wf-child",
+      failedIterationCount: 12,
+      childRunIds: ["run-child-1", "run-child-3", "run-child-5", "run-child-7", "run-child-9", "run-child-11", "run-child-13", "run-child-15", "run-child-17", "run-child-19"],
+      childRunIdCount: 12,
+      childRunIdOmittedCount: 2,
+    })
+    expect(call?.message).toContain("iteration")
+  })
+
+  it("does not diagnose a call that passed", () => {
+    const run = runOver([
+      { nodeId: "start", status: "passed", duration: 1 },
+      {
+        nodeId: "call",
+        status: "passed",
+        duration: 7,
+        subWorkflow: { workflowId: "wf-child", runId: "run-child-9", status: "passed", nodeCount: 3, failedNodeCount: 0, outputVariableNames: [] },
+      },
+    ], [])
+
+    expect(analyzeWorkflowGraph(callerWorkflow(), run).diagnostics.map((item) => item.code))
+      .not.toContain("workflow_call_failed")
   })
 })
 

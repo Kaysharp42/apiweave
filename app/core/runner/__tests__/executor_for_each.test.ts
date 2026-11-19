@@ -127,7 +127,11 @@ describe("Call Workflow forEach", () => {
     it("stops starting iterations after the first failure by default", async () => {
       const output = await run(caller({ items: '["ok","bad","ok2","ok3"]', itemVariable: "item" }), httpChild())
       expect(output.status).toBe("failed")
-      const forEach = output.results.find((r) => r.nodeId === "call1")?.subWorkflow?.forEach
+      const result = output.results.find((r) => r.nodeId === "call1")
+      // The failure text is the node's `error`, so the run record and every
+      // evidence read carry which iteration broke.
+      expect(result?.error).toBe("Sub-workflow Http failed in iteration 2")
+      const forEach = result?.subWorkflow?.forEach
       expect(forEach).toMatchObject({ itemCount: 4, ranCount: 2, failedCount: 1 })
     })
 
@@ -138,6 +142,7 @@ describe("Call Workflow forEach", () => {
       )
       const result = output.results.find((r) => r.nodeId === "call1")
       expect(result?.status).toBe("failed")
+      expect(result?.error).toBe("Sub-workflow Http: 1 of 3 iteration(s) failed")
       expect(result?.subWorkflow?.forEach).toMatchObject({ ranCount: 3, failedCount: 1 })
       expect(result?.subWorkflow?.forEach?.iterations.map((i) => i.status)).toEqual(["passed", "failed", "passed"])
     })

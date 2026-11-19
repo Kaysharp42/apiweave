@@ -1302,20 +1302,22 @@ describe("WorkflowExecutor", () => {
       expect(output.failedNodes).toContain("call1")
     })
 
-    /** The failure text the caller's node reports for the child workflow named "Login". */
+    /**
+     * The failure text the caller's node reports for the child workflow named
+     * "Login" — read from the stored node result's `error`, which is where a
+     * run record, a CLI reporter and an MCP evidence read all find it.
+     */
     async function callFailure(child: Omit<ResolvedSubWorkflow, "name">): Promise<string> {
-      const messages: string[] = []
       const executor = new WorkflowExecutor({
         ...makeDeps(),
-        emitProgress: (event) => {
-          if (event.kind === "node.status" && event.nodeId === "call1" && event.status === "failed" && event.message) messages.push(event.message)
-        },
         resolveWorkflow: () => ({ name: "Login", ...child }),
       })
       const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "sub-1" }))
       expect(output.status).toBe("failed")
-      expect(messages).toHaveLength(1)
-      return messages[0]!
+      const result = output.results.find((r) => r.nodeId === "call1")
+      expect(result?.status).toBe("failed")
+      expect(typeof result?.error).toBe("string")
+      return result?.error ?? ""
     }
 
     it("names the step that failed inside the called workflow, with its error", async () => {

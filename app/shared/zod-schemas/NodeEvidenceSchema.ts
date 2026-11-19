@@ -62,6 +62,38 @@ const EvidenceBrowserSchema = z
   .strict()
 
 /**
+ * A Call Workflow node's child-run summary. `runId` (and each for-each
+ * iteration's `runId`) is how an agent follows a failed call into the called
+ * workflow's own run; iteration rows are capped with the remainder counted in
+ * `omittedIterationCount`, never silently dropped. Shared with the debug
+ * context's evidence entries so the two reads agree on a call.
+ */
+export const EvidenceCallSchema = z
+  .object({
+    workflowId: z.string().min(1),
+    runId: z.string().min(1).optional(),
+    status: z.enum(["passed", "failed", "cancelled"]),
+    nodeCount: z.number().int().nonnegative(),
+    failedNodeCount: z.number().int().nonnegative(),
+    forEach: z
+      .object({
+        itemCount: z.number().int().nonnegative(),
+        ranCount: z.number().int().nonnegative(),
+        failedCount: z.number().int().nonnegative(),
+        iterations: z.array(
+          z.object({
+            index: z.number().int().nonnegative(),
+            runId: z.string().min(1).optional(),
+            status: z.enum(["passed", "failed", "cancelled"]),
+          }),
+        ),
+        omittedIterationCount: z.number().int().nonnegative(),
+      })
+      .optional(),
+  })
+  .strict()
+
+/**
  * Targeted evidence for one node of a run. Sections the caller did not ask
  * for are named in `omittedSections`, never silently absent. Four states are
  * reported distinctly:
@@ -91,6 +123,7 @@ export const NodeEvidenceSchema = z
     request: EvidenceRequestSchema.optional(),
     response: EvidenceResponseSchema.optional(),
     browser: EvidenceBrowserSchema.optional(),
+    call: EvidenceCallSchema.optional(),
     omittedSections: z.array(z.string().min(1)),
     budgetOmitted: z.boolean(),
   })

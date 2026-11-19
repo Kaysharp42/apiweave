@@ -392,11 +392,19 @@ describe("RunScheduler", () => {
 
       // ...and the caller points at it, without absorbing the child's nodes.
       const callerRun = runs.getById(callerRunId)
-      expect(callerRun?.results.find((r) => r.nodeId === "call1")?.subWorkflow).toMatchObject({
+      const callResult = callerRun?.results.find((r) => r.nodeId === "call1")
+      expect(callResult?.subWorkflow).toMatchObject({
         workflowId: target.workflowId,
         runId: childRun.runId,
         status: "failed",
       })
+      // The failure text is the caller node's stored `error`, so the run record,
+      // the CLI reporters and MCP evidence all say which step inside the callee
+      // broke — and `safeErrorClass` keeps the verdict verbatim (the child's own
+      // raw diagnosis names the URL exactly as the child run records it today).
+      expect(callResult?.error).toBe(
+        `Sub-workflow target-wf failed at "sub_http": Not a requestable http(s) URL: ftp://169.254.169.254/blocked`,
+      )
       expect(callerRun?.results.map((r) => r.nodeId)).not.toContain("sub_http")
       expect(Object.keys(callerRun?.nodeStatuses ?? {})).not.toContain("sub_http")
     })
@@ -1775,6 +1783,10 @@ describe("safeErrorClass", () => {
       ["Called workflow wf 1 not found", "Node execution failed"],
       ["Call Workflow node has no target workflow configured", "Call Workflow node has no target workflow configured"],
       ["Call Workflow recursion depth exceeded", "Call Workflow recursion depth exceeded"],
+      ["Sub-workflow Login failed at \"Fill password\": Status 404 (+1 more)", "Sub-workflow Login failed at \"Fill password\": Status 404 (+1 more)"],
+      ["Sub-workflow Login failed in iteration 2", "Sub-workflow Login failed in iteration 2"],
+      ["Sub-workflow Login: 3 of 5 iteration(s) failed", "Sub-workflow Login: 3 of 5 iteration(s) failed"],
+      ["Sub-workflow: a prefix only the executor writes, failed", "Node execution failed"],
       ["OAuth 2.0 token request failed: 401 timeout", "OAuth 2.0 token request failed: 401 timeout"],
       ["AWS Signature V4 needs a region", "AWS Signature V4 needs a region"],
       ["Digest auth challenge missing", "Digest auth challenge missing"],
