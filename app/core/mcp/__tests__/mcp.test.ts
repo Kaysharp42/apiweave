@@ -921,6 +921,11 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     // Repair: evidence, then one patched node, then a rerun that restarts the chain.
     expect(authoring.text).toContain("sections: [\"browser\"]")
     expect(authoring.text).toContain("resume: { nodeId }")
+    // The replace recipe — a merged patch cannot drop keys, so a locator-kind
+    // or action change is removeNodeIds + a complete upsert of the same id.
+    expect(authoring.text).toContain("Re-pick element")
+    expect(authoring.text).toContain("Turn into extract")
+    expect(authoring.text).toContain("removeNodeIds")
     await client.close()
   })
 
@@ -1401,6 +1406,171 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
       auth: { type: "bearer", bearer: { token: "{{secrets.API_TOKEN}}" } },
       timeout: 30,
     })
+    await client.close()
+  })
+
+  /**
+   * The replace recipe. A merged patch cannot drop config keys, so changing a
+   * browser step's locator kind — or its action — must replace the config, not
+   * merge into it: the id leaves in `removeNodeIds` and returns as a complete
+   * node in the same call, and its edges are filtered against the final node
+   * set, which still contains the id.
+   */
+  it("replaces a browser step's locator by remove+upsert of the same id in one workflows_patch", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "locator repair",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "open", type: "browser", position: { x: 100, y: 0 }, config: { action: "navigate", url: "https://example.test/login" } },
+        {
+          nodeId: "email",
+          type: "browser",
+          position: { x: 200, y: 0 },
+          config: { action: "fill", locator: { kind: "role", role: "textbox", name: "Email" }, value: "a@example.test" },
+        },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "open" },
+        { edgeId: "e2", source: "open", target: "email" },
+        { edgeId: "e3", source: "email", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    // The naive merge leaves the role locator's `role`/`name` under the new
+    // kind, and the strict locator union rejects the leftover keys. This is
+    // the failure the recipe exists to bypass.
+    const merged = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.workflowId,
+        upsertNodes: [{ nodeId: "email", config: { locator: { kind: "label", value: "Email address" } } }],
+      },
+    })
+    expect((merged as { isError?: boolean }).isError).toBe(true)
+    const mergedError = JSON.parse(textOf(merged as { content: Array<{ type: string; text?: string }> })) as {
+      error: { details?: { issues: Array<{ message: string }> } }
+    }
+    expect(mergedError.error.details?.issues.some((issue) => issue.message.includes("role"))).toBe(true)
+
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.workflowId,
+            // The failed merge wrote nothing, so the rev never moved.
+            expectedRevision: created.rev,
+            removeNodeIds: ["email"],
+            upsertNodes: [
+              {
+                nodeId: "email",
+                type: "browser",
+                position: { x: 200, y: 0 },
+                config: { action: "fill", locator: { kind: "label", value: "Email address" }, value: "a@example.test" },
+              },
+            ],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { rev: number; touchedNodeIds: string[] }; diagnosis: { summary: { errors: number } } }
+
+    // One write: rev+1, the replaced id touched, the graph still valid.
+    expect(patched.result.rev).toBe(created.rev + 1)
+    expect(patched.result.touchedNodeIds).toEqual(["email"])
+    expect(patched.diagnosis.summary.errors).toBe(0)
+
+    const persisted = await dispatchOk<{
+      nodes: Array<{ nodeId: string; position: { x: number; y: number }; config: { locator?: Record<string, unknown> } }>
+      edges: Array<{ edgeId: string; source: string; target: string }>
+    }>("workflows", "get", { workspaceId: workspace.workspaceId, workflowId: created.workflowId })
+
+    const replaced = persisted.nodes.find((node) => node.nodeId === "email")!
+    expect(replaced.config.locator).toEqual({ kind: "label", value: "Email address" })
+    expect(replaced.position).toEqual({ x: 200, y: 0 })
+    // The replaced node keeps its incoming and outgoing edges.
+    expect(persisted.edges).toEqual([
+      { edgeId: "e1", source: "start", target: "open" },
+      { edgeId: "e2", source: "open", target: "email" },
+      { edgeId: "e3", source: "email", target: "end" },
+    ])
+    await client.close()
+  })
+
+  it("turns a browser step into an extract by remove+upsert of the same id in one workflows_patch", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "turn into extract",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "open", type: "browser", position: { x: 100, y: 0 }, config: { action: "navigate", url: "https://example.test/orders" } },
+        {
+          nodeId: "reference",
+          type: "browser",
+          position: { x: 200, y: 0 },
+          config: { action: "expect-text", locator: { kind: "role", role: "cell", name: "Order number" }, text: "ORD-7", match: "equals" },
+        },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "open" },
+        { edgeId: "e2", source: "open", target: "reference" },
+        { edgeId: "e3", source: "reference", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.workflowId,
+            expectedRevision: created.rev,
+            removeNodeIds: ["reference"],
+            upsertNodes: [
+              {
+                nodeId: "reference",
+                type: "browser",
+                position: { x: 200, y: 0 },
+                config: {
+                  action: "extract",
+                  from: "text",
+                  locator: { kind: "role", role: "cell", name: "Order number" },
+                  variable: "orderNumber",
+                },
+              },
+            ],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { rev: number; touchedNodeIds: string[] }; diagnosis: { summary: { errors: number } } }
+
+    expect(patched.result.rev).toBe(created.rev + 1)
+    expect(patched.result.touchedNodeIds).toEqual(["reference"])
+    expect(patched.diagnosis.summary.errors).toBe(0)
+
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string; config: Record<string, unknown> }>; edges: Array<{ edgeId: string }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: created.workflowId },
+    )
+    const replaced = persisted.nodes.find((node) => node.nodeId === "reference")!
+    // The element stays; the old action's own fields are gone.
+    expect(replaced.config).toMatchObject({
+      action: "extract",
+      from: "text",
+      locator: { kind: "role", role: "cell", name: "Order number" },
+      variable: "orderNumber",
+    })
+    expect(replaced.config).not.toHaveProperty("text")
+    expect(replaced.config).not.toHaveProperty("match")
+    expect(persisted.edges.map((edge) => edge.edgeId)).toEqual(["e1", "e2", "e3"])
     await client.close()
   })
 

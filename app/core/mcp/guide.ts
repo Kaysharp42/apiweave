@@ -292,6 +292,23 @@ the failure. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
 enough; the image arrives as image content. Patch only that node with
 \`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
 rerun that reaches a browser step restarts the chain from its first step.
+
+The desktop's **Re-pick element** is yours too: \`browser_inspect\` with
+\`beforeNodeId\` shows the page the step acts on, and a locator taken from
+that snapshot replaces the step's. A merged patch cannot drop old keys
+(\`role\`, \`name\`, \`text\`, …), so a changed locator kind — and the desktop's
+**Turn into extract**, the same replace with \`action: "extract"\`, \`from\` and
+a \`variable\` — is one patch naming the step in \`removeNodeIds\` and upserting
+its complete node, its edges kept:
+
+\`\`\`json
+{ "removeNodeIds": ["fill-email"], "upsertNodes": [
+  { "nodeId": "fill-email", "type": "browser", "position": { "x": 220, "y": 0 },
+    "config": { "action": "fill",
+                "locator": { "kind": "label", "value": "Email address" },
+                "value": "{{secrets.EMAIL}}" } }] }
+\`\`\`
+
 Decide whether the test or the app is wrong before you change an \`expect-*\`
 step, and never weaken a check to turn a run green. Runs started over MCP are
 always headless.

@@ -243,7 +243,11 @@ config value, and the latest runs for a page come from a single query.
 replace matching entries by id and append the rest, `removeNodeIds` and
 `removeEdgeIds` delete by id (edges attached to a removed node go with it),
 `setVariables`/`unsetVariables` merge into the stored map, and `name`,
-`description` and `tags` replace their stored values. There is no whole-graph
+`description` and `tags` replace their stored values. Merging is recursive, so
+it cannot remove config keys: to replace a node's config outright — a browser
+step's locator kind, or a step turned into an `extract` — put its nodeId in
+`removeNodeIds` and upsert its complete definition in the same call, and its
+edges survive. There is no whole-graph
 replace tool for agents. `expectedRevision` makes the write a compare-and-swap
 against the revision the caller last read, so a concurrent desktop edit produces
 a conflict rather than being overwritten. The desktop canvas saves the same way:
