@@ -1020,6 +1020,116 @@ function addUnknownFunctionDiagnostics(workflow: WorkflowGraphInput, diagnostics
   }
 }
 
+/** One way a failed http-request node actually failed, as its recorded result says. */
+type HttpRequestFailure = {
+  readonly code: "http_request_failed" | "contract_violation"
+  readonly cause:
+    | "transport"
+    | "contract"
+    | "expected_status"
+    | "rpc_error"
+    | "soap_fault"
+    | "status"
+    | "post_response"
+  readonly message: string
+  readonly evidence: Readonly<Record<string, JsonValue>>
+  readonly remediation: WorkflowDiagnostic["remediation"]
+}
+
+/**
+ * Classify a failed http-request result in the executor's own precedence: no
+ * response at all, then the response-level gates (the `responseSchemas`
+ * contract check, `expectedStatus`, a JSON-RPC `error` member, a SOAP Fault),
+ * then the status itself, then whatever happened after a non-error response
+ * arrived. "An error status" is only true for one of those, and a 2xx that
+ * failed a contract check would otherwise be mislabeled by it.
+ *
+ * A contract violation is its own code: its evidence is structured — the
+ * failed `matchesSchema` evaluation's `schemaErrors` in the result's
+ * `assertions`, read with `runs_getNodeResult` `sections: ["assertions"]` —
+ * so the remediation is to read the violations, not to re-inspect the request.
+ * The other causes share `http_request_failed` and name themselves in
+ * `evidence.cause`.
+ */
+function httpRequestFailure(
+  node: Extract<WorkflowNode, { type: "http-request" }>,
+  result: RunResult,
+  statusCode: number | undefined,
+  response: Readonly<Record<string, JsonValue>>,
+): HttpRequestFailure {
+  const remediation: WorkflowDiagnostic["remediation"] = { kind: "inspect_http_configuration", nodeId: node.nodeId }
+  if (statusCode === undefined) {
+    return {
+      code: "http_request_failed",
+      cause: "transport",
+      message: "An HTTP request failed before a response status was available.",
+      evidence: {},
+      remediation,
+    }
+  }
+  const statusEvidence = { statusCode }
+  // The contract check is the only thing that puts a `matchesSchema` evaluation
+  // on an http-request result, so a failed one is a contract violation — for a
+  // 2xx as much as for any other status.
+  if ((result.assertions ?? []).some((evaluation) => evaluation.operator === "matchesSchema" && evaluation.outcome === "fail")) {
+    return {
+      code: "contract_violation",
+      cause: "contract",
+      message: "A response failed the node's responseSchemas contract check; the violations are recorded in the run result's assertions.",
+      evidence: statusEvidence,
+      remediation: { kind: "read_schema_violations", nodeId: node.nodeId },
+    }
+  }
+  const expectedStatus = result.expectedStatus
+  if (expectedStatus !== undefined && !(Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus]).includes(statusCode)) {
+    return {
+      code: "http_request_failed",
+      cause: "expected_status",
+      message: `An HTTP request returned ${statusCode}, which the node's expectedStatus does not allow.`,
+      evidence: { ...statusEvidence, expectedStatus },
+      remediation,
+    }
+  }
+  const body = response["body"]
+  if (node.config?.bodyType === "jsonrpc" && node.config.allowRpcError !== true && isRecord(body) && "error" in body) {
+    return {
+      code: "http_request_failed",
+      cause: "rpc_error",
+      message: "A JSON-RPC response carried an error member.",
+      evidence: statusEvidence,
+      remediation,
+    }
+  }
+  if (isRecord(response["fault"])) {
+    return {
+      code: "http_request_failed",
+      cause: "soap_fault",
+      message: "A SOAP response carried a Fault.",
+      evidence: statusEvidence,
+      remediation,
+    }
+  }
+  if (statusCode >= 400) {
+    return {
+      code: "http_request_failed",
+      cause: "status",
+      message: "An HTTP request returned an error status.",
+      evidence: statusEvidence,
+      remediation,
+    }
+  }
+  // A non-error status that still failed the node: a failed post-response
+  // script, or a retry whose `until` condition never held. The response is not
+  // the cause, so the message must not claim it was.
+  return {
+    code: "http_request_failed",
+    cause: "post_response",
+    message: "An HTTP request failed after a response arrived.",
+    evidence: statusEvidence,
+    remediation,
+  }
+}
+
 function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
   const resultsByNode = new Map(run.results.map((result) => [result.nodeId, result]))
@@ -1054,21 +1164,34 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           const downstreamResult = resultsByNode.get(nodeId)
           return downstreamResult === undefined || downstreamResult.status === "skipped"
         }).sort()
-        diagnostics.push(diagnostic(
-          node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : node.type === "grpc" ? "grpc_call_failed" : "http_request_failed",
-          "error",
-          "execution",
-          // Only the failed node: the starved branch is named once, in evidence.
-          [node.nodeId],
-          statusCode === undefined
-            ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection", "HTTP request", "gRPC call")} failed before a response status was available.`
-            : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "An HTTP request", "A gRPC call")} returned an error status.`,
-          {
-            ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
-            blockedNodeIds,
-          },
-          { kind: "inspect_http_configuration", nodeId: node.nodeId },
-      ))
+        if (node.type === "http-request") {
+          const failure = httpRequestFailure(node, result, statusCode, response)
+          diagnostics.push(diagnostic(
+            failure.code,
+            "error",
+            "execution",
+            // Only the failed node: the starved branch is named once, in evidence.
+            [node.nodeId],
+            failure.message,
+            { cause: failure.cause, ...failure.evidence, blockedNodeIds },
+            failure.remediation,
+          ))
+        } else {
+          diagnostics.push(diagnostic(
+            node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : "grpc_call_failed",
+            "error",
+            "execution",
+            [node.nodeId],
+            statusCode === undefined
+              ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection", "gRPC call")} failed before a response status was available.`
+              : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "A gRPC call")} returned an error status.`,
+            {
+              ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
+              blockedNodeIds,
+            },
+            { kind: "inspect_http_configuration", nodeId: node.nodeId },
+          ))
+        }
       }
       if (response["truncated"] === true) {
         diagnostics.push(diagnostic(
