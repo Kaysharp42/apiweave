@@ -118,11 +118,11 @@ const patchInput = z
     tags: z.array(z.string()).optional().describe("Replaces the stored tag list."),
     upsertNodes: patchNodes
       .optional()
-      .describe("Nodes to add or patch, matched by nodeId. Existing nodes merge recursively: omitted config fields and position stay as stored. A new node must include its type and complete schema-valid config."),
+      .describe("Nodes to add or patch, matched by nodeId. Existing nodes merge recursively: omitted config fields and position stay as stored. A merge cannot remove keys — to replace an existing node's config (e.g. a browser step's locator kind or action), name its nodeId in removeNodeIds and upsert the complete node in the same call; its edges are kept. A new node must include its type and complete schema-valid config."),
     removeNodeIds: z
       .array(z.string().min(1))
       .optional()
-      .describe("nodeIds to delete. Edges attached to a deleted node are dropped with it."),
+      .describe("nodeIds to delete. Edges attached to a deleted node are dropped with it — unless the same id is upserted in this patch, which replaces the node and keeps its edges."),
     upsertEdges: z
       .array(WorkflowEdgeSchema)
       .optional()
