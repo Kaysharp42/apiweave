@@ -631,7 +631,7 @@ Clear every \`error\` before running.
 | \`assertion_branch_handle_invalid\` | an edge leaving an assertion has no \`sourceHandle\`, or one that is not \`pass\`/\`fail\`. The branch stops silently at run time. |
 | \`assertion_branch_duplicate\` | more than one edge leaves one assertion handle — the branches run in parallel (notice, not warning) |
 | \`assertion_fail_wired_on_all\` | a \`fail\` handle is wired straight to \`end\`, which does what leaving it unconnected already does — an unwired \`fail\` is the normal expected shape (notice) |
-| \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, response-producing (\`http-request\` or \`sse\`) node reachable upstream |
+| \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, response-producing (\`http-request\`, \`sse\`, \`websocket\` or \`grpc\`) node reachable upstream |
 | \`assertion_source_path_invalid\` | the path cannot address a value for that source — see \`apiweave://guide/assertions\` |
 | \`assertion_source_unknown\` / \`assertion_operator_unknown\` | not a member of the enum |
 | \`assertion_expected_missing\` | the operator needs an \`expectedValue\` (present, not truthy; \`false\`, \`0\` and \`""\` are valid) |
@@ -647,26 +647,41 @@ Clear every \`error\` before running.
 | \`variable_source_missing\` | \`{{variables.x}}\` is read but nothing produces it |
 | \`variable_producer_duplicate\` | two nodes write the same variable |
 | \`variable_producer_not_upstream\` | the producer is not upstream of the consumer, so the value is not set yet |
+| \`unknown_function\` | a \`{{fn(...)}}\` placeholder names no real dynamic function, so it goes out as literal text — the functions that do exist are listed in \`apiweave://guide/placeholders\` |
+
+## Browser steps
+
+| code | meaning |
+| --- | --- |
+| \`browser_parallel_branches\` | browser steps share one page, so page-driving nodes (a \`browser\` step, or a \`workflow\` call into a workflow with browser steps) on branches neither of which reaches the other would act on it in the same run — an error; wire them into one chain |
+| \`browser_chain_starts_without_navigate\` | the first step of the chain is not a \`navigate\`, so it runs on an empty page (warning) |
+| \`browser_selector_fallback\` | the locator is a raw recorder \`selector\`, which works but breaks easily (notice) — prefer a role, label or test id |
 
 ## Run-correlated (pass a \`runId\`)
 
 | code | meaning |
 | --- | --- |
 | \`http_request_failed\` | a request returned >= 400 or failed in transport; \`evidence.blockedNodeIds\` lists what it stopped |
+| \`sse_stream_failed\` / \`websocket_stream_failed\` | an SSE stream or WebSocket connection failed in transport or returned an error status; \`evidence.blockedNodeIds\` lists what it stopped |
 | \`grpc_call_failed\` | a gRPC call ended with a status other than the expected one; \`evidence.statusCode\` is the gRPC code number |
 | \`assertion_failed\` | a rule compared false |
 | \`assertion_source_mismatch\` | the run resolved a different source node than static analysis expects |
+| \`assertion_source_missing_at_run\` / \`assertion_source_ambiguous_at_run\` | in the run, the assertion's response source was unavailable, or more than one was reachable |
 | \`extractor_path_missing\` / \`extractor_type_mismatch\` | the path did not match the real response shape |
 | \`extractor_producer_not_executed\` | the producing node never ran |
 | \`response_body_truncated\` / \`response_body_unavailable\` | the body was not fully captured, so path checks are inconclusive |
 | \`secret_reference_unresolved\` | \`{{secrets.NAME}}\` had no value in any scope |
+| \`secret_resolution_metadata_missing\` | the run record carries no resolution metadata for a referenced secret — the referencing node never ran, or the run predates the reference (notice) |
+| \`run_result_unknown_node\` | the run recorded a node the stored workflow no longer has — the graph changed after the run (notice) |
 | \`nodes_not_executed\` | nodes the run never reached |
 
 ## Not covered
 
 \`workflow\` (call-workflow) node targets are validated on save, not by the
-analyzer. \`{{env.*}}\` references are not checked against the selected
-environment. Both still fail at run time if wrong.
+analyzer. A for-each \`items\` source is not checked statically either — the
+save is lenient on purpose, and only the run proves \`forEach.items\` resolves
+to an array. \`{{env.*}}\` references are not checked against the selected
+environment. All still fail at run time if wrong.
 `
 
 const REDACTION = `# What MCP reads withhold
@@ -707,17 +722,21 @@ usually omit it — patch only touches the nodes you name.
 Runs are metadata only: status, timing, aggregate counts and failed-node
 detail with the *type* and *state* of actual values but never the values
 themselves. No response bodies, headers, cookies, URLs or variable values
-cross this bridge on any run tool except one: \`runs_getNodeResult\` returns
+cross this bridge on any run tool except three. \`runs_getNodeResult\` returns
 bounded evidence for up to 50 nodes of a run — selected sections, an
-extractor-grammar path within a JSON response body, and capped text previews
-with explicit truncation accounting — after the same secret-redaction pass
-every other read gets. Bodies travel as previews, never whole. A browser
-step's URL, title, expected and actual values and masked ARIA snapshot are
-evidence of the same kind; \`screenshot: true\` also returns that step's JPEG,
-with password fields and every masked value painted over. \`browser_inspect\`
-returns the page its run left open under the same masking. Everything
-else about runs stays metadata-only; to see other payloads, open the run in
-the desktop app.
+extractor-grammar path within a JSON response body, capped text previews with
+explicit truncation accounting, and a browser step's URL, title, expected and
+actual values and masked ARIA snapshot; \`screenshot: true\` also returns that
+step's JPEG, with password fields and every masked value painted over.
+\`workflows_debugContext\` returns the same kind of bounded evidence around a
+failure: truncated error previews with explicit byte accounting, and a failed
+browser step's URL, title, expected and actual values and the opening of its
+masked ARIA snapshot. \`browser_inspect\` returns the page its run left open —
+URL, title and masked ARIA snapshot — and with \`screenshot: true\` the
+viewport JPEG, painted over the same way. All three run the same
+secret-redaction pass every other read gets, and bodies travel as previews,
+never whole. Everything else about runs stays metadata-only; to see other
+payloads, open the run in the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response
 server-side and returns *rules*, so you get verified paths without the payload.
