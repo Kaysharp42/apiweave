@@ -1039,20 +1039,34 @@ const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [
   /^Called workflow [\w-]+ not found$/,
   /^Call Workflow node has no target workflow configured$/,
   /^Call Workflow recursion depth exceeded$/,
-  // The failure verdicts name the target, the step that failed inside it and
-  // that step's own diagnosis or status — the same text the child run stores
-  // for the same failure. Only the executor writes strings starting with
-  // "Sub-workflow ", and every other error producer prefixes its own text, so
-  // the anchored pattern cannot be reached from outside.
-  /^Sub-workflow .+ failed/,
+  // A failure verdict with no cause names only the target workflow.
+  /^Sub-workflow .+ failed$/,
+  /^Sub-workflow .+ failed in iteration \d+$/,
+  /^Sub-workflow .+: \d+ of \d+ iteration\(s\) failed$/,
 ]
 
 const RETRY_VERDICT = /^((?:Condition not met|Failed) after \d+ attempts)(?:: ([\s\S]*))?$/
+
+/**
+ * A Call Workflow verdict that carries a cause: the prefix names only the
+ * target and the step that failed inside it, and the cause after it is that
+ * step's own error, taken from the child's unsanitized result — so it is
+ * classed like any other error. The lazy prefixes stop at the first separator,
+ * so a name containing one moves text into the classed cause, never out of it.
+ */
+const SUB_WORKFLOW_CAUSE: readonly RegExp[] = [
+  /^(Sub-workflow .+? failed at ".*?"): ([\s\S]*?)( \(\+\d+ more\))?$/,
+  /^(Sub-workflow .+? failed): ([\s\S]*)$/,
+]
 
 export function safeErrorClass(error: string): string {
   // A retrying node's verdict carries only its attempt count; its cause is classed on its own.
   const retry = RETRY_VERDICT.exec(error)
   if (retry) return retry[2] === undefined ? retry[1]! : `${retry[1]}: ${safeErrorClass(retry[2])}`
+  for (const pattern of SUB_WORKFLOW_CAUSE) {
+    const verdict = pattern.exec(error)
+    if (verdict) return `${verdict[1]!}: ${safeErrorClass(verdict[2]!)}${verdict[3] ?? ""}`
+  }
   return runnerDiagnosis(error) ?? genericErrorClass(error)
 }
 
@@ -1064,11 +1078,11 @@ function runnerDiagnosis(error: string): string | undefined {
   // and its code; resolved secret values are masked before this point.
   if (error.startsWith(NETWORK_ERROR_PREFIX)) return error
   if (error.startsWith(HTTPS_DOWNGRADE_MESSAGE)) return HTTPS_DOWNGRADE_MESSAGE
-  // The executor's own Call Workflow diagnoses carry at most the target's id;
-  // its failure verdicts (the last pattern above) also name the target, the
-  // step that failed inside it, and that step's own runner diagnosis — the
-  // same text the child run already holds for the same failure.
+  // The executor's own Call Workflow diagnoses carry at most the target's id or name.
   if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
+  // The causes a Call Workflow verdict gives for a child step that recorded no
+  // error of its own: its failed-rule count, or its status code.
+  if (/^\d+ assertions? failed$/.test(error) || /^Status \d{3}$/.test(error) || error === "no error reported") return error
   // Auth diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/auth_error.ts).
   if (/^(OAuth 2\.0|AWS Signature V4|Digest auth|JWT)\b/.test(error)) return error
   // A script's own error or failed-test count: the user's script wrote it, and

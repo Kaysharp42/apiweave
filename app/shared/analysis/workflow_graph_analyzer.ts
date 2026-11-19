@@ -403,9 +403,11 @@ export const WORKFLOW_DIAGNOSTIC_CODES = [
   // Run-correlated
   "run_result_unknown_node",
   "http_request_failed",
+  "contract_violation",
   "sse_stream_failed",
   "websocket_stream_failed",
   "grpc_call_failed",
+  "workflow_call_failed",
   "response_body_truncated",
   "response_body_unavailable",
   "assertion_source_mismatch",
