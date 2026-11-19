@@ -908,6 +908,33 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     await client.close()
   })
 
+  /**
+   * Post-1.0 features an agent cannot discover anywhere else: SOAP bodies and
+   * the Call Workflow for-each are not in tools/list, and the full path
+   * grammar — dot, `$` JSONPath, `xpath:` — is summarized away in the schemas.
+   */
+  it("teaches SOAP, the Call Workflow for-each, and the full path grammar", async () => {
+    const client = await connectClient()
+    const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))
+      .contents[0] as { text: string }
+    const assertions = (await client.readResource({ uri: guideUri("assertions") }))
+      .contents[0] as { text: string }
+
+    // SOAP rides the http-request section: bodyType, the fault fields, XPath.
+    expect(authoring.text).toContain('"bodyType": "soap"')
+    expect(authoring.text).toContain("response.fault.code")
+    expect(authoring.text).toContain("xpath:")
+    // The for-each paragraph: item grammar, bounds and the output mapping.
+    expect(authoring.text).toContain("forEach")
+    expect(authoring.text).toContain("1000 items")
+    expect(authoring.text).toContain("$.fetch.response.body.items")
+    // Extractors and assertions state all three path grammars.
+    expect(authoring.text).toContain("$.response.body.items[?@.id==3].name")
+    expect(assertions.text).toContain("$.response.body.items[?@.id==3].name")
+    expect(assertions.text).toContain("xpath://*[local-name()=")
+    await client.close()
+  })
+
   it("teaches the browser authoring loop, its locator order and the repair recipe", async () => {
     const client = await connectClient()
     const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))

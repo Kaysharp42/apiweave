@@ -1011,6 +1011,42 @@ describe("Phase 2 — targeted node evidence", () => {
     expect(miss.items[0]?.response?.pathStatus).toBe("path-missing")
   })
 
+  /**
+   * A SOAP fault is parsed onto the response record outside its body
+   * (`response.fault.code`), and the evidence path grammar reaches it the same
+   * way an assertion path does: the path resolves against the whole response
+   * record, not only its body.
+   */
+  it("resolves an evidence path against the whole response record, not only its body", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "soap-evidence" })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "soap",
+        status: "failed",
+        duration: 9,
+        response: {
+          statusCode: 500,
+          body: "<SOAP-ENV:Envelope><SOAP-ENV:Fault/></SOAP-ENV:Envelope>",
+          fault: { code: "soap:Server", reason: "Station unavailable" },
+        },
+      }],
+      failedNodes: ["soap"],
+    })
+
+    const fault = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
+      workspaceId,
+      runId: run.runId,
+      nodeId: "soap",
+      sections: ["response"],
+      path: "response.fault.code",
+    })
+    expect(fault.items[0]?.response?.preview).toBe("\"soap:Server\"")
+    expect(fault.items[0]?.response?.pathStatus).toBe("resolved")
+  })
+
   it("caps text previews with explicit ranges and totals", async () => {
     const { workspaceId, runId } = await seedFailedRun()
     const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {

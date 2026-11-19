@@ -97,9 +97,10 @@ export function buildSessionBriefing(context: AgentBriefingContext): string {
   return `# APIWeave session briefing
 
 You were launched from APIWeave, a desktop app for building and running API test
-workflows. A workflow is a graph of nodes — HTTP requests, assertions, delays —
-that the user runs against a real service. The user is looking at it while you
-work, so changes you make appear on their canvas as you make them.
+workflows. A workflow is a graph of nodes — HTTP, gRPC, WebSocket and SSE calls,
+browser steps, assertions, delays — that the user runs against a real service.
+The user is looking at it while you work, so changes you make appear on their
+canvas as you make them.
 
 ## What this session is attached to
 

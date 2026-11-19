@@ -54,6 +54,11 @@ export const GrpcNodeDataSchema = z
       .string()
       .optional()
       .describe('The gRPC status code name this call is expected to return, e.g. "INVALID_ARGUMENT". The node passes on a match and fails otherwise — a non-OK code that is not expected fails the node. Omit for the default, where only OK passes. For a server stream it is checked against the final status.'),
-    extractors: z.record(z.string(), z.string()).optional().describe('Captures values from the decoded response into workflow variables, e.g. {"id": "response.body.id"}.'),
+    extractors: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe(
+        'Captures values from the decoded response into workflow variables, e.g. {"id": "response.body.id"}. Paths use the shared extractor grammar: dot paths rooted at response. (response.body.*, response.status, response.trailers.*), or a "$"-prefixed RFC 9535 JSONPath ($.response.body.users[0].name). An "xpath:" path reads XML bodies only, which a decoded gRPC message never is.',
+      ),
   })
   .strict()

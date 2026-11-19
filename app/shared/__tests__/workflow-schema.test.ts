@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { z, ZodError } from "zod"
 import { BrowserNodeDataSchema } from "../zod-schemas/BrowserNodeDataSchema"
+import { WorkflowCallForEachSchema } from "../zod-schemas/WorkflowCallForEachSchema"
+import { WorkflowCallNodeDataSchema } from "../zod-schemas/WorkflowCallNodeDataSchema"
 import { WorkflowNodeSchema } from "../zod-schemas/WorkflowNodeSchema"
 import { WorkflowSchema } from "../zod-schemas/WorkflowSchema"
 
@@ -208,6 +210,50 @@ describe("WorkflowNodeSchema — grpc node", () => {
     expect(grpc({ callType: "unary", surprise: 1 }).success).toBe(false)
     expect(grpc({ callType: "bidirectional" }).success).toBe(false)
     expect(grpc({ deadline: 0 }).success).toBe(false)
+  })
+})
+
+describe("WorkflowNodeSchema — workflow node (Call Workflow)", () => {
+  const call = (config: unknown) => WorkflowNodeSchema.safeParse({ nodeId: "call", type: "workflow", position: { x: 0, y: 0 }, config })
+
+  it("accepts a call with a forEach, and stays lenient when the forEach is half-configured", () => {
+    expect(call({
+      targetWorkflowId: "wf_child",
+      inputMapping: { tenant: "{{variables.tenantId}}" },
+      outputMapping: { authToken: "accessToken" },
+      forEach: { items: "{{variables.ids}}", itemVariable: "id", indexVariable: "i", concurrency: 16, stopOnFailure: false },
+    }).success).toBe(true)
+    // A half-configured for-each never blocks a save; the runner fails the node
+    // with a clear message instead.
+    expect(call({ targetWorkflowId: "wf_child", forEach: {} }).success).toBe(true)
+  })
+
+  it("bounds concurrency to the range the runner enforces", () => {
+    expect(call({ targetWorkflowId: "wf_child", forEach: { items: "[1]", itemVariable: "id", concurrency: 17 } }).success).toBe(false)
+    expect(call({ targetWorkflowId: "wf_child", forEach: { items: "[1]", itemVariable: "id", concurrency: 0 } }).success).toBe(false)
+  })
+
+  /**
+   * A Call Workflow's post-1.0 fields are invisible in tools/list;
+   * workflows_nodeSchema is where an agent learns what it accepts, and it
+   * showed zero descriptions until every field carried one. The draft-7
+   * conversion here is the exact object the MCP handler publishes, so a
+   * description on the schema reaches the agent unchanged.
+   */
+  it("describes every config field and every forEach field in the published schema", () => {
+    const configSchema = z.toJSONSchema(WorkflowCallNodeDataSchema, { target: "draft-7", io: "input" }) as {
+      properties: Record<string, { description?: string }>
+    }
+    for (const field of ["targetWorkflowId", "targetWorkflowName", "inputMapping", "outputMapping", "forEach"]) {
+      expect(configSchema.properties[field]?.description, field).toBeTruthy()
+    }
+
+    const forEachSchema = z.toJSONSchema(WorkflowCallForEachSchema, { target: "draft-7", io: "input" }) as {
+      properties: Record<string, { description?: string }>
+    }
+    for (const field of ["items", "itemVariable", "indexVariable", "concurrency", "stopOnFailure"]) {
+      expect(forEachSchema.properties[field]?.description, field).toBeTruthy()
+    }
   })
 })
 

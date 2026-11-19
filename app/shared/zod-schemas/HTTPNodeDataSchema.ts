@@ -84,7 +84,7 @@ export const HTTPNodeDataSchema = z
     extractors: z
       .record(z.string(), z.string())
       .optional()
-      .describe('Captures values from this response into workflow variables: a map of variable name to a response path, e.g. {"token": "response.body.access_token"}. Later nodes read the value as "{{variables.token}}". Paths start at the response object: response.body.*, response.headers.*, response.statusCode.'),
+      .describe('Captures values from this response into workflow variables: a map of variable name to a response path, e.g. {"token": "response.body.access_token"}. Later nodes read the value as "{{variables.token}}". Paths start at the response object: response.body.*, response.headers.*, response.statusCode — or a "$"-prefixed RFC 9535 JSONPath over the whole node result ($.response.body.items[?@.id==3].name), or, for an XML body, an "xpath:"-prefixed XPath 1.0 path (xpath://*[local-name()="Total"]/text(), prefixes inline as xpath[s=uri]:expression).'),
     responseSchemas: z
       .record(z.string().regex(RESPONSE_SCHEMA_KEY), JsonValueSchema)
       .optional()
