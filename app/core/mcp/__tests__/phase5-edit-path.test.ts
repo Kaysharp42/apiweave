@@ -551,7 +551,9 @@ describe("Phase 5 — concise task-specific onboarding", () => {
     // The repair loop was folded into start-here; one orientation read, not two.
     expect(slugs).not.toContain("edit-debug")
     const startHere = MCP_GUIDES.find((guide) => guide.slug === "start-here")?.text ?? ""
-    expect(startHere.length).toBeLessThanOrEqual(3600)
+    // One orientation read, priced as a budget: the load-run hand-off line is
+    // the only addition past 3600, so the ceiling moves with it, tightly.
+    expect(startHere.length).toBeLessThanOrEqual(3850)
     for (const step of ["workflows_debugContext", "expectedRevision", "assertion_suggest", "workflows_nodeSchema", "graphify"]) {
       expect(startHere).toContain(step)
     }

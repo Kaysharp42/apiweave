@@ -845,6 +845,50 @@ describe("Phase 2 — compact run history with continuations", () => {
     })
     await client.close()
   })
+
+  /**
+   * A load run's iterations are ordinary runs, and the row stores the same
+   * `iteration` marker a data-driven run's rows store — nothing on the row
+   * says "load", so the projection must not invent a discriminator. The
+   * marker alone answers the live complaint: without it, a `limit: 1` "latest
+   * run" read silently hands an agent a load iteration.
+   */
+  it("marks a row that is one iteration of a group, so the latest run is never silently an iteration", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "grouped" })
+    runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    const iteration = runRepository.create({
+      workspaceId,
+      workflowId: workflow.workflowId,
+      iteration: { groupId: "grp_1", index: 7, count: 200 },
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_history",
+      arguments: { workspaceId, workflowId: workflow.workflowId },
+    })
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
+      items: Array<Record<string, unknown>>
+    }
+
+    // The iteration row carries its place in the group; the ordinary run
+    // carries no marker at all. Keyset order (createdAt, id) can tie two
+    // same-millisecond inserts, so rows are matched by id, not position.
+    expect(parsed.items).toHaveLength(2)
+    const iterationRow = parsed.items.find((row) => row["runId"] === iteration.runId)
+    expect(iterationRow).toEqual({
+      runId: iteration.runId,
+      status: "pending",
+      startedAt: null,
+      durationMs: null,
+      failedNodeCount: 0,
+      iteration: { groupId: "grp_1", index: 7, count: 200 },
+    })
+    const plainRow = parsed.items.find((row) => row["runId"] !== iteration.runId)
+    expect(plainRow).not.toHaveProperty("iteration")
+    await client.close()
+  })
 })
 
 describe("Phase 2 — targeted node evidence", () => {

@@ -293,6 +293,15 @@ which use the browser's own trust store.
   secrets and destinations. **Skip secret approval for agent runs** can turn the
   question off for all agent-started runs, but the destination and script limits
   still apply.
+- **Load runs and snapshot acceptance are not agent tools.** A load run — one
+  workflow fanned out as up to thousands of parallel iterations — is started
+  from **Run options → Load run…** or with the CLI's `--concurrency`, and a
+  changed `matchesSnapshot` baseline is accepted with **Accept snapshot** in
+  the run inspector or the CLI's `--update-snapshots`. Neither has an MCP
+  tool; an agent asked for either hands it back to you. A load run's
+  iterations appear in `runs_history` with the `iteration` marker
+  (`groupId`, `index`, `count`) they share with data-driven runs — nothing on
+  the row names the group as a load run.
 
 ## Secrets and Local Data
 

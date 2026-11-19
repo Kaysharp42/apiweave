@@ -361,6 +361,21 @@ environment this one inherits plain variables from; `null` clears it. See
 
 `runs_history` is the one run query: filter by workflow or status, newest
 first; the latest run is `limit: 1`, the latest failure adds `status: "failed"`.
+A row that is one iteration of a data-driven or load run carries `iteration`
+(`groupId`, 1-based `index`, `count`) — a load run's iterations are ordinary
+runs, so check the marker before treating the newest row as "the" latest run.
+
+Two run-adjacent operations are deliberately not agent tools. A load run —
+the same workflow fanned out as up to thousands of parallel real requests —
+is started by you from **Run options → Load run…** or with the CLI
+(`apiweave run <path> --workflow <name> --concurrency N --iteration-count N
+--threshold "p95<500"`); there is no `runs_createLoad`, and the load aggregate
+reads (`loadResult`, `loadReport`) are excluded with it. Accepting a changed
+`matchesSnapshot` baseline is also your call: click **Accept snapshot** on
+the failed rule in the run inspector, or rerun the CLI with
+`--update-snapshots`. An agent asked for either should hand it back to you
+rather than work around it — replacing or deleting the rule to turn a run
+green is never the fix.
 
 `runs_create` also reruns part of a workflow: `resume: { nodeId }` starts at
 that step, `resume: {}` reruns the steps the latest run failed, and `fromRunId`
