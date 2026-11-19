@@ -25,6 +25,7 @@ import { WorkflowService } from "../../services/workflow_service"
 import { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../services/environment_service"
+import { ImportService } from "../../services/import_service"
 import { NodePresetService } from "../../services/node_preset_service"
 import { RunService } from "../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../services/secret_service"
@@ -112,6 +113,8 @@ beforeEach(() => {
       secretStore,
       () => "2026-01-01T00:00:00.000Z",
     ),
+    // The parse-only importers are agent tools now, so the harness they need.
+    imports: new ImportService(workflows, environments, collections, scopeResolver),
   }
   agentWrites = []
   router = new IpcRouter({ onAgentWrite: (event) => agentWrites.push(event) })
@@ -403,12 +406,51 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     for (const spec of MCP_TOOLS) expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/account|token|sign.?in|repositor|owner/)
   })
 
-  it("exposes no webhook or import tools (dropped/deferred surface)", () => {
-    for (const spec of MCP_TOOLS) {
-      expect(spec.domain).not.toBe("webhooks")
-      expect(spec.domain).not.toBe("imports")
-      expect(spec.domain).not.toBe("cloud")
+  /**
+   * The import handlers live on this router under the `workflows`/`projects`
+   * domains — the old "no `imports` domain" check passed vacuously while every
+   * handler sat one domain over. The two parse-only importers ARE agent tools;
+   * every other import/bundle handler is a real, registered exclusion,
+   * asserted by exact name (existence on the router is asserted too, so the
+   * exclusion can never go vacuous again). No webhook handlers exist on the
+   * router at all, so there is nothing to exclude under that name.
+   */
+  it("exposes the two parse-only importers, and excludes the rest of the import surface by name", () => {
+    const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}.${spec.action}`))
+    const byName = new Map(MCP_TOOLS.map((spec) => [toolName(spec), spec]))
+    for (const exposed of ["workflows.importOpenapi", "workflows.importWsdl"]) {
+      expect(published.has(exposed), exposed).toBe(true)
+      expect(router.getRegistration(...(exposed.split(".") as [string, string])), exposed).toBeDefined()
     }
+    // Read tools: parse-only, no destructive bit, and they send nothing (openWorld false).
+    for (const name of ["workflows_importOpenapi", "workflows_importWsdl"]) {
+      expect(byName.get(name), name).toMatchObject({ intent: "read" })
+      expect(byName.get(name)?.destructive).toBeUndefined()
+      expect(byName.get(name)?.openWorld).toBeUndefined()
+    }
+
+    for (const excluded of [
+      // Fetches remote URLs (Swagger UI config discovery); an agent reads the spec itself.
+      "workflows.importOpenapiUrl",
+      // Default mode writes a workflow outside the create/patch contract.
+      "workflows.importCurl",
+      // A captured-traffic dump; the renderer import dialog is its path.
+      "workflows.importHar",
+      // The renderer palette write; nodePresets_create is the agent surface.
+      "workflows.saveTemplates",
+      // The single-workflow bundle trio behind the Import/Export dialogs.
+      "workflows.import",
+      "workflows.export",
+      "workflows.dryRun",
+      // A whole project written in one transaction from untyped collection JSON.
+      "projects.previewPostman",
+      "projects.importPostman",
+    ]) {
+      expect(published.has(excluded), excluded).toBe(false)
+      expect(router.getRegistration(...(excluded.split(".") as [string, string])), excluded).toBeDefined()
+    }
+    // The old comment's "webhook tools" never existed as handlers either.
+    expect(router.keys().filter((key) => key.startsWith("webhooks."))).toEqual([])
   })
 })
 
@@ -2081,6 +2123,214 @@ describe("MCP assertions — one path rule, agreed on by validate and diagnose",
       workflowId,
     })
     expect(diagnosis.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("assertion_source_path_invalid")
+  })
+})
+
+describe("MCP imports — spec/WSDL text in, node templates out, nothing written", () => {
+  const OPENAPI_SPEC = JSON.stringify({
+    openapi: "3.0.0",
+    info: { title: "Pets API", version: "1.0.0" },
+    servers: [{ url: "https://pets.example.test" }],
+    paths: {
+      "/pets": {
+        get: {
+          operationId: "listPets",
+          summary: "List pets",
+          tags: ["pets"],
+          parameters: [{ name: "limit", in: "query", schema: { type: "integer", example: 5 } }],
+          responses: {
+            "200": {
+              description: "ok",
+              content: {
+                "application/json": {
+                  schema: { type: "object", properties: { id: { type: "integer" }, name: { type: "string" } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  // The same fixture shape wsdl_parsers.test.ts proves the parser with.
+  const WSDL = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:orders"
+             targetNamespace="urn:orders">
+  <portType name="OrdersPortType">
+    <operation name="GetOrder"><input message="tns:GetOrderInput"/></operation>
+    <operation name="CancelOrder"><input message="tns:CancelOrderInput"/></operation>
+  </portType>
+  <binding name="OrdersBinding" type="tns:OrdersPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetOrder">
+      <soap:operation soapAction="urn:orders/GetOrder"/>
+    </operation>
+    <operation name="CancelOrder">
+      <soap:operation soapAction="urn:orders/CancelOrder"/>
+    </operation>
+  </binding>
+  <service name="OrdersService">
+    <port name="OrdersPort" binding="tns:OrdersBinding">
+      <soap:address location="http://orders.example.test/soap"/>
+    </port>
+  </service>
+</definitions>`
+
+  type ImportedBundle = {
+    readonly name: string
+    readonly description: string
+    readonly nodes: ReadonlyArray<{
+      readonly nodeId: string
+      readonly type: string
+      readonly label: string
+      readonly position: { readonly x: number; readonly y: number }
+      readonly config: Record<string, unknown>
+    }>
+    readonly edges: ReadonlyArray<{ readonly edgeId: string; readonly source: string; readonly target: string; readonly label: null }>
+  }
+
+  async function callToolJson(name: string, arguments_: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const client = await connectClient()
+    const result = await client.callTool({ name, arguments: arguments_ })
+    await client.close()
+    const text = textOf(result as { content: Array<{ type: string; text?: string }> })
+    if ((result as { isError?: boolean }).isError === true) throw new Error(`tool ${name} failed: ${text}`)
+    return JSON.parse(text) as Record<string, unknown>
+  }
+
+  it("workflows_importOpenapi returns templates carrying responseSchemas and openapiMeta, and writes nothing", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const parsed = await callToolJson("workflows_importOpenapi", {
+      workspaceId: workspace.workspaceId,
+      spec: OPENAPI_SPEC,
+    }) as ImportedBundle
+
+    // The whole template bundle, typed end to end.
+    expect(parsed.nodes.map((node) => node.type)).toEqual(["start", "http-request", "end"])
+    expect(parsed.edges).toHaveLength(2)
+    expect(parsed.description).toContain("OpenAPI")
+    const http = parsed.nodes[1]!.config
+    expect(http["method"]).toBe("GET")
+    expect(http["url"]).toBe("https://pets.example.test/pets")
+    expect(http["openapiMeta"]).toMatchObject({ operationId: "listPets", method: "GET", path: "/pets" })
+    // The contract payload the executor turns into a fail-by-default schema check.
+    expect(http["responseSchemas"]).toMatchObject({
+      "200": { type: "object", properties: { id: { type: "integer" } } },
+    })
+
+    // Parse-only by construction: no workflow appeared, no agent-write fired.
+    const search = await dispatchOk<{ items: unknown[] }>("workflows", "search", { workspaceId: workspace.workspaceId })
+    expect(search.items).toEqual([])
+    expect(agentWrites).toEqual([])
+  })
+
+  it("the OpenAPI templates pass straight into workflows_create with their contract intact", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const imported = await callToolJson("workflows_importOpenapi", {
+      workspaceId: workspace.workspaceId,
+      spec: OPENAPI_SPEC,
+    }) as ImportedBundle
+
+    const client = await connectClient()
+    const created = await client.callTool({
+      name: "workflows_create",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        name: "Pets contract",
+        nodes: imported.nodes,
+        edges: imported.edges,
+      },
+    })
+    expect((created as { isError?: boolean }).isError).toBeFalsy()
+    const body = JSON.parse(textOf(created as { content: Array<{ type: string; text?: string }> })) as {
+      result: { workflowId: string }
+      diagnosis: { summary: { errors: number } }
+    }
+    await client.close()
+
+    const stored = await dispatchOk<{ nodes: Array<{ config: Record<string, unknown> }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: body.result.workflowId },
+    )
+    expect(stored.nodes[1]!.config["openapiMeta"]).toMatchObject({ operationId: "listPets" })
+    expect(stored.nodes[1]!.config["responseSchemas"]).toMatchObject({ "200": { type: "object" } })
+    expect(body.diagnosis.summary.errors).toBe(0)
+  })
+
+  it("workflows_importWsdl returns one SOAP node per operation with its generated envelope", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const parsed = await callToolJson("workflows_importWsdl", {
+      workspaceId: workspace.workspaceId,
+      wsdlText: WSDL,
+    }) as ImportedBundle
+
+    expect(parsed.name).toBe("OrdersService")
+    expect(parsed.nodes.map((node) => node.type)).toEqual(["start", "http-request", "http-request", "end"])
+    const getOrder = parsed.nodes[1]!
+    expect(getOrder.config["method"]).toBe("POST")
+    expect(getOrder.config["url"]).toBe("http://orders.example.test/soap")
+    expect(getOrder.config["bodyType"]).toBe("soap")
+    expect(getOrder.config["soap"]).toMatchObject({ version: "1.1", action: "urn:orders/GetOrder" })
+    expect((getOrder.config["soap"] as { envelope: string }).envelope).toContain("<tns:GetOrder")
+
+    const search = await dispatchOk<{ items: unknown[] }>("workflows", "search", { workspaceId: workspace.workspaceId })
+    expect(search.items).toEqual([])
+  })
+
+  it("rejects the renderer-only dryRun key, an unknown workspace, and malformed or oversized text", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+
+    // dryRun is the import dialog's shape, not this tool's; the advertised input rejects it.
+    const preview = await client.callTool({
+      name: "workflows_importOpenapi",
+      arguments: { workspaceId: workspace.workspaceId, spec: OPENAPI_SPEC, dryRun: true },
+    })
+    expect((preview as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(preview as { content: Array<{ type: string; text?: string }> })).toContain("dryRun")
+
+    // Existence parity with every other workspace-scoped read.
+    const foreign = await client.callTool({
+      name: "workflows_importWsdl",
+      arguments: { workspaceId: "ws-not-mine", wsdlText: WSDL },
+    })
+    expect((foreign as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(foreign as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
+
+    // A spec that does not parse is the input being wrong — validation, not an internal error.
+    const malformed = await client.callTool({
+      name: "workflows_importOpenapi",
+      arguments: { workspaceId: workspace.workspaceId, spec: "not a spec at all" },
+    })
+    expect((malformed as { isError?: boolean }).isError).toBe(true)
+    const malformedBody = JSON.parse(textOf(malformed as { content: Array<{ type: string; text?: string }> })) as {
+      error: { code: string; message: string }
+    }
+    expect(malformedBody.error.code).toBe("validation")
+    expect(malformedBody.error.message).toContain("Invalid spec format")
+
+    const notWsdl = await client.callTool({
+      name: "workflows_importWsdl",
+      arguments: { workspaceId: workspace.workspaceId, wsdlText: "<note><to>x</to></note>" },
+    })
+    expect((notWsdl as { isError?: boolean }).isError).toBe(true)
+    const notWsdlBody = JSON.parse(textOf(notWsdl as { content: Array<{ type: string; text?: string }> })) as {
+      error: { code: string; message: string }
+    }
+    expect(notWsdlBody.error.code).toBe("validation")
+    expect(notWsdlBody.error.message).toContain("Not a WSDL")
+
+    // The shared 10 MiB text cap is part of the advertised input, so the SDK
+    // rejects an oversized document before any parsing starts.
+    const oversized = await client.callTool({
+      name: "workflows_importWsdl",
+      arguments: { workspaceId: workspace.workspaceId, wsdlText: "x".repeat(10 * 1024 * 1024 + 1) },
+    })
+    expect((oversized as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(oversized as { content: Array<{ type: string; text?: string }> })).toContain("10485760")
+    await client.close()
   })
 })
 

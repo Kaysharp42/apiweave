@@ -61,8 +61,32 @@ import { MCP_GUIDES } from "./guide"
  *    handler stays: it is the renderer's save path.
  *  - `guides.list` — removed outright: `server_info` already lists every guide,
  *    and `guides_get` reads one for clients without resources.
- * Webhook and import tools are excluded structurally: they were never ported to the
- * IPC registry (dropped/deferred), so they cannot appear here.
+ *  - Import surface — the import handlers DO live on this registry, under the
+ *    `workflows`/`projects` domains. The two parse-only ones are exposed as
+ *    read tools (`workflows.importOpenapi`, `workflows.importWsdl`: spec/WSDL
+ *    text in, node templates out; they write no row, touch no file and fetch
+ *    nothing). The rest stay renderer-only, each for a reason:
+ *    - `workflows.importOpenapiUrl` — fetches remote URLs (page → config →
+ *      spec discovery, up to 16 GETs). An agent reads the spec file itself;
+ *      the bridge must not become an egress proxy.
+ *    - `workflows.importCurl` — its default mode writes a workflow (or merges
+ *      into one) outside the workflows_create/patch contract; its parseOnly
+ *      mode is one plain request an agent can author via workflows_nodeSchema.
+ *    - `workflows.importHar` — a browser capture can span every domain the
+ *      user visited, and the parse carries no contract data (no
+ *      responseSchemas); the renderer's import dialog is its committed path.
+ *    - `projects.previewPostman`, `projects.importPostman` — a whole project
+ *      (workflows + environments) written in one transaction from untyped
+ *      collection JSON; the import dialog previews and the user commits.
+ *    - `workflows.import`, `workflows.export`, `workflows.dryRun` — the
+ *      single-workflow bundle trio behind the Import/Export dialogs. An agent
+ *      authors through the typed workflows_create/patch and shares a whole
+ *      project with projects_export/projects_import; a `.aweproject` bundle is
+ *      a file artifact, not an authoring input.
+ *    - `workflows.saveTemplates` — writes the renderer palette's node-template
+ *      list; `nodePresets_create` is the agent surface for reusable configs.
+ *    No webhook handlers exist on the router at all — there is nothing to
+ *    exclude under that name.
  */
 export interface McpToolSpec {
   readonly domain: string
@@ -145,6 +169,8 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("grpc", "discover", "read", "List the services, methods and request skeletons of a gRPC server (`schemaSource: \"reflection\"`, literal `target` host:port, the server must expose reflection) or of inline .proto files (`schemaSource: \"proto\"`, `protoFiles` as path-to-content). Read-only: it sends no call, only a reflection query. Use it before writing a `grpc` node.", { openWorld: true }),
   tool("guides", "get", "read", `Read an authoring guide by slug (${MCP_GUIDES.map((guide) => guide.slug).join(", ")}) — the same text as its apiweave://guide/ resource, for clients that cannot read resources.`),
   tool("workflows", "nodeSchema", "read", "Node config schema: the JSON Schema of one node type's config (http-request, sse, assertion, …), plus what the type does and its edge handles. The write tools advertise config as an open object, so read this before writing a node type you have not used here."),
+  tool("workflows", "importOpenapi", "read", "Parse an OpenAPI or Swagger document (JSON or YAML text, never a URL) into node templates without saving anything: every operation becomes an http-request node carrying url, example body, openapiMeta and responseSchemas (JSON Schema per documented status — the contract check defaults to fail on a node with openapiMeta). Read the spec file yourself, then pass the returned nodes and edges to workflows_create, or upsertNodes/upsertEdges on workflows_patch. baseUrl overrides the spec's first server, tagFilter keeps only operations with those tags, sanitize (default true) withholds credential-shaped header examples, schemaAssertions (default true) fills responseSchemas. An unparseable or pathless spec is a validation error."),
+  tool("workflows", "importWsdl", "read", "Parse a WSDL 1.1 document (text) into node templates without saving anything: every SOAP operation becomes an http-request node that posts a generated envelope (bodyType soap, the binding's soapAction and version) to the address its port declares. Read the WSDL file yourself — external wsdl:import/xsd:import documents are never fetched — then pass the returned nodes and edges to workflows_create, or upsertNodes/upsertEdges on workflows_patch. endpointUrl overrides the declared address, forceHttps upgrades http:// to https://. A document that is not a WSDL 1.1 with a callable operation is a validation error."),
   tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables. Call workflows_nodeSchema for a node type's config fields; a bad config is rejected with its node's index in the error path. Check the returned diagnosis before running. A `workflow` node runs another workflow in the same workspace as one step. New graphs are laid out automatically; `layout: false` keeps the positions sent. First graph here? Read `apiweave://guide/workflow-authoring`.", { diagnoseAfterWrite: true, autoLayout: true, resultProjection: "workflowWrite" }),
   tool("workflows", "patch", "write", "Edit a workflow by id: upsertNodes, upsertEdges, removeNodeIds, removeEdgeIds, setVariables/unsetVariables, and name, description or tags. Pass expectedRevision from the rev you last read to reject stale edits. Insert a node and rewire it in ONE patch — the new node, old edge removals and replacement edges together — so the saved branch stays connected. Existing nodes merge recursively, but a merge cannot remove keys — to replace a node's config (e.g. change a browser step's locator kind or action), put its nodeId in removeNodeIds and upsert it with its full config in the same call; its edges are kept. New nodes need type and complete config: call workflows_nodeSchema for a type's config fields. `parentId` moves a node into a group (null takes it out). Returns touched ids and one diagnosis. Topology changes are laid out automatically; config/label-only patches keep every position; `layout: false` keeps positions as sent.", { idempotent: true, diagnoseAfterWrite: true, autoLayout: true, resultProjection: "workflowWrite", alwaysLoad: true }),
   tool("workflows", "layout", "write", "Re-lay-out a workflow's node positions with dagre (layered left-to-right or top-to-bottom) without changing anything else — for nodes left stacked or overlapping by an import or an older graph.", { idempotent: true, diagnoseAfterWrite: true, resultProjection: "workflowWrite" }),
