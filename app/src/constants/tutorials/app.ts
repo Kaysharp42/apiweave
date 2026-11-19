@@ -1,7 +1,7 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 8 — App. Settings, and updates/startup.
+ * Chapter 9 — App. Settings, and updates/startup.
  */
 export const appChapter: TutorialChapter = {
   id: "app",

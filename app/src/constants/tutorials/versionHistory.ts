@@ -1,7 +1,7 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 6 — Version history and sync. Keeping a workspace in git: tracking
+ * Chapter 7 — Version history and sync. Keeping a workspace in git: tracking
  * it, signing in to a host, connecting a remote, opening it on another machine,
  * settling a merge, and running a checkout in CI.
  */
@@ -216,15 +216,15 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "Start a workspace already synced",
           instruction:
-            "In Create workspace, turn on Sync with GitHub or GitLab. Fill in the same Account, Owner, Repository name and Visibility fields; the name follows the workspace's slug until you change it, then click Create workspace.",
+            "In Create workspace, keep Sync with GitHub or GitLab on. Fill in the same Account, Owner, Repository name and Visibility fields; the name follows the workspace's slug until you change it, then click Create workspace.",
           detail:
-            "The section is off by default. Create workspace creates the workspace, tracks it, creates the repository and connects to it. If git does not know who you are, it asks for Your name and Your email address and carries on when you click Save and commit. If a later step fails, the workspace stays created — and tracked, once tracking has succeeded — the dialog says what happened, and Open Version history is where to finish.",
+            "The section is on by default once one of your git accounts is signed in; with none, it starts off and offers to sign in when you turn it on. A workspace an agent creates over MCP gets a Create a repository? dialog with the same fields: Create repository does what this sync does, and Not now leaves it as it is. Create workspace creates the workspace, tracks it, creates the repository and connects to it. If git does not know who you are, it asks for Your name and Your email address and carries on when you click Save and commit. If a later step fails, the workspace stays created — and tracked, once tracking has succeeded — the dialog says what happened, and Open Version history is where to finish.",
         },
       ],
       example: {
         caption: "Where each account step lives",
         language: "text",
-        code: "Header, round account button   this workspace's account, sync badge\nSettings > App > Git accounts  tools, versions, accounts, Refresh, Sign in…\nSign-in dialog                 one-time code, Open browser again, Cancel\nVersion history > Remote       Account, then Repository, Create repository…\nCreate workspace               Sync with GitHub or GitLab (off by default)\nA created repository           empty, Private unless changed, apiweave-workspace",
+        code: "Header, round account button   this workspace's account, sync badge\nSettings > App > Git accounts  tools, versions, accounts, Refresh, Sign in…\nSign-in dialog                 one-time code, Open browser again, Cancel\nVersion history > Remote       Account, then Repository, Create repository…\nCreate workspace               Sync with GitHub or GitLab (on once signed in)\nAgent-created workspace        Create a repository? dialog, same fields\nA created repository           empty, Private unless changed, apiweave-workspace",
       },
       expectedResult:
         "A GitHub or GitLab account is signed in from APIWeave, the workspace reaches its repository as that account, and APIWeave holds no token of its own.",
@@ -686,7 +686,7 @@ export const versionHistoryChapter: TutorialChapter = {
       chapterId: "version-history",
       title: "Run a repository in CI",
       summary:
-        "Run a checkout with apiweave run, pick projects, workflows and environments, fail fast, supply secrets from the environment, and write a JUnit report.",
+        "Run a checkout with apiweave run, pick projects, workflows and environments, fail fast, supply secrets from the environment, write a JUnit report, and add browser, contract, snapshot and load flags.",
       outcome:
         "A pipeline checks out the connected repository and runs its API tests from the files alone: apiweave run needs no database, no app and no git.",
       keywords: [
@@ -703,20 +703,25 @@ export const versionHistoryChapter: TutorialChapter = {
         "pipeline",
         "github actions",
         "secret",
+        "evidence-dir",
+        "browser",
+        "contract",
+        "snapshots",
+        "load",
+        "threshold",
       ],
       durationMinutes: 7,
       prerequisites: [
-        "Node.js 22 or later on the CI machine.",
-        "A checkout of the APIWeave repository to build the command from: it is not published to npm yet.",
+        "Node.js 22.12 or later on the CI machine.",
         "A checkout of a repository that holds a workspace.",
       ],
       steps: [
         {
-          title: "Build the command",
+          title: "Install the command",
           instruction:
-            "In the APIWeave checkout's app/ folder run npm ci --ignore-scripts, then npm run build:cli, which writes dist/cli/apiweave.cjs. Run npm link in that folder to put apiweave on PATH, or call node dist/cli/apiweave.cjs instead.",
+            "Download the CLI package every release attaches, then install it: curl -fsSL -o apiweave-cli.tgz https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz, then npm install -g ./apiweave-cli.tgz. That puts apiweave on PATH.",
           detail:
-            "--ignore-scripts skips the Electron download, which the CLI does not need.",
+            "For a repeatable pipeline, replace latest/download with download/<tag> to pin a release. The package, @apiweave/cli, comes as that release tarball rather than from the npm registry, and holds no Electron. To build it from source instead, run npm ci --ignore-scripts and npm run build:cli in a checkout's app/ folder.",
         },
         {
           title: "Run the folder",
@@ -757,6 +762,25 @@ export const versionHistoryChapter: TutorialChapter = {
             "Reporters are a comma-separated list, and --reporter replaces the default cli reporter: --reporter junit,html writes both reports and no console output. --reporter-html-export <path> writes an HTML report the same way.",
         },
         {
+          title: "Run browser steps and keep their evidence",
+          instruction:
+            "Browser steps run headless. Add --browser chrome, msedge or chromium to pick the browser, and --evidence-dir <dir> to write every step's screenshot and ARIA snapshot, which the console, JUnit and HTML reports link.",
+          detail:
+            "--headed shows the window when you run it locally. The files land in <dir>/<runId>/<nodeId>.jpg and <dir>/<runId>/<nodeId>.aria.yml; upload the folder with the reports.",
+        },
+        {
+          title: "Check contracts and snapshots",
+          instruction:
+            "--contract off, warn or fail overrides every node's contract check for the run. --snapshots <file> names the matchesSnapshot baselines (default .apiweave-snapshots.json), and --update-snapshots records them again.",
+          detail:
+            "Commit the snapshots file so CI compares against the baselines you accepted.",
+        },
+        {
+          title: "Gate on load",
+          instruction:
+            "--concurrency <n> turns the run into a load run of one workflow. Give it --iteration-count, --iteration-data or --duration, optionally --ramp-up, and one --threshold per gate, such as \"p95<500\"; a breach exits 1.",
+        },
+        {
           title: "Only committed changes travel",
           instruction:
             "An auto-mode workspace commits about 30 seconds after the last edit, and manual mode's Sync now is what commits and pushes, so a pipeline only sees what was committed.",
@@ -770,7 +794,7 @@ export const versionHistoryChapter: TutorialChapter = {
       example: {
         caption: "A pipeline's test step, from broadest to narrowest",
         language: "bash",
-        code: 'APIWEAVE_SECRET_API_TOKEN=... apiweave run ./tests\napiweave run ./tests --project "Shop API" --env Staging\napiweave run ./tests --workflow "Login" --bail\napiweave run ./tests --reporter-junit-export reports/junit.xml',
+        code: 'APIWEAVE_SECRET_API_TOKEN=... apiweave run ./tests\napiweave run ./tests --project "Shop API" --env Staging\napiweave run ./tests --workflow "Login" --bail\napiweave run ./tests --reporter-junit-export reports/junit.xml\napiweave run ./tests --env Dev --browser chrome --evidence-dir reports/evidence\napiweave run ./tests --contract fail --snapshots .apiweave-snapshots.json\napiweave run ./tests --workflow "Search" --concurrency 20 --duration 60s --threshold "p95<500"',
       },
       expectedResult:
         "A CI job checks out the repository, runs the chosen tests against the chosen environment with its secrets supplied from the environment, fails the build on a failed test, and leaves a JUnit report behind.",

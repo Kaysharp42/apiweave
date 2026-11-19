@@ -184,6 +184,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   address with its query string removed. The CI guide gains a GitHub Actions job
   (the runner's Chrome needs no install) and a GitLab CI job on the Playwright
   image. See [Run APIWeave Tests in CI](docs/guides/ci.md#browser-steps).
+- **Tutorials for the features since 1.0.** A new **Browser steps** chapter
+  (record, run and read the evidence, fix one step) and lessons on gRPC,
+  WebSocket, SOAP and JSON-RPC, on snapshot and contract checks, and on load
+  runs: 35 lessons in 9 chapters. Existing lessons now cover the GraphQL,
+  JSON-RPC and SOAP body types, `$` JSONPath and `xpath:` paths, every
+  assertion operator, For each on Call Workflow, the shared Finish tab of
+  stream nodes, git sync defaults and the new CLI flags. See
+  [Tutorials](docs/features/tutorials.md).
 
 ### Changed
 
