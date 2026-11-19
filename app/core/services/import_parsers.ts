@@ -129,12 +129,12 @@ export interface OpenApiPreviewData {
     readonly apiVersion: string
     readonly totalEndpoints: number
     /** Definitions imported / discovered-but-unusable (multi-definition Swagger UIs). */
-    readonly definitionCount?: number
-    readonly failedDefinitionCount?: number
+    readonly definitionCount?: number | undefined
+    readonly failedDefinitionCount?: number | undefined
   }
   readonly workflow: { readonly nodeCount: number }
   /** Definitions that were discovered but could not be fetched/parsed. */
-  readonly warnings?: readonly string[]
+  readonly warnings?: readonly string[] | undefined
 }
 
 /** What a Swagger UI page (or its initializer script / swagger-config JSON) points at. */

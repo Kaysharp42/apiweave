@@ -427,6 +427,18 @@ Read the returned \`diagnosis\` and confirm \`touchedNodeIds\` / \`touchedEdgeId
 include the intended edits before running. A successful write means the edit
 was saved, not that the graph is runnable; diagnosis is reported after saving.
 On a revision conflict, read the workflow again and recompute the complete patch.
+
+## From an OpenAPI or WSDL file
+
+To build a workflow from a spec file, read the file yourself and call
+\`workflows_importOpenapi\` (spec text) or \`workflows_importWsdl\` (WSDL text).
+Both parse only — nothing is saved — and return node templates ready to pass
+back: the \`nodes\` and \`edges\` go to \`workflows_create\` for a new workflow,
+or \`upsertNodes\`/\`upsertEdges\` on \`workflows_patch\` to add them to an existing
+one. OpenAPI templates carry \`openapiMeta\` and \`responseSchemas\`, so each
+endpoint's response-body contract check defaults to \`fail\`; WSDL templates
+carry a generated SOAP envelope. The returned node ids are fresh import ids —
+rename them if you care about the names.
 `
 
 const PLACEHOLDERS = `# Placeholders

@@ -230,6 +230,8 @@ config value, and the latest runs for a page come from a single query.
 - `workflow_diagnose`
 - `workflows_debugContext`
 - `workflows_nodeSchema`
+- `workflows_importOpenapi`
+- `workflows_importWsdl`
 - `workflows_create`
 - `workflows_patch`
 - `workflows_layout`
@@ -257,6 +259,20 @@ node type's config as JSON Schema, generated from the same definitions the write
 path validates with. Validation itself is unchanged: a bad config is rejected
 with a path that names the node list and index, such as
 `["nodes", 1, "config", "body"]`.
+
+`workflows_importOpenapi` and `workflows_importWsdl` turn a spec file into node
+templates without saving anything: the agent reads the OpenAPI/Swagger (JSON or
+YAML) or WSDL 1.1 file itself and passes the text in, and each operation comes
+back as an `http-request` node — OpenAPI templates carrying `openapiMeta` and
+`responseSchemas` (so the response-body contract check defaults to `fail`),
+WSDL templates carrying a generated SOAP envelope. The returned `nodes` and
+`edges` pass straight into `workflows_create`, or `upsertNodes`/`upsertEdges`
+on `workflows_patch`. Neither tool fetches a URL, so the agent supplies the
+document text; both cap it at 10 MiB, the same budget remote spec fetches use.
+The remaining importers (remote URL fetch, curl, HAR, Postman, and the bundle
+import/export trio) stay renderer-only: the desktop import dialogs preview and
+commit those, and an agent authors the same requests through the typed write
+tools.
 
 Every agent write keeps the workflow as it was just before it as a version
 (see [Version history](workflows-and-nodes.md#version-history)), so the user can

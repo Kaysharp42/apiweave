@@ -77,6 +77,22 @@ const ADVERTISED_NODE_INPUT: ReadonlyMap<string, { readonly field: string; reado
   ["workflows_patch", { field: "upsertNodes", node: AdvertisedNodePatchSchema }],
 ])
 
+/**
+ * Input keys an agent must not send even though the renderer does, keyed by
+ * public tool name. `advertisedInput` omits them from the *advertised* schema,
+ * and the strict object then rejects the key at the SDK layer before dispatch —
+ * a tightening, never a weakening: the router's own schema still governs the
+ * renderer path unchanged.
+ *
+ * `workflows.importOpenapi`'s `dryRun` selects the import dialog's preview
+ * shape (http nodes plus availableServers/availableTags, no start/end/edges);
+ * the MCP tool is single-purpose — the node-template bundle its output schema
+ * advertises, ready to pass to workflows_create/workflows_patch.
+ */
+const ADVERTISED_INPUT_OMITTED: ReadonlyMap<string, readonly string[]> = new Map([
+  ["workflows_importOpenapi", ["dryRun"]],
+])
+
 /** `_meta` key Claude Code reads to load a tool up front instead of behind tool search. */
 const ALWAYS_LOAD_META = { "anthropic/alwaysLoad": true } as const
 
@@ -148,15 +164,23 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
 
 /**
  * The input schema a tool advertises: the router's own, except that node items
- * on the graph-write tools are swapped for the loose shape above. Extending
+ * on the graph-write tools are swapped for the loose shape above, and keys in
+ * ADVERTISED_INPUT_OMITTED are dropped so an agent cannot send them. Extending
  * the complete object keeps its strictness and every other field verbatim.
  */
 function advertisedInput(name: string, input: z.ZodObject): z.ZodObject {
+  const omitted = ADVERTISED_INPUT_OMITTED.get(name)
+  let base = input
+  if (omitted !== undefined) {
+    const mask: Record<string, true> = {}
+    for (const key of omitted) mask[key] = true
+    base = input.omit(mask)
+  }
   const loose = ADVERTISED_NODE_INPUT.get(name)
-  if (loose === undefined) return input
-  const description = input.shape[loose.field]?.description
+  if (loose === undefined) return base
+  const description = base.shape[loose.field]?.description
   const list = z.array(loose.node).optional()
-  return input.extend({ [loose.field]: description === undefined ? list : list.describe(description) })
+  return base.extend({ [loose.field]: description === undefined ? list : list.describe(description) })
 }
 
 // fallow-ignore-next-line complexity
