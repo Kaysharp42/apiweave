@@ -2792,20 +2792,27 @@ export class WorkflowExecutor {
     }
 
     const targetLabel = target.name ?? targetWorkflowId
+    const subWorkflow = {
+      workflowId: targetWorkflowId,
+      ...(runId ? { runId } : {}),
+      status: childOutput.status,
+      nodeCount: target.nodes.length,
+      failedNodeCount: childOutput.failedNodes.length,
+      outputVariableNames: Object.keys(outputMapping),
+    }
+    if (childOutput.status === "passed") {
+      return { status: "success", message: `Sub-workflow ${targetLabel} completed`, subWorkflow }
+    }
+    if (childOutput.status === "cancelled") {
+      return { status: "cancelled", message: `Sub-workflow ${targetLabel} cancelled`, subWorkflow }
+    }
+    // The failure text is the node's `error`, not a message: it must reach the
+    // stored run record (and with it CLI reporters and MCP evidence), which
+    // only `error` does. `message` never survived `buildRunResult`.
     return {
-      status: childOutput.status === "passed" ? "success" : "error",
-      message:
-        childOutput.status === "passed"
-          ? `Sub-workflow ${targetLabel} completed`
-          : this.subWorkflowFailureMessage(targetLabel, target, childOutput),
-      subWorkflow: {
-        workflowId: targetWorkflowId,
-        ...(runId ? { runId } : {}),
-        status: childOutput.status,
-        nodeCount: target.nodes.length,
-        failedNodeCount: childOutput.failedNodes.length,
-        outputVariableNames: Object.keys(outputMapping),
-      },
+      status: "error",
+      error: this.subWorkflowFailureMessage(targetLabel, target, childOutput),
+      subWorkflow,
     }
   }
 
@@ -2978,10 +2985,12 @@ export class WorkflowExecutor {
       }
     }
     const firstFailed = iterations.find((o) => o.status === "failed")
-    const message = stopOnFailure
+    // The failure text is the node's `error` so it reaches the stored run
+    // record and every evidence read; see `executeSingleCall`.
+    const failure = stopOnFailure
       ? `Sub-workflow ${targetLabel} failed in iteration ${(firstFailed?.index ?? 0) + 1}`
       : `Sub-workflow ${targetLabel}: ${failedCount} of ${ranCount} iteration(s) failed`
-    return { status: "error", message, subWorkflow: summary() }
+    return { status: "error", error: failure, subWorkflow: summary() }
   }
 
   /**

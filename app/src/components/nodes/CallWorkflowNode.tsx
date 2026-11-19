@@ -73,7 +73,7 @@ const SubWorkflowSummary = ({
         ) : (
           <XCircle className="w-4 h-4 text-(--aw-status-error)" />
         )}
-        <span>{result.message}</span>
+        <span>{result.error ?? result.message}</span>
       </div>
       {forEach ? (
         <ForEachSummary subWorkflow={subWorkflow} workspaceId={workspaceId} />
