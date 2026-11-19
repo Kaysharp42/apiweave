@@ -864,6 +864,136 @@ describe("workflow graph analyzer", () => {
     expect(failure?.nodeIds).toContain("login")
     expect(failure?.nodeIds).not.toContain("end")
   })
+
+  // "An error status" is only one way an http-request node fails. The others —
+  // a contract violation, an expectedStatus mismatch, a JSON-RPC error member,
+  // a SOAP Fault — all arrive on a 2xx, and one message for all of them sent
+  // agents to inspect a request configuration that was fine. Each cause now
+  // names itself in the message and in `evidence.cause`, and a contract
+  // violation is its own code because its evidence is structured.
+  describe("http_request_failed causes", () => {
+    function failedRun(loginResult: Record<string, unknown>) {
+      return RunSchema.parse({
+        runId: "run-causes",
+        workspaceId: "workspace-1",
+        workflowId: "workflow-1",
+        status: "failed",
+        trigger: "manual",
+        variables: {},
+        results: [
+          { nodeId: "start", status: "passed", duration: 1 },
+          { nodeId: "login", status: "failed", duration: 5, ...loginResult },
+        ],
+        nodeStatuses: {},
+        failedNodes: ["login"],
+        rev: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+    }
+
+    function failureDiagnostic(workflow: Workflow, loginResult: Record<string, unknown>, code = "http_request_failed") {
+      const diagnosis = analyzeWorkflowGraph(workflow, failedRun(loginResult))
+      return diagnosis.diagnostics.find((item) => item.code === code)
+    }
+
+    it("reports a transport failure when no response status was recorded", () => {
+      const failure = failureDiagnostic(healthyWorkflow(), { error: "Request to example.test failed" })
+      expect(failure?.message).toBe("An HTTP request failed before a response status was available.")
+      expect(failure?.evidence["cause"]).toBe("transport")
+      expect(failure?.evidence["statusCode"]).toBeUndefined()
+    })
+
+    it("reports an error status only when the recorded status is one", () => {
+      const failure = failureDiagnostic(healthyWorkflow(), { response: { statusCode: 500 } })
+      expect(failure?.message).toBe("An HTTP request returned an error status.")
+      expect(failure?.evidence).toMatchObject({ cause: "status", statusCode: 500 })
+    })
+
+    it("reports an expectedStatus mismatch, including on a 2xx", () => {
+      const failure = failureDiagnostic(healthyWorkflow(), { expectedStatus: 409, response: { statusCode: 200, body: { ok: true } } })
+      expect(failure?.message).toBe("An HTTP request returned 200, which the node's expectedStatus does not allow.")
+      expect(failure?.evidence).toMatchObject({ cause: "expected_status", statusCode: 200, expectedStatus: 409 })
+    })
+
+    it("diagnoses a failed responseSchemas check as contract_violation and points at its schemaErrors", () => {
+      const contractFailure = {
+        response: { statusCode: 200, body: { name: "Rex" } },
+        error: "Response does not match the schema for status 200",
+        assertions: [{
+          ruleIndex: 0,
+          source: "prev",
+          path: "response.body",
+          operator: "matchesSchema",
+          sourceNodeId: "login",
+          expectedState: "literal",
+          expectedType: "object",
+          actualState: "present",
+          actualType: "object",
+          outcome: "fail",
+          reasonCode: "comparison-failed",
+          schemaErrors: [{ path: "", message: "must have required property 'id'" }],
+        }],
+      }
+      const failure = failureDiagnostic(healthyWorkflow(), contractFailure, "contract_violation")
+      expect(failure?.message).toBe(
+        "A response failed the node's responseSchemas contract check; the violations are recorded in the run result's assertions.",
+      )
+      expect(failure?.evidence).toMatchObject({ cause: "contract", statusCode: 200 })
+      expect(failure?.remediation).toEqual({ kind: "read_schema_violations", nodeId: "login" })
+      // The generic request-failure code no longer fires for a contract failure.
+      expect(failureDiagnostic(healthyWorkflow(), contractFailure, "http_request_failed")).toBeUndefined()
+    })
+
+    it("reports a JSON-RPC error member on a 200", () => {
+      const workflow = WorkflowSchema.parse({
+        ...healthyWorkflow(),
+        nodes: healthyWorkflow().nodes.map((node) => node.nodeId === "login"
+          ? { ...node, config: { ...node.config, bodyType: "jsonrpc" as const } }
+          : node),
+      }) as unknown as Workflow
+      const failure = failureDiagnostic(workflow, {
+        response: { statusCode: 200, body: { jsonrpc: "2.0", error: { code: -32000, message: "Server error" }, id: 1 } },
+      })
+      expect(failure?.message).toBe("A JSON-RPC response carried an error member.")
+      expect(failure?.evidence).toMatchObject({ cause: "rpc_error", statusCode: 200 })
+    })
+
+    it("does not report a JSON-RPC error member the node opted into with allowRpcError", () => {
+      const workflow = WorkflowSchema.parse({
+        ...healthyWorkflow(),
+        nodes: healthyWorkflow().nodes.map((node) => node.nodeId === "login"
+          ? { ...node, config: { ...node.config, bodyType: "jsonrpc" as const, allowRpcError: true } }
+          : node),
+      }) as unknown as Workflow
+      // allowRpcError means the error member did not fail the node; a failure
+      // recorded anyway is classified from what else the result says.
+      const failure = failureDiagnostic(workflow, {
+        response: { statusCode: 200, body: { jsonrpc: "2.0", error: { code: -32000, message: "Server error" }, id: 1 } },
+      })
+      expect(failure?.evidence["cause"]).toBe("post_response")
+    })
+
+    it("reports a SOAP Fault on a 200", () => {
+      const failure = failureDiagnostic(healthyWorkflow(), {
+        response: { statusCode: 200, body: "<xml>…</xml>", fault: { code: "s:Client", reason: "Invalid request" } },
+      })
+      expect(failure?.message).toBe("A SOAP response carried a Fault.")
+      expect(failure?.evidence).toMatchObject({ cause: "soap_fault", statusCode: 200 })
+    })
+
+    it("reports a post-response failure without claiming the status was an error", () => {
+      // What the executor records for a failed post-response script (or a retry
+      // whose `until` condition never held): a non-error response that still
+      // failed the node, with nothing status-shaped to blame.
+      const failure = failureDiagnostic(healthyWorkflow(), {
+        response: { statusCode: 200, body: { ok: true } },
+        scripts: [{ phase: "postResponse", duration: 1, logs: [], tests: [{ name: "checks out", passed: false }] }],
+      })
+      expect(failure?.message).toBe("An HTTP request failed after a response arrived.")
+      expect(failure?.evidence).toMatchObject({ cause: "post_response", statusCode: 200 })
+    })
+  })
 })
 
 describe("cycle helpers", () => {
