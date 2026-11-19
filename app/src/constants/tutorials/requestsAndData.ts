@@ -36,6 +36,8 @@ export const requestsAndDataChapter: TutorialChapter = {
         "urlencoded",
         "binary",
         "graphql",
+        "json-rpc",
+        "soap",
         "upload",
         "timeout",
         "redirect",
@@ -82,9 +84,9 @@ export const requestsAndDataChapter: TutorialChapter = {
         {
           title: "Set a request body",
           instruction:
-            "Open the Body tab and choose a body type: None, JSON, Raw, Form-data, x-www-form-urlencoded or Binary. Fill in the matching fields.",
+            "Open the Body tab and choose a body type: None, JSON, Raw, Form-data, x-www-form-urlencoded, Binary, GraphQL, JSON-RPC or SOAP. Fill in the matching fields.",
           detail:
-            "JSON gets a formatting helper and a Monaco editor. Form-data supports per-field rows and file uploads. Binary attaches a file directly.",
+            "JSON gets a formatting helper and a Monaco editor. Form-data supports per-field rows and file uploads. Binary attaches a file directly. GraphQL takes a query, variables and an operation name; JSON-RPC and SOAP are covered in the lesson on gRPC, WebSocket, SOAP and JSON-RPC.",
         },
         {
           title: "Tune request settings",
@@ -138,6 +140,7 @@ export const requestsAndDataChapter: TutorialChapter = {
       relatedLessonIds: [
         "variables-extractors",
         "assertions",
+        "protocols",
         "environments",
         "secrets",
       ],
@@ -155,6 +158,7 @@ export const requestsAndDataChapter: TutorialChapter = {
         "extractors",
         "extract",
         "jsonpath",
+        "xpath",
         "response",
         "chain",
         "token",
@@ -185,7 +189,7 @@ export const requestsAndDataChapter: TutorialChapter = {
           instruction:
             "Open the node's Settings tab, find Store response as variables, and click Add manually. Enter a name such as token and a path such as response.body.access_token.",
           detail:
-            "Every extractor path starts with response. because it reads the node's response object.",
+            "A dot path starts with response. because it reads the node's response object. A path starting with $ is RFC 9535 JSONPath over the same result, such as $.response.body.items[?@.active].id, and one starting with xpath: reads an XML body, such as a SOAP response.",
         },
         {
           title: "Use the extracted value downstream",

@@ -195,6 +195,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   section with the child run id, or each For each iteration's run id and
   status, and the new `workflow_call_failed` diagnostic names the child runs to
   read.
+- **Tutorials for the features since 1.0.** A new **Browser steps** chapter
+  (record, run and read the evidence, fix one step) and lessons on gRPC,
+  WebSocket, SOAP and JSON-RPC, on snapshot and contract checks, and on load
+  runs: 35 lessons in 9 chapters. Existing lessons now cover the GraphQL,
+  JSON-RPC and SOAP body types, `$` JSONPath and `xpath:` paths, every
+  assertion operator, For each on Call Workflow, the shared Finish tab of
+  stream nodes, git sync defaults and the new CLI flags. See
+  [Tutorials](docs/features/tutorials.md).
 
 ### Changed
 

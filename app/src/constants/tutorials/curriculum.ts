@@ -9,6 +9,7 @@ import { firstStepsChapter } from "./firstSteps";
 import { requestsAndDataChapter } from "./requestsAndData";
 import { controlFlowChapter } from "./controlFlow";
 import { debugAndObserveChapter } from "./debugAndObserve";
+import { browserStepsChapter } from "./browserSteps";
 import { organizeChapter } from "./organize";
 import { versionHistoryChapter } from "./versionHistory";
 import { agentsChapter } from "./agents";
@@ -24,6 +25,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
   requestsAndDataChapter,
   controlFlowChapter,
   debugAndObserveChapter,
+  browserStepsChapter,
   organizeChapter,
   versionHistoryChapter,
   agentsChapter,
@@ -232,6 +234,8 @@ export function tutorialDestinationHref(
       return `${base}/settings/agents`;
     case "canvas-settings":
       return `${base}/settings/canvas`;
+    case "browser-settings":
+      return `${base}/settings/browser`;
     case "mcp-server":
       return `${base}/settings/mcp-server`;
     case "version-history":

@@ -16,9 +16,9 @@ The in-app guide to the rest of the product, readable offline and independent of
 
 These guides cover the canvas itself, the data that flows between steps on a run, and the tools for running and debugging it.
 
-- [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — including the Call Workflow node that runs another workflow as one step and the expected-status control for negative tests — canvas actions, and keyboard shortcuts.
-- [Browser Steps](browser-steps.md): drive a web page in a real Chrome or Edge as part of a workflow — the thirteen actions, locators, secrets, the one-browser-per-run rule and the evidence a failed step leaves.
-- [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors, and manage workflow-level variables.
+- [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — HTTP with GraphQL, JSON-RPC and SOAP bodies and WSDL import, SSE, WebSocket, gRPC (unary and server streaming), browser steps, and the Call Workflow node with For each — the expected-status control for negative tests, contract checks against response schemas, snapshot assertions, canvas actions, and keyboard shortcuts.
+- [Browser Steps](browser-steps.md): drive a web page in a real Chrome or Edge as part of a workflow — recording, fixing one step, the thirteen actions, locators, secrets, the one-browser-per-run rule and the evidence every step leaves.
+- [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors written as dot paths, RFC 9535 JSONPath or XPath, and manage workflow-level variables.
 - [Scripting](scripting.md): pre-request and post-response JavaScript on an HTTP Request node, run in a sandbox, to sign requests, transform values into variables and write custom tests.
 - [Load Runs](load-runs.md): run a workflow many times in parallel and report per-step latency percentiles, throughput and threshold gates, in the app or with `apiweave run --concurrency`.
 - [Data-Driven Runs](data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or with `apiweave run --iteration-data`, reading each row as `{{data.<column>}}`.

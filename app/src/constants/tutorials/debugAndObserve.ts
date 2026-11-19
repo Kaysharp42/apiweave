@@ -1,14 +1,15 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 4 — Debug and observe. Runs and history, plus the visualization
- * surface: timeline, provenance, secret confidence and the run camera.
+ * Chapter 4 — Debug and observe. Runs and history, the visualization
+ * surface (timeline, provenance, secret confidence and the run camera), and
+ * load runs.
  */
 export const debugAndObserveChapter: TutorialChapter = {
   id: "debug-and-observe",
   title: "Debug and observe",
   summary:
-    "Run, cancel and inspect; then read the timeline, trace variables, and follow the camera.",
+    "Run, cancel and inspect; read the timeline, trace variables, and follow the camera; then measure a workflow under load.",
   lessons: [
     {
       id: "runs-history",
@@ -207,6 +208,108 @@ export const debugAndObserveChapter: TutorialChapter = {
         },
       ],
       relatedLessonIds: ["runs-history", "variables-extractors", "secrets"],
+    },
+    {
+      id: "load-runs",
+      chapterId: "debug-and-observe",
+      title: "Load runs",
+      summary:
+        "Run one workflow many times at once: iterations, concurrency, duration, ramp-up, thresholds, and the per-step latency report.",
+      outcome:
+        "You can check that an endpoint stays fast and correct under concurrent use, and fail a build when p95 latency or the error rate goes over a limit.",
+      keywords: [
+        "load",
+        "load run",
+        "load test",
+        "performance",
+        "concurrency",
+        "latency",
+        "p95",
+        "percentiles",
+        "throughput",
+        "threshold",
+        "ramp-up",
+        "duration",
+      ],
+      durationMinutes: 6,
+      prerequisites: [
+        "A workflow that runs on its own and has no browser steps.",
+      ],
+      steps: [
+        {
+          title: "Open the Load run dialog",
+          instruction:
+            "Click the arrow beside Run to open Run options, then choose Load run….",
+        },
+        {
+          title: "Set iterations and concurrency",
+          instruction:
+            "Under Load, set Iterations (the total runs to make, 100 by default) and Concurrency (the runs in flight at once, 10 by default).",
+          detail:
+            "Starting a load run raises the usual limit of 4 concurrent runs to at least this number, so iterations are not queued. Iterations go up to 100,000.",
+        },
+        {
+          title: "Pace it",
+          instruction:
+            "Under Pacing, optionally set Duration (s) to stop starting runs after that long, and Ramp-up (s) to grow from 1 to full concurrency instead of starting a full batch.",
+        },
+        {
+          title: "Add thresholds",
+          instruction:
+            "Under Pass criteria, write one threshold per line, such as p95<500 or errors<1%. A breach fails the load run.",
+          detail:
+            "Latency metrics are min, mean, p50, p90, p95, p99 and max in milliseconds; errors<1% is a rate and errors<5 a count of failed iterations; throughput>20 is executions per second. Each threshold is checked against every step.",
+        },
+        {
+          title: "Feed it data",
+          instruction:
+            "Under Data, optionally choose a CSV or JSON file. Each iteration reads its row as {{data.<column>}}, and Iterations is set from the number of rows; with more iterations than rows, rows are reused in order.",
+        },
+        {
+          title: "Start and read the result",
+          instruction:
+            "Click Start load run. The canvas follows the first iteration, and when the load run ends a notice says how it went and offers Save report, an HTML report with the latency table.",
+          detail:
+            "The result is kept until the app closes, for the last 20 load runs.",
+        },
+        {
+          title: "Know what is kept",
+          instruction:
+            "Per step, a load run keeps the count, the error rate, latency min, mean, p50, p90, p95, p99 and max, the throughput, and the first failure. Every other iteration's results are folded into those numbers and dropped.",
+          detail:
+            "Each iteration still appears in History, showing only its status and timing.",
+        },
+        {
+          title: "Gate a build in CI",
+          instruction:
+            "Run apiweave run with --workflow, --concurrency and one of --iteration-count, --iteration-data or --duration. Add --ramp-up and one --threshold per gate; a breach exits 1.",
+        },
+      ],
+      example: {
+        caption: "The same load run in the app and in CI",
+        language: "bash",
+        code: '# App: Run options > Load run…\n#   Iterations 500   Concurrency 20   Ramp-up (s) 10\n#   Thresholds: p95<500\n#               errors<1%\n\napiweave run api.aweproject --workflow "Search" --env Staging \\\n  --concurrency 20 --iteration-count 500 --ramp-up 10s \\\n  --threshold "p95<500" --threshold "errors<1%" --reporter cli,html',
+      },
+      expectedResult:
+        "The load run reports each step's latency percentiles, error rate and throughput, marks any breached threshold, and offers an HTML report; in CI a breach exits 1.",
+      troubleshooting: [
+        {
+          title: "A load run cannot run a workflow with browser steps",
+          instruction:
+            "Load runs refuse browser steps, because each iteration would start a real browser. Run the workflow normally, or move the API calls into a workflow of their own.",
+        },
+        {
+          title: "Latencies look too good",
+          instruction:
+            "The target may be caching: every iteration sends the same request unless it reads {{data.<column>}} or a dynamic function.",
+        },
+        {
+          title: "Throughput is lower than expected",
+          instruction:
+            "The app or CI machine is the limit: a load run shares one process with its own request handling, so very high concurrency measures the client too.",
+        },
+      ],
+      relatedLessonIds: ["runs-history", "visual-debugging", "git-ci"],
     },
   ],
 };
