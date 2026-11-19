@@ -184,6 +184,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
   address with its query string removed. The CI guide gains a GitHub Actions job
   (the runner's Chrome needs no install) and a GitLab CI job on the Playwright
   image. See [Run APIWeave Tests in CI](docs/guides/ci.md#browser-steps).
+- **Agents can build from an OpenAPI or WSDL file.** Two read-only MCP tools,
+  `workflows_importOpenapi` and `workflows_importWsdl`, parse spec text into
+  node templates without saving anything: OpenAPI nodes keep their
+  `responseSchemas` and contract check, WSDL nodes their generated SOAP
+  envelopes. Importing from a URL, cURL, HAR, Postman or a bundle stays in the
+  app. See [MCP Integration](docs/features/mcp-integration.md).
+- **Agents can follow a failed Call Workflow node into the workflow it
+  called.** `runs_getNodeResult` and `workflows_debugContext` have a `call`
+  section with the child run id, or each For each iteration's run id and
+  status, and the new `workflow_call_failed` diagnostic names the child runs to
+  read.
 - **Tutorials for the features since 1.0.** A new **Browser steps** chapter
   (record, run and read the evidence, fix one step) and lessons on gRPC,
   WebSocket, SOAP and JSON-RPC, on snapshot and contract checks, and on load
@@ -194,6 +205,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
   [Tutorials](docs/features/tutorials.md).
 
 ### Changed
+
+- **Run diagnosis names why an HTTP request failed.** `http_request_failed`
+  carries `evidence.cause` (`transport`, `status`, `expected_status`,
+  `rpc_error`, `soap_fault` or `post_response`) with a message to match, instead
+  of reporting every failure as an error status. A failed contract check is its
+  own code, `contract_violation`, pointing at the violations.
+- **The MCP guides cover the features since 1.0.** For each, SOAP, `$`
+  JSONPath and `xpath:` paths, how to replace a node's config in one
+  `workflows_patch` (an agent's Re-pick element and Turn into extract), what to
+  do instead of a load run or accepting a snapshot, and a row for every code
+  `workflow_diagnose` can return, held to the analyzer by a test.
+  `runs_history` rows of a data-driven or load run carry their `iteration`.
 
 - **Browser step evidence is kept for every step, pass or fail.** A browser
   step's screenshot and ARIA snapshot used to be captured only when the step
@@ -219,6 +242,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A failed Call Workflow node records why.** Its failure, such as
+  `Sub-workflow Login failed at "Fill password": Status 404`, is now the node's
+  error, so the run record, the CLI reports and agents see it; it used to reach
+  only the canvas. The child step's own error inside it is reduced to an error
+  class like any other stored error.
 - **A server-streaming gRPC node shows its two outputs.** The canvas drew one
   socket for every gRPC call, so an edge leaving `ready` or `complete` was
   invisible — and clearing its handle to make the edge appear silently skipped

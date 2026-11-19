@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { RunHistoryPageSchema, WorkflowSearchPageSchema, WorkflowSummarySchema } from "@shared/zod-schemas"
+import { RunHistoryPageSchema, RunIterationSchema, WorkflowSearchPageSchema, WorkflowSummarySchema } from "@shared/zod-schemas"
 import type { JsonValue } from "@shared/types/JsonValue"
 
 /**
@@ -18,7 +18,11 @@ export const McpWorkflowSearchPageSchema = WorkflowSearchPageSchema.extend({
   items: z.array(McpWorkflowSearchRowSchema),
 })
 
-/** History rows keep what a scan needs; `failedNodes` appears only when there are some. */
+/** History rows keep what a scan needs; `failedNodes` appears only when there are some.
+ * `iteration` appears only on a data-driven or load run's row: the group a
+ * load-run iteration belongs to is not agent-started (no createLoad tool), so
+ * the marker is how an agent tells "the latest run" from one of its iterations.
+ * A load-specific `kind` is not stored on the row, so it is not invented here. */
 const McpRunHistoryRowSchema = z.object({
   runId: z.string().min(1),
   status: z.string(),
@@ -26,6 +30,7 @@ const McpRunHistoryRowSchema = z.object({
   durationMs: z.number().int().nonnegative().nullable(),
   failedNodeCount: z.number().int().nonnegative(),
   failedNodes: z.array(z.string()).optional(),
+  iteration: RunIterationSchema.optional(),
 })
 
 export const McpRunHistoryPageSchema = RunHistoryPageSchema.extend({
@@ -50,6 +55,8 @@ export function projectRunHistoryPage(value: unknown): JsonValue {
       durationMs: run.duration ?? null,
       failedNodeCount: run.failedNodeCount,
       ...(run.failedNodes.length > 0 ? { failedNodes: run.failedNodes } : {}),
+      // Present only on an iteration of a data-driven or load run.
+      ...(run.iteration !== null ? { iteration: run.iteration } : {}),
     })),
     nextCursor: page.nextCursor,
   } as JsonValue

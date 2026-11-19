@@ -27,6 +27,10 @@ const optionalLocator = BrowserLocatorSchema.optional().describe(
   "The element this step acts on. Omit it to act on the page itself, e.g. a key press on the focused element.",
 )
 
+const optionalExtractLocator = BrowserLocatorSchema.optional().describe(
+  'The element this step reads from. Required for from "text", "value" or "attribute"; omit it for the page-level sources, from "url" or "title".',
+)
+
 const dialog = z
   .enum(["accept", "dismiss"])
   .optional()
@@ -173,7 +177,7 @@ export const BrowserNodeDataSchema = z
     z
       .object({
         action: z.literal("extract"),
-        locator: optionalLocator,
+        locator: optionalExtractLocator,
         from: z
           .enum(["text", "value", "attribute", "url", "title"])
           .describe('What to read: the element\'s text (`locator.innerText()`), its form value (`locator.inputValue()`), one HTML attribute (`locator.getAttribute(attribute)`), the page URL (`page.url()`), or the page title (`page.title()`).'),

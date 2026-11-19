@@ -214,10 +214,12 @@ agent cannot do itself. See
 `workspaces_map` orients an agent in a workspace with one paged read (30
 workflows per page by default, `collectionId` narrows to one project). Per
 workflow it returns `workflowId`, `name`, `rev`, `collectionId`, the endpoints
-its request and SSE nodes call as `METHOD /path/{{…}}` (host, query string and
-userinfo dropped, placeholders collapsed so a route appears once), the variable
-names it produces and consumes, the `env` and `secrets` names it references, the
-workflows its `workflow` nodes call, and its latest run's `runId` and `status`.
+it calls — HTTP request, SSE and WebSocket nodes as `METHOD /path/{{…}}`, a
+gRPC call as `RPC /service/method`, a browser navigate as `PAGE /path` (host,
+query string and userinfo dropped, placeholders collapsed so a route appears
+once) — the variable names it produces and consumes, the `env` and `secrets`
+names it references, the workflows its `workflow` nodes call, and its latest
+run's `runId` and `status`.
 Empty lists are left out; a list longer than 20 names is cut and the rest
 counted in `omitted`. Everything comes from names and path templates, never a
 config value, and the latest runs for a page come from a single query.
@@ -230,6 +232,8 @@ config value, and the latest runs for a page come from a single query.
 - `workflow_diagnose`
 - `workflows_debugContext`
 - `workflows_nodeSchema`
+- `workflows_importOpenapi`
+- `workflows_importWsdl`
 - `workflows_create`
 - `workflows_patch`
 - `workflows_layout`
@@ -243,7 +247,11 @@ config value, and the latest runs for a page come from a single query.
 replace matching entries by id and append the rest, `removeNodeIds` and
 `removeEdgeIds` delete by id (edges attached to a removed node go with it),
 `setVariables`/`unsetVariables` merge into the stored map, and `name`,
-`description` and `tags` replace their stored values. There is no whole-graph
+`description` and `tags` replace their stored values. Merging is recursive, so
+it cannot remove config keys: to replace a node's config outright — a browser
+step's locator kind, or a step turned into an `extract` — put its nodeId in
+`removeNodeIds` and upsert its complete definition in the same call, and its
+edges survive. There is no whole-graph
 replace tool for agents. `expectedRevision` makes the write a compare-and-swap
 against the revision the caller last read, so a concurrent desktop edit produces
 a conflict rather than being overwritten. The desktop canvas saves the same way:
@@ -257,6 +265,20 @@ node type's config as JSON Schema, generated from the same definitions the write
 path validates with. Validation itself is unchanged: a bad config is rejected
 with a path that names the node list and index, such as
 `["nodes", 1, "config", "body"]`.
+
+`workflows_importOpenapi` and `workflows_importWsdl` turn a spec file into node
+templates without saving anything: the agent reads the OpenAPI/Swagger (JSON or
+YAML) or WSDL 1.1 file itself and passes the text in, and each operation comes
+back as an `http-request` node — OpenAPI templates carrying `openapiMeta` and
+`responseSchemas` (so the response-body contract check defaults to `fail`),
+WSDL templates carrying a generated SOAP envelope. The returned `nodes` and
+`edges` pass straight into `workflows_create`, or `upsertNodes`/`upsertEdges`
+on `workflows_patch`. Neither tool fetches a URL, so the agent supplies the
+document text; both cap it at 10 MiB, the same budget remote spec fetches use.
+The remaining importers (remote URL fetch, curl, HAR, Postman, and the bundle
+import/export trio) stay renderer-only: the desktop import dialogs preview and
+commit those, and an agent authors the same requests through the typed write
+tools.
 
 Every agent write keeps the workflow as it was just before it as a version
 (see [Version history](workflows-and-nodes.md#version-history)), so the user can
@@ -361,6 +383,21 @@ environment this one inherits plain variables from; `null` clears it. See
 
 `runs_history` is the one run query: filter by workflow or status, newest
 first; the latest run is `limit: 1`, the latest failure adds `status: "failed"`.
+A row that is one iteration of a data-driven or load run carries `iteration`
+(`groupId`, 1-based `index`, `count`) — a load run's iterations are ordinary
+runs, so check the marker before treating the newest row as "the" latest run.
+
+Two run-adjacent operations are deliberately not agent tools. A load run —
+the same workflow fanned out as up to thousands of parallel real requests —
+is started by you from **Run options → Load run…** or with the CLI
+(`apiweave run <path> --workflow <name> --concurrency N --iteration-count N
+--threshold "p95<500"`); there is no `runs_createLoad`, and the load aggregate
+reads (`loadResult`, `loadReport`) are excluded with it. Accepting a changed
+`matchesSnapshot` baseline is also your call: click **Accept snapshot** on
+the failed rule in the run inspector, or rerun the CLI with
+`--update-snapshots`. An agent asked for either should hand it back to you
+rather than work around it — replacing or deleting the rule to turn a run
+green is never the fix.
 
 `runs_create` also reruns part of a workflow: `resume: { nodeId }` starts at
 that step, `resume: {}` reruns the steps the latest run failed, and `fromRunId`

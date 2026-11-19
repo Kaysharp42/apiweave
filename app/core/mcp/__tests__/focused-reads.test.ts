@@ -845,6 +845,50 @@ describe("Phase 2 — compact run history with continuations", () => {
     })
     await client.close()
   })
+
+  /**
+   * A load run's iterations are ordinary runs, and the row stores the same
+   * `iteration` marker a data-driven run's rows store — nothing on the row
+   * says "load", so the projection must not invent a discriminator. The
+   * marker alone answers the live complaint: without it, a `limit: 1` "latest
+   * run" read silently hands an agent a load iteration.
+   */
+  it("marks a row that is one iteration of a group, so the latest run is never silently an iteration", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "grouped" })
+    runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    const iteration = runRepository.create({
+      workspaceId,
+      workflowId: workflow.workflowId,
+      iteration: { groupId: "grp_1", index: 7, count: 200 },
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_history",
+      arguments: { workspaceId, workflowId: workflow.workflowId },
+    })
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
+      items: Array<Record<string, unknown>>
+    }
+
+    // The iteration row carries its place in the group; the ordinary run
+    // carries no marker at all. Keyset order (createdAt, id) can tie two
+    // same-millisecond inserts, so rows are matched by id, not position.
+    expect(parsed.items).toHaveLength(2)
+    const iterationRow = parsed.items.find((row) => row["runId"] === iteration.runId)
+    expect(iterationRow).toEqual({
+      runId: iteration.runId,
+      status: "pending",
+      startedAt: null,
+      durationMs: null,
+      failedNodeCount: 0,
+      iteration: { groupId: "grp_1", index: 7, count: 200 },
+    })
+    const plainRow = parsed.items.find((row) => row["runId"] !== iteration.runId)
+    expect(plainRow).not.toHaveProperty("iteration")
+    await client.close()
+  })
 })
 
 describe("Phase 2 — targeted node evidence", () => {
@@ -912,6 +956,20 @@ describe("Phase 2 — targeted node evidence", () => {
       extractorOutcomes?: unknown
       request?: Record<string, unknown>
       response?: Record<string, unknown> & { pathStatus?: string }
+      call?: {
+        workflowId: string
+        runId?: string
+        status: string
+        nodeCount: number
+        failedNodeCount: number
+        forEach?: {
+          itemCount: number
+          ranCount: number
+          failedCount: number
+          iterations: Array<{ index: number; runId?: string; status: string }>
+          omittedIterationCount: number
+        }
+      }
       omittedSections: string[]
       budgetOmitted: boolean
       expectedStatus?: number
@@ -938,9 +996,89 @@ describe("Phase 2 — targeted node evidence", () => {
     expect(item.assertions).toBeUndefined()
     expect(item.extractorOutcomes).toBeUndefined()
     expect(item.request).toBeUndefined()
-    expect(item.omittedSections.sort()).toEqual(["assertions", "browser", "extractors", "request"])
+    expect(item.omittedSections.sort()).toEqual(["assertions", "browser", "call", "extractors", "request"])
     expect(item.expectedStatus).toBe(200)
     expect(item.unresolvedPlaceholders).toEqual(["env.PASSWORD"])
+  })
+
+  it("projects a Call Workflow node's child runs in the call section, failed iterations kept over the cap", async () => {
+    const workspaceId = await seedWorkspace()
+    // The target must exist: workflow creation validates call targets.
+    const child = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "Login" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "caller",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call1", type: "workflow", position: { x: 100, y: 0 }, config: { targetWorkflowId: child.workflowId } },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "call1" }],
+    })
+    const iterations = Array.from({ length: 25 }, (_, index) => ({
+      index,
+      runId: `run-child-${index}`,
+      status: index === 3 || index === 24 ? ("failed" as const) : ("passed" as const),
+    }))
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "call1",
+        status: "failed",
+        duration: 40,
+        error: "Sub-workflow Login failed in iteration 4",
+        subWorkflow: {
+          workflowId: child.workflowId,
+          runId: "run-child-0",
+          status: "failed",
+          nodeCount: 3,
+          failedNodeCount: 1,
+          outputVariableNames: ["token"],
+          forEach: { itemCount: 25, ranCount: 25, failedCount: 2, iterations },
+        },
+      }],
+      failedNodes: ["call1"],
+    })
+
+    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
+      workspaceId,
+      runId: run.runId,
+      nodeId: "call1",
+    })
+    const call = page.items[0]?.call
+    expect(call).toMatchObject({
+      workflowId: child.workflowId,
+      runId: "run-child-0",
+      status: "failed",
+      nodeCount: 3,
+      failedNodeCount: 1,
+    })
+    // 25 iterations exceed the row cap; the two failed ones survive it (they
+    // are what an agent opens), the dropped rows are counted, and the kept
+    // rows stay in item order.
+    expect(call?.forEach).toMatchObject({ itemCount: 25, ranCount: 25, failedCount: 2, omittedIterationCount: 5 })
+    const kept = call?.forEach?.iterations ?? []
+    expect(kept.map((iteration) => iteration.index)).toEqual([...Array.from({ length: 19 }, (_, index) => index), 24])
+    expect(kept.filter((iteration) => iteration.status === "failed").map((iteration) => iteration.runId))
+      .toEqual(["run-child-3", "run-child-24"])
+    expect(page.items[0]?.error).toBe("Sub-workflow Login failed in iteration 4")
+    expect(page.items[0]?.omittedSections).toEqual([])
+
+    const selected = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
+      workspaceId,
+      runId: run.runId,
+      nodeId: "call1",
+      sections: ["call"],
+    })
+    expect(selected.items[0]?.call?.workflowId).toBe(child.workflowId)
+    expect(selected.items[0]?.error).toBeUndefined()
+    expect(selected.items[0]?.omittedSections.sort()).toEqual(["assertions", "browser", "error", "extractors", "request", "response"])
+  })
+
+  it("has no call section for an ordinary node", async () => {
+    const { workspaceId, runId } = await seedFailedRun()
+    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", { workspaceId, runId, nodeId: "login" })
+    expect(page.items[0]).not.toHaveProperty("call")
   })
 
   it("selects within a JSON body by extractor-grammar path and reports misses", async () => {
@@ -965,6 +1103,42 @@ describe("Phase 2 — targeted node evidence", () => {
     })
     expect(miss.items[0]?.response?.preview).toBeUndefined()
     expect(miss.items[0]?.response?.pathStatus).toBe("path-missing")
+  })
+
+  /**
+   * A SOAP fault is parsed onto the response record outside its body
+   * (`response.fault.code`), and the evidence path grammar reaches it the same
+   * way an assertion path does: the path resolves against the whole response
+   * record, not only its body.
+   */
+  it("resolves an evidence path against the whole response record, not only its body", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "soap-evidence" })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "soap",
+        status: "failed",
+        duration: 9,
+        response: {
+          statusCode: 500,
+          body: "<SOAP-ENV:Envelope><SOAP-ENV:Fault/></SOAP-ENV:Envelope>",
+          fault: { code: "soap:Server", reason: "Station unavailable" },
+        },
+      }],
+      failedNodes: ["soap"],
+    })
+
+    const fault = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
+      workspaceId,
+      runId: run.runId,
+      nodeId: "soap",
+      sections: ["response"],
+      path: "response.fault.code",
+    })
+    expect(fault.items[0]?.response?.preview).toBe("\"soap:Server\"")
+    expect(fault.items[0]?.response?.pathStatus).toBe("resolved")
   })
 
   it("caps text previews with explicit ranges and totals", async () => {
@@ -1499,7 +1673,7 @@ describe("Phase 2 — browser step evidence", () => {
 
     const restricted = await evidence(workspaceId, runId, { nodeId: "login", sections: ["response"] })
     expect(restricted.items[0]).not.toHaveProperty("browser")
-    expect(restricted.items[0]?.omittedSections.sort()).toEqual(["assertions", "browser", "error", "extractors", "request"])
+    expect(restricted.items[0]?.omittedSections.sort()).toEqual(["assertions", "browser", "call", "error", "extractors", "request"])
   })
 
   async function seedFailedRunWithResponse(): Promise<{ workspaceId: string; runId: string }> {

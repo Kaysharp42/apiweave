@@ -25,6 +25,14 @@ const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> =
   notice: 2,
 }
 
+/**
+ * Child run ids a `workflow_call_failed` diagnostic carries. A for-each call
+ * that fails every iteration would otherwise turn the evidence into a
+ * directory listing; the remainder is counted in `childRunIdOmittedCount` and
+ * every child run is listed in the called workflow's run history.
+ */
+const CALL_FAILURE_RUN_ID_LIMIT = 10
+
 /** Whether a node produces the response an assertion, merge or extractor reads. */
 function isResponseNode(
   node: WorkflowNode | undefined,
@@ -346,8 +354,75 @@ export function isValidRuntimePath(path: string, includeDuration: boolean): bool
   return root === "body" || root === "headers" || root === "trailers"
 }
 
+/**
+ * Every diagnostic code `analyzeWorkflowGraph` can emit, and nothing else: the
+ * `diagnostic()` helper below is typed with this list, so an emit site cannot
+ * use a code it does not declare. The diagnostics guide
+ * (`apiweave://guide/diagnostics`) promises a row per code, and
+ * `core/mcp/__tests__/diagnostic-codes.test.ts` pins the two together — add the
+ * row there in the same change as the code, or the test fails.
+ */
+export const WORKFLOW_DIAGNOSTIC_CODES = [
+  // Topology
+  "missing_start_node",
+  "duplicate_start_node",
+  "missing_end_node",
+  "duplicate_node_id",
+  "duplicate_edge_id",
+  "dangling_edge",
+  "edge_source_handle_ignored",
+  "stream_edge_handle_invalid",
+  "unreachable_nodes",
+  "cycle_detected",
+  "browser_parallel_branches",
+  // Assertions and branching
+  "assertion_rules_missing",
+  "assertion_source_missing",
+  "assertion_source_ambiguous",
+  "assertion_source_unknown",
+  "assertion_operator_unknown",
+  "assertion_source_path_invalid",
+  "assertion_expected_missing",
+  "assertion_expected_invalid",
+  "assertion_branch_handle_invalid",
+  "assertion_branch_duplicate",
+  "assertion_fail_wired_on_all",
+  "continue_on_fail_status_check_migratable",
+  // Dataflow
+  "extractor_path_invalid",
+  "extractor_path_missing",
+  "extractor_type_mismatch",
+  "variable_source_missing",
+  "variable_producer_duplicate",
+  "variable_producer_not_upstream",
+  "extractor_producer_not_executed",
+  "unknown_function",
+  // Browser steps
+  "browser_chain_starts_without_navigate",
+  "browser_selector_fallback",
+  // Run-correlated
+  "run_result_unknown_node",
+  "http_request_failed",
+  "contract_violation",
+  "sse_stream_failed",
+  "websocket_stream_failed",
+  "grpc_call_failed",
+  "workflow_call_failed",
+  "response_body_truncated",
+  "response_body_unavailable",
+  "assertion_source_mismatch",
+  "assertion_source_missing_at_run",
+  "assertion_source_ambiguous_at_run",
+  "assertion_failed",
+  "secret_resolution_metadata_missing",
+  "secret_reference_unresolved",
+  "nodes_not_executed",
+] as const
+
+type WorkflowDiagnosticCode = (typeof WORKFLOW_DIAGNOSTIC_CODES)[number]
+
 function diagnostic(
-  code: string,
+  code: WorkflowDiagnosticCode,
   severity: WorkflowDiagnostic["severity"],
   category: WorkflowDiagnostic["category"],
   nodeIds: readonly string[],
@@ -1020,6 +1095,116 @@ function addUnknownFunctionDiagnostics(workflow: WorkflowGraphInput, diagnostics
   }
 }
 
+/** One way a failed http-request node actually failed, as its recorded result says. */
+type HttpRequestFailure = {
+  readonly code: "http_request_failed" | "contract_violation"
+  readonly cause:
+    | "transport"
+    | "contract"
+    | "expected_status"
+    | "rpc_error"
+    | "soap_fault"
+    | "status"
+    | "post_response"
+  readonly message: string
+  readonly evidence: Readonly<Record<string, JsonValue>>
+  readonly remediation: WorkflowDiagnostic["remediation"]
+}
+
+/**
+ * Classify a failed http-request result in the executor's own precedence: no
+ * response at all, then the response-level gates (the `responseSchemas`
+ * contract check, `expectedStatus`, a JSON-RPC `error` member, a SOAP Fault),
+ * then the status itself, then whatever happened after a non-error response
+ * arrived. "An error status" is only true for one of those, and a 2xx that
+ * failed a contract check would otherwise be mislabeled by it.
+ *
+ * A contract violation is its own code: its evidence is structured — the
+ * failed `matchesSchema` evaluation's `schemaErrors` in the result's
+ * `assertions`, read with `runs_getNodeResult` `sections: ["assertions"]` —
+ * so the remediation is to read the violations, not to re-inspect the request.
+ * The other causes share `http_request_failed` and name themselves in
+ * `evidence.cause`.
+ */
+function httpRequestFailure(
+  node: Extract<WorkflowNode, { type: "http-request" }>,
+  result: RunResult,
+  statusCode: number | undefined,
+  response: Readonly<Record<string, JsonValue>>,
+): HttpRequestFailure {
+  const remediation: WorkflowDiagnostic["remediation"] = { kind: "inspect_http_configuration", nodeId: node.nodeId }
+  if (statusCode === undefined) {
+    return {
+      code: "http_request_failed",
+      cause: "transport",
+      message: "An HTTP request failed before a response status was available.",
+      evidence: {},
+      remediation,
+    }
+  }
+  const statusEvidence = { statusCode }
+  // The contract check is the only thing that puts a `matchesSchema` evaluation
+  // on an http-request result, so a failed one is a contract violation — for a
+  // 2xx as much as for any other status.
+  if ((result.assertions ?? []).some((evaluation) => evaluation.operator === "matchesSchema" && evaluation.outcome === "fail")) {
+    return {
+      code: "contract_violation",
+      cause: "contract",
+      message: "A response failed the node's responseSchemas contract check; the violations are recorded in the run result's assertions.",
+      evidence: statusEvidence,
+      remediation: { kind: "read_schema_violations", nodeId: node.nodeId },
+    }
+  }
+  const expectedStatus = result.expectedStatus
+  if (expectedStatus !== undefined && !(Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus]).includes(statusCode)) {
+    return {
+      code: "http_request_failed",
+      cause: "expected_status",
+      message: `An HTTP request returned ${statusCode}, which the node's expectedStatus does not allow.`,
+      evidence: { ...statusEvidence, expectedStatus },
+      remediation,
+    }
+  }
+  const body = response["body"]
+  if (node.config?.bodyType === "jsonrpc" && node.config.allowRpcError !== true && isRecord(body) && "error" in body) {
+    return {
+      code: "http_request_failed",
+      cause: "rpc_error",
+      message: "A JSON-RPC response carried an error member.",
+      evidence: statusEvidence,
+      remediation,
+    }
+  }
+  if (isRecord(response["fault"])) {
+    return {
+      code: "http_request_failed",
+      cause: "soap_fault",
+      message: "A SOAP response carried a Fault.",
+      evidence: statusEvidence,
+      remediation,
+    }
+  }
+  if (statusCode >= 400) {
+    return {
+      code: "http_request_failed",
+      cause: "status",
+      message: "An HTTP request returned an error status.",
+      evidence: statusEvidence,
+      remediation,
+    }
+  }
+  // A non-error status that still failed the node: a failed post-response
+  // script, or a retry whose `until` condition never held. The response is not
+  // the cause, so the message must not claim it was.
+  return {
+    code: "http_request_failed",
+    cause: "post_response",
+    message: "An HTTP request failed after a response arrived.",
+    evidence: statusEvidence,
+    remediation,
+  }
+}
+
 function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
   const resultsByNode = new Map(run.results.map((result) => [result.nodeId, result]))
@@ -1054,21 +1239,34 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           const downstreamResult = resultsByNode.get(nodeId)
           return downstreamResult === undefined || downstreamResult.status === "skipped"
         }).sort()
-        diagnostics.push(diagnostic(
-          node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : node.type === "grpc" ? "grpc_call_failed" : "http_request_failed",
-          "error",
-          "execution",
-          // Only the failed node: the starved branch is named once, in evidence.
-          [node.nodeId],
-          statusCode === undefined
-            ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection", "HTTP request", "gRPC call")} failed before a response status was available.`
-            : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "An HTTP request", "A gRPC call")} returned an error status.`,
-          {
-            ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
-            blockedNodeIds,
-          },
-          { kind: "inspect_http_configuration", nodeId: node.nodeId },
-      ))
+        if (node.type === "http-request") {
+          const failure = httpRequestFailure(node, result, statusCode, response)
+          diagnostics.push(diagnostic(
+            failure.code,
+            "error",
+            "execution",
+            // Only the failed node: the starved branch is named once, in evidence.
+            [node.nodeId],
+            failure.message,
+            { cause: failure.cause, ...failure.evidence, blockedNodeIds },
+            failure.remediation,
+          ))
+        } else {
+          diagnostics.push(diagnostic(
+            node.type === "sse" ? "sse_stream_failed" : node.type === "websocket" ? "websocket_stream_failed" : "grpc_call_failed",
+            "error",
+            "execution",
+            [node.nodeId],
+            statusCode === undefined
+              ? `A ${streamLabel(node.type, "Server-Sent Events stream", "WebSocket connection", "gRPC call")} failed before a response status was available.`
+              : `${streamLabel(node.type, "A Server-Sent Events stream", "A WebSocket connection", "A gRPC call")} returned an error status.`,
+            {
+              ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
+              blockedNodeIds,
+            },
+            { kind: "inspect_http_configuration", nodeId: node.nodeId },
+          ))
+        }
       }
       if (response["truncated"] === true) {
         diagnostics.push(diagnostic(
@@ -1126,6 +1324,42 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           ))
         }
       }
+    }
+
+    // A Call Workflow node's own result is a summary; the failure and its
+    // evidence live in the child run, so the verdict points there. Only a
+    // failed call is diagnosed — a passed call is the node doing its job.
+    if (node.type === "workflow" && result.status === "failed" && result.subWorkflow !== undefined) {
+      const sub = result.subWorkflow
+      // A for-each call failed in at least one of its iterations; a single
+      // call failed in its one child. Only the FAILED children are worth
+      // opening, so their run ids travel; the cap keeps a pathological
+      // for-each from turning the diagnostic into a directory listing, with
+      // the remainder counted rather than silently dropped.
+      const childRunIds = (sub.forEach === undefined
+        ? (sub.status === "failed" && sub.runId !== undefined ? [sub.runId] : [])
+        : sub.forEach.iterations
+          .filter((iteration) => iteration.status === "failed" && iteration.runId !== undefined)
+          .map((iteration) => iteration.runId!)
+      ).slice(0, CALL_FAILURE_RUN_ID_LIMIT)
+      const failedChildCount = sub.forEach?.failedCount ?? (sub.status === "failed" ? 1 : 0)
+      diagnostics.push(diagnostic(
+        "workflow_call_failed",
+        "error",
+        "execution",
+        [node.nodeId],
+        sub.forEach === undefined
+          ? "A Call Workflow node failed in the selected run; the failure happened inside the called workflow."
+          : "A Call Workflow node failed in the selected run; at least one iteration of the called workflow failed.",
+        {
+          targetWorkflowId: sub.workflowId,
+          ...(sub.forEach === undefined ? {} : { failedIterationCount: sub.forEach.failedCount }),
+          ...(childRunIds.length > 0 ? { childRunIds } : {}),
+          childRunIdCount: failedChildCount,
+          childRunIdOmittedCount: Math.max(0, failedChildCount - childRunIds.length),
+        },
+        { kind: "inspect_child_run", nodeId: node.nodeId },
+      ))
     }
 
     if (node.type === "assertion") {

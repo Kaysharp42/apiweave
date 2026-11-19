@@ -97,9 +97,16 @@ function touchedIds(spec: McpToolSpec, payload: Record<string, unknown>): { node
   }
   if (spec.domain !== "workflows" || spec.action !== "patch") return { nodeIds: [], edgeIds: [] }
   return {
-    nodeIds: idsFrom(payload["upsertNodes"], "nodeId").concat(idsFrom(payload["removeNodeIds"])),
-    edgeIds: idsFrom(payload["upsertEdges"], "edgeId").concat(idsFrom(payload["removeEdgeIds"])),
+    // One id named in both lists is still one node: the replace recipe
+    // (removeNodeIds + a full upsert of the same id, for a locator-kind or
+    // action change) touches it once, not once per list.
+    nodeIds: unique(idsFrom(payload["upsertNodes"], "nodeId").concat(idsFrom(payload["removeNodeIds"]))),
+    edgeIds: unique(idsFrom(payload["upsertEdges"], "edgeId").concat(idsFrom(payload["removeEdgeIds"]))),
   }
+}
+
+function unique(ids: readonly string[]): string[] {
+  return [...new Set(ids)]
 }
 
 function idsFrom(value: unknown, key?: "nodeId" | "edgeId"): string[] {

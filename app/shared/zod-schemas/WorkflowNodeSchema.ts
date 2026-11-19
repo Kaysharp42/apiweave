@@ -96,7 +96,7 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .describe(
-      'Checks values from the single upstream response-producing node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one HTTP request, gRPC or SSE node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
+      'Checks values from the single upstream response-producing node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one HTTP request, gRPC, SSE or WebSocket node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
     ),
   baseNode
     .extend({

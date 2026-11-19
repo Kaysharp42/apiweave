@@ -25,6 +25,7 @@ import { WorkflowService } from "../../services/workflow_service"
 import { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { EnvironmentService } from "../../services/environment_service"
+import { ImportService } from "../../services/import_service"
 import { NodePresetService } from "../../services/node_preset_service"
 import { RunService } from "../../services/run_service"
 import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../services/secret_service"
@@ -112,6 +113,8 @@ beforeEach(() => {
       secretStore,
       () => "2026-01-01T00:00:00.000Z",
     ),
+    // The parse-only importers are agent tools now, so the harness they need.
+    imports: new ImportService(workflows, environments, collections, scopeResolver),
   }
   agentWrites = []
   router = new IpcRouter({ onAgentWrite: (event) => agentWrites.push(event) })
@@ -220,6 +223,18 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "projects.runReport",
       // A background run per row; an agent passes one row per runs_create.
       "runs.createIterations",
+      // A load run fans the workflow out as up to thousands of parallel real
+      // requests: the user's call (Run options → Load run…, or the CLI's
+      // --concurrency), never an agent's. createLoad also never threads
+      // `context.agent`, so whitelisting it as-is would bypass the
+      // secret-approval gate runs_create waits behind.
+      "runs.createLoad",
+      "runs.loadResult",
+      "runs.loadReport",
+      // Accepting a changed snapshot baseline takes a caller-supplied value an
+      // agent only ever saw redacted/truncated: the user's call alone (Accept
+      // snapshot in the run inspector, or the CLI's --update-snapshots).
+      "runs.acceptSnapshot",
       // Deleting run history is irreversible and the user's call alone.
       "runs.delete",
       "runs.clearHistory",
@@ -391,12 +406,51 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     for (const spec of MCP_TOOLS) expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/account|token|sign.?in|repositor|owner/)
   })
 
-  it("exposes no webhook or import tools (dropped/deferred surface)", () => {
-    for (const spec of MCP_TOOLS) {
-      expect(spec.domain).not.toBe("webhooks")
-      expect(spec.domain).not.toBe("imports")
-      expect(spec.domain).not.toBe("cloud")
+  /**
+   * The import handlers live on this router under the `workflows`/`projects`
+   * domains — the old "no `imports` domain" check passed vacuously while every
+   * handler sat one domain over. The two parse-only importers ARE agent tools;
+   * every other import/bundle handler is a real, registered exclusion,
+   * asserted by exact name (existence on the router is asserted too, so the
+   * exclusion can never go vacuous again). No webhook handlers exist on the
+   * router at all, so there is nothing to exclude under that name.
+   */
+  it("exposes the two parse-only importers, and excludes the rest of the import surface by name", () => {
+    const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}.${spec.action}`))
+    const byName = new Map(MCP_TOOLS.map((spec) => [toolName(spec), spec]))
+    for (const exposed of ["workflows.importOpenapi", "workflows.importWsdl"]) {
+      expect(published.has(exposed), exposed).toBe(true)
+      expect(router.getRegistration(...(exposed.split(".") as [string, string])), exposed).toBeDefined()
     }
+    // Read tools: parse-only, no destructive bit, and they send nothing (openWorld false).
+    for (const name of ["workflows_importOpenapi", "workflows_importWsdl"]) {
+      expect(byName.get(name), name).toMatchObject({ intent: "read" })
+      expect(byName.get(name)?.destructive).toBeUndefined()
+      expect(byName.get(name)?.openWorld).toBeUndefined()
+    }
+
+    for (const excluded of [
+      // Fetches remote URLs (Swagger UI config discovery); an agent reads the spec itself.
+      "workflows.importOpenapiUrl",
+      // Default mode writes a workflow outside the create/patch contract.
+      "workflows.importCurl",
+      // A captured-traffic dump; the renderer import dialog is its path.
+      "workflows.importHar",
+      // The renderer palette write; nodePresets_create is the agent surface.
+      "workflows.saveTemplates",
+      // The single-workflow bundle trio behind the Import/Export dialogs.
+      "workflows.import",
+      "workflows.export",
+      "workflows.dryRun",
+      // A whole project written in one transaction from untyped collection JSON.
+      "projects.previewPostman",
+      "projects.importPostman",
+    ]) {
+      expect(published.has(excluded), excluded).toBe(false)
+      expect(router.getRegistration(...(excluded.split(".") as [string, string])), excluded).toBeDefined()
+    }
+    // The old comment's "webhook tools" never existed as handlers either.
+    expect(router.keys().filter((key) => key.startsWith("webhooks."))).toEqual([])
   })
 })
 
@@ -896,6 +950,33 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     await client.close()
   })
 
+  /**
+   * Post-1.0 features an agent cannot discover anywhere else: SOAP bodies and
+   * the Call Workflow for-each are not in tools/list, and the full path
+   * grammar — dot, `$` JSONPath, `xpath:` — is summarized away in the schemas.
+   */
+  it("teaches SOAP, the Call Workflow for-each, and the full path grammar", async () => {
+    const client = await connectClient()
+    const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))
+      .contents[0] as { text: string }
+    const assertions = (await client.readResource({ uri: guideUri("assertions") }))
+      .contents[0] as { text: string }
+
+    // SOAP rides the http-request section: bodyType, the fault fields, XPath.
+    expect(authoring.text).toContain('"bodyType": "soap"')
+    expect(authoring.text).toContain("response.fault.code")
+    expect(authoring.text).toContain("xpath:")
+    // The for-each paragraph: item grammar, bounds and the output mapping.
+    expect(authoring.text).toContain("forEach")
+    expect(authoring.text).toContain("1000 items")
+    expect(authoring.text).toContain("$.fetch.response.body.items")
+    // Extractors and assertions state all three path grammars.
+    expect(authoring.text).toContain("$.response.body.items[?@.id==3].name")
+    expect(assertions.text).toContain("$.response.body.items[?@.id==3].name")
+    expect(assertions.text).toContain("xpath://*[local-name()=")
+    await client.close()
+  })
+
   it("teaches the browser authoring loop, its locator order and the repair recipe", async () => {
     const client = await connectClient()
     const authoring = (await client.readResource({ uri: guideUri("workflow-authoring") }))
@@ -909,6 +990,11 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     // Repair: evidence, then one patched node, then a rerun that restarts the chain.
     expect(authoring.text).toContain("sections: [\"browser\"]")
     expect(authoring.text).toContain("resume: { nodeId }")
+    // The replace recipe — a merged patch cannot drop keys, so a locator-kind
+    // or action change is removeNodeIds + a complete upsert of the same id.
+    expect(authoring.text).toContain("Re-pick element")
+    expect(authoring.text).toContain("Turn into extract")
+    expect(authoring.text).toContain("removeNodeIds")
     await client.close()
   })
 
@@ -1392,6 +1478,171 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     await client.close()
   })
 
+  /**
+   * The replace recipe. A merged patch cannot drop config keys, so changing a
+   * browser step's locator kind — or its action — must replace the config, not
+   * merge into it: the id leaves in `removeNodeIds` and returns as a complete
+   * node in the same call, and its edges are filtered against the final node
+   * set, which still contains the id.
+   */
+  it("replaces a browser step's locator by remove+upsert of the same id in one workflows_patch", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "locator repair",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "open", type: "browser", position: { x: 100, y: 0 }, config: { action: "navigate", url: "https://example.test/login" } },
+        {
+          nodeId: "email",
+          type: "browser",
+          position: { x: 200, y: 0 },
+          config: { action: "fill", locator: { kind: "role", role: "textbox", name: "Email" }, value: "a@example.test" },
+        },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "open" },
+        { edgeId: "e2", source: "open", target: "email" },
+        { edgeId: "e3", source: "email", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    // The naive merge leaves the role locator's `role`/`name` under the new
+    // kind, and the strict locator union rejects the leftover keys. This is
+    // the failure the recipe exists to bypass.
+    const merged = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.workflowId,
+        upsertNodes: [{ nodeId: "email", config: { locator: { kind: "label", value: "Email address" } } }],
+      },
+    })
+    expect((merged as { isError?: boolean }).isError).toBe(true)
+    const mergedError = JSON.parse(textOf(merged as { content: Array<{ type: string; text?: string }> })) as {
+      error: { details?: { issues: Array<{ message: string }> } }
+    }
+    expect(mergedError.error.details?.issues.some((issue) => issue.message.includes("role"))).toBe(true)
+
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.workflowId,
+            // The failed merge wrote nothing, so the rev never moved.
+            expectedRevision: created.rev,
+            removeNodeIds: ["email"],
+            upsertNodes: [
+              {
+                nodeId: "email",
+                type: "browser",
+                position: { x: 200, y: 0 },
+                config: { action: "fill", locator: { kind: "label", value: "Email address" }, value: "a@example.test" },
+              },
+            ],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { rev: number; touchedNodeIds: string[] }; diagnosis: { summary: { errors: number } } }
+
+    // One write: rev+1, the replaced id touched, the graph still valid.
+    expect(patched.result.rev).toBe(created.rev + 1)
+    expect(patched.result.touchedNodeIds).toEqual(["email"])
+    expect(patched.diagnosis.summary.errors).toBe(0)
+
+    const persisted = await dispatchOk<{
+      nodes: Array<{ nodeId: string; position: { x: number; y: number }; config: { locator?: Record<string, unknown> } }>
+      edges: Array<{ edgeId: string; source: string; target: string }>
+    }>("workflows", "get", { workspaceId: workspace.workspaceId, workflowId: created.workflowId })
+
+    const replaced = persisted.nodes.find((node) => node.nodeId === "email")!
+    expect(replaced.config.locator).toEqual({ kind: "label", value: "Email address" })
+    expect(replaced.position).toEqual({ x: 200, y: 0 })
+    // The replaced node keeps its incoming and outgoing edges.
+    expect(persisted.edges).toEqual([
+      { edgeId: "e1", source: "start", target: "open" },
+      { edgeId: "e2", source: "open", target: "email" },
+      { edgeId: "e3", source: "email", target: "end" },
+    ])
+    await client.close()
+  })
+
+  it("turns a browser step into an extract by remove+upsert of the same id in one workflows_patch", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "turn into extract",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "open", type: "browser", position: { x: 100, y: 0 }, config: { action: "navigate", url: "https://example.test/orders" } },
+        {
+          nodeId: "reference",
+          type: "browser",
+          position: { x: 200, y: 0 },
+          config: { action: "expect-text", locator: { kind: "role", role: "cell", name: "Order number" }, text: "ORD-7", match: "equals" },
+        },
+        { nodeId: "end", type: "end", position: { x: 300, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "open" },
+        { edgeId: "e2", source: "open", target: "reference" },
+        { edgeId: "e3", source: "reference", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.workflowId,
+            expectedRevision: created.rev,
+            removeNodeIds: ["reference"],
+            upsertNodes: [
+              {
+                nodeId: "reference",
+                type: "browser",
+                position: { x: 200, y: 0 },
+                config: {
+                  action: "extract",
+                  from: "text",
+                  locator: { kind: "role", role: "cell", name: "Order number" },
+                  variable: "orderNumber",
+                },
+              },
+            ],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { rev: number; touchedNodeIds: string[] }; diagnosis: { summary: { errors: number } } }
+
+    expect(patched.result.rev).toBe(created.rev + 1)
+    expect(patched.result.touchedNodeIds).toEqual(["reference"])
+    expect(patched.diagnosis.summary.errors).toBe(0)
+
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string; config: Record<string, unknown> }>; edges: Array<{ edgeId: string }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: created.workflowId },
+    )
+    const replaced = persisted.nodes.find((node) => node.nodeId === "reference")!
+    // The element stays; the old action's own fields are gone.
+    expect(replaced.config).toMatchObject({
+      action: "extract",
+      from: "text",
+      locator: { kind: "role", role: "cell", name: "Order number" },
+      variable: "orderNumber",
+    })
+    expect(replaced.config).not.toHaveProperty("text")
+    expect(replaced.config).not.toHaveProperty("match")
+    expect(persisted.edges.map((edge) => edge.edgeId)).toEqual(["e1", "e2", "e3"])
+    await client.close()
+  })
+
   it("diagnoses an unknown dynamic placeholder function before a run", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const client = await connectClient()
@@ -1872,6 +2123,214 @@ describe("MCP assertions — one path rule, agreed on by validate and diagnose",
       workflowId,
     })
     expect(diagnosis.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("assertion_source_path_invalid")
+  })
+})
+
+describe("MCP imports — spec/WSDL text in, node templates out, nothing written", () => {
+  const OPENAPI_SPEC = JSON.stringify({
+    openapi: "3.0.0",
+    info: { title: "Pets API", version: "1.0.0" },
+    servers: [{ url: "https://pets.example.test" }],
+    paths: {
+      "/pets": {
+        get: {
+          operationId: "listPets",
+          summary: "List pets",
+          tags: ["pets"],
+          parameters: [{ name: "limit", in: "query", schema: { type: "integer", example: 5 } }],
+          responses: {
+            "200": {
+              description: "ok",
+              content: {
+                "application/json": {
+                  schema: { type: "object", properties: { id: { type: "integer" }, name: { type: "string" } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+
+  // The same fixture shape wsdl_parsers.test.ts proves the parser with.
+  const WSDL = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="urn:orders"
+             targetNamespace="urn:orders">
+  <portType name="OrdersPortType">
+    <operation name="GetOrder"><input message="tns:GetOrderInput"/></operation>
+    <operation name="CancelOrder"><input message="tns:CancelOrderInput"/></operation>
+  </portType>
+  <binding name="OrdersBinding" type="tns:OrdersPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetOrder">
+      <soap:operation soapAction="urn:orders/GetOrder"/>
+    </operation>
+    <operation name="CancelOrder">
+      <soap:operation soapAction="urn:orders/CancelOrder"/>
+    </operation>
+  </binding>
+  <service name="OrdersService">
+    <port name="OrdersPort" binding="tns:OrdersBinding">
+      <soap:address location="http://orders.example.test/soap"/>
+    </port>
+  </service>
+</definitions>`
+
+  type ImportedBundle = {
+    readonly name: string
+    readonly description: string
+    readonly nodes: ReadonlyArray<{
+      readonly nodeId: string
+      readonly type: string
+      readonly label: string
+      readonly position: { readonly x: number; readonly y: number }
+      readonly config: Record<string, unknown>
+    }>
+    readonly edges: ReadonlyArray<{ readonly edgeId: string; readonly source: string; readonly target: string; readonly label: null }>
+  }
+
+  async function callToolJson(name: string, arguments_: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const client = await connectClient()
+    const result = await client.callTool({ name, arguments: arguments_ })
+    await client.close()
+    const text = textOf(result as { content: Array<{ type: string; text?: string }> })
+    if ((result as { isError?: boolean }).isError === true) throw new Error(`tool ${name} failed: ${text}`)
+    return JSON.parse(text) as Record<string, unknown>
+  }
+
+  it("workflows_importOpenapi returns templates carrying responseSchemas and openapiMeta, and writes nothing", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const parsed = await callToolJson("workflows_importOpenapi", {
+      workspaceId: workspace.workspaceId,
+      spec: OPENAPI_SPEC,
+    }) as ImportedBundle
+
+    // The whole template bundle, typed end to end.
+    expect(parsed.nodes.map((node) => node.type)).toEqual(["start", "http-request", "end"])
+    expect(parsed.edges).toHaveLength(2)
+    expect(parsed.description).toContain("OpenAPI")
+    const http = parsed.nodes[1]!.config
+    expect(http["method"]).toBe("GET")
+    expect(http["url"]).toBe("https://pets.example.test/pets")
+    expect(http["openapiMeta"]).toMatchObject({ operationId: "listPets", method: "GET", path: "/pets" })
+    // The contract payload the executor turns into a fail-by-default schema check.
+    expect(http["responseSchemas"]).toMatchObject({
+      "200": { type: "object", properties: { id: { type: "integer" } } },
+    })
+
+    // Parse-only by construction: no workflow appeared, no agent-write fired.
+    const search = await dispatchOk<{ items: unknown[] }>("workflows", "search", { workspaceId: workspace.workspaceId })
+    expect(search.items).toEqual([])
+    expect(agentWrites).toEqual([])
+  })
+
+  it("the OpenAPI templates pass straight into workflows_create with their contract intact", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const imported = await callToolJson("workflows_importOpenapi", {
+      workspaceId: workspace.workspaceId,
+      spec: OPENAPI_SPEC,
+    }) as ImportedBundle
+
+    const client = await connectClient()
+    const created = await client.callTool({
+      name: "workflows_create",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        name: "Pets contract",
+        nodes: imported.nodes,
+        edges: imported.edges,
+      },
+    })
+    expect((created as { isError?: boolean }).isError).toBeFalsy()
+    const body = JSON.parse(textOf(created as { content: Array<{ type: string; text?: string }> })) as {
+      result: { workflowId: string }
+      diagnosis: { summary: { errors: number } }
+    }
+    await client.close()
+
+    const stored = await dispatchOk<{ nodes: Array<{ config: Record<string, unknown> }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: body.result.workflowId },
+    )
+    expect(stored.nodes[1]!.config["openapiMeta"]).toMatchObject({ operationId: "listPets" })
+    expect(stored.nodes[1]!.config["responseSchemas"]).toMatchObject({ "200": { type: "object" } })
+    expect(body.diagnosis.summary.errors).toBe(0)
+  })
+
+  it("workflows_importWsdl returns one SOAP node per operation with its generated envelope", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const parsed = await callToolJson("workflows_importWsdl", {
+      workspaceId: workspace.workspaceId,
+      wsdlText: WSDL,
+    }) as ImportedBundle
+
+    expect(parsed.name).toBe("OrdersService")
+    expect(parsed.nodes.map((node) => node.type)).toEqual(["start", "http-request", "http-request", "end"])
+    const getOrder = parsed.nodes[1]!
+    expect(getOrder.config["method"]).toBe("POST")
+    expect(getOrder.config["url"]).toBe("http://orders.example.test/soap")
+    expect(getOrder.config["bodyType"]).toBe("soap")
+    expect(getOrder.config["soap"]).toMatchObject({ version: "1.1", action: "urn:orders/GetOrder" })
+    expect((getOrder.config["soap"] as { envelope: string }).envelope).toContain("<tns:GetOrder")
+
+    const search = await dispatchOk<{ items: unknown[] }>("workflows", "search", { workspaceId: workspace.workspaceId })
+    expect(search.items).toEqual([])
+  })
+
+  it("rejects the renderer-only dryRun key, an unknown workspace, and malformed or oversized text", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+
+    // dryRun is the import dialog's shape, not this tool's; the advertised input rejects it.
+    const preview = await client.callTool({
+      name: "workflows_importOpenapi",
+      arguments: { workspaceId: workspace.workspaceId, spec: OPENAPI_SPEC, dryRun: true },
+    })
+    expect((preview as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(preview as { content: Array<{ type: string; text?: string }> })).toContain("dryRun")
+
+    // Existence parity with every other workspace-scoped read.
+    const foreign = await client.callTool({
+      name: "workflows_importWsdl",
+      arguments: { workspaceId: "ws-not-mine", wsdlText: WSDL },
+    })
+    expect((foreign as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(foreign as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
+
+    // A spec that does not parse is the input being wrong — validation, not an internal error.
+    const malformed = await client.callTool({
+      name: "workflows_importOpenapi",
+      arguments: { workspaceId: workspace.workspaceId, spec: "not a spec at all" },
+    })
+    expect((malformed as { isError?: boolean }).isError).toBe(true)
+    const malformedBody = JSON.parse(textOf(malformed as { content: Array<{ type: string; text?: string }> })) as {
+      error: { code: string; message: string }
+    }
+    expect(malformedBody.error.code).toBe("validation")
+    expect(malformedBody.error.message).toContain("Invalid spec format")
+
+    const notWsdl = await client.callTool({
+      name: "workflows_importWsdl",
+      arguments: { workspaceId: workspace.workspaceId, wsdlText: "<note><to>x</to></note>" },
+    })
+    expect((notWsdl as { isError?: boolean }).isError).toBe(true)
+    const notWsdlBody = JSON.parse(textOf(notWsdl as { content: Array<{ type: string; text?: string }> })) as {
+      error: { code: string; message: string }
+    }
+    expect(notWsdlBody.error.code).toBe("validation")
+    expect(notWsdlBody.error.message).toContain("Not a WSDL")
+
+    // The shared 10 MiB text cap is part of the advertised input, so the SDK
+    // rejects an oversized document before any parsing starts.
+    const oversized = await client.callTool({
+      name: "workflows_importWsdl",
+      arguments: { workspaceId: workspace.workspaceId, wsdlText: "x".repeat(10 * 1024 * 1024 + 1) },
+    })
+    expect((oversized as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(oversized as { content: Array<{ type: string; text?: string }> })).toContain("10485760")
+    await client.close()
   })
 })
 

@@ -6,8 +6,8 @@ import type { GrpcDiscoveryService } from "../../services/grpc_discovery_service
 const DiscoverInput = z
   .object({
     target: z.string().min(1).optional().describe('Server address as a literal "host:port" (reflection only).'),
-    tls: z.boolean().optional(),
-    sslVerify: z.boolean().optional(),
+    tls: z.boolean().optional().describe("Connect over TLS (default false: plaintext host:port)."),
+    sslVerify: z.boolean().optional().describe("Verify the server's TLS certificate chain when tls is true (default true). Turn off for a self-signed dev certificate."),
     schemaSource: z.enum(["reflection", "proto"]),
     protoFiles: GrpcProtoFilesSchema.optional(),
   })

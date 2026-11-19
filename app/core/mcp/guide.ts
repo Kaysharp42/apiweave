@@ -58,6 +58,9 @@ follows edges; nothing runs unless an edge leads to it.
    A wait timeout returns the runId for \`runs_wait\` and never cancels the run.
    A run using stored secrets waits for the user's approval;
    \`deniedByUser: true\` means they refused — say so, do not retry.
+   A load run is not an agent tool: ask the user for Run options → Load
+   run… in the app, or the CLI \`apiweave run <path> --workflow <name>
+   --concurrency 20 --iteration-count 200 --threshold "p95<500"\`.
    Before writing a browser step, read the page with \`browser_inspect\`.
 6. **Debug** with \`workflows_debugContext\` (one bounded call: failed nodes,
    diagnosis, configs, placeholders, error previews), then
@@ -154,9 +157,20 @@ rejected config names its node's list index and field in the error path.
   instead of \`body\`, POSTed as \`{"jsonrpc":"2.0","method","params","id"}\`. A response carrying an
   \`error\` member fails the node; set \`"allowRpcError": true\` to opt out and assert
   \`response.body.error.code\` / \`response.body.error.message\`.
+- SOAP: \`"bodyType": "soap"\` with \`"soap": {"version": "1.1" | "1.2", "action": "...",
+  "envelope": "<SOAP-ENV:Envelope>…as XML text…"}\` instead of \`body\`. Version 1.1
+  (the default) sends \`text/xml\` with a \`SOAPAction\` header; 1.2 sends
+  \`application/soap+xml\` with the action in the Content-Type. A SOAP Fault in the
+  response fails the node unless the status is its \`expectedStatus\`; the fault
+  reads at \`response.fault.code\` / \`response.fault.reason\`, and other fields are
+  read with XPath: \`xpath://*[local-name()="Total"]/text()\`, prefixes declared
+  inline as \`xpath[s=uri]:…\`.
 - \`extractors\` is a map of variable name to response path. After this node runs,
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
-  \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.
+  \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\` — or a \`$\`
+  JSONPath over the whole node result
+  (\`$.response.body.items[?@.id==3].name\`), or, for an XML body, XPath
+  (\`xpath://*[local-name()="Total"]/text()\`).
 - \`continueOnFail: true\` lets the run continue past a failed request.
 - \`expectedStatus\` — the status code(s) this request is expected to return (a number
   or an array of numbers, 100-599). The node passes when the response matches and
@@ -191,7 +205,11 @@ rejected config names its node's list index and field in the error path.
   which defaults to \`"fail"\` for an imported endpoint and \`"off"\`
   otherwise. With the check on, the body must match the most specific schema
   for the actual status, and a status the schemas do not declare is itself a
-  violation; violations land in the node result's \`assertions\`.
+  violation; violations land in the node result's \`assertions\`. Under
+  \`warn\` the node still passes, so its violations sit on a PASSED node that
+  failure-focused reads (\`workflows_debugContext\`, \`runs_get\`) never
+  surface: read them with \`runs_getNodeResult\` \`sections: ["assertions"]\`
+  on that node.
 
 ### sse
 
@@ -285,6 +303,23 @@ the failure. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
 enough; the image arrives as image content. Patch only that node with
 \`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
 rerun that reaches a browser step restarts the chain from its first step.
+
+The desktop's **Re-pick element** is yours too: \`browser_inspect\` with
+\`beforeNodeId\` shows the page the step acts on, and a locator taken from
+that snapshot replaces the step's. A merged patch cannot drop old keys
+(\`role\`, \`name\`, \`text\`, …), so a changed locator kind — and the desktop's
+**Turn into extract**, the same replace with \`action: "extract"\`, \`from\` and
+a \`variable\` — is one patch naming the step in \`removeNodeIds\` and upserting
+its complete node, its edges kept:
+
+\`\`\`json
+{ "removeNodeIds": ["fill-email"], "upsertNodes": [
+  { "nodeId": "fill-email", "type": "browser", "position": { "x": 220, "y": 0 },
+    "config": { "action": "fill",
+                "locator": { "kind": "label", "value": "Email address" },
+                "value": "{{secrets.EMAIL}}" } }] }
+\`\`\`
+
 Decide whether the test or the app is wrong before you change an \`expect-*\`
 step, and never weaken a check to turn a run green. Runs started over MCP are
 always headless.
@@ -342,6 +377,28 @@ sub-workflow variable name. A \`{{secrets.NAME}}\` on the right-hand side of an
 input mapping is rejected — let the sub-workflow read the secret itself. The
 target must live in the same workspace and cannot be the calling workflow.
 Recursion is capped at 8 levels.
+
+\`forEach\` runs the target once per element instead of once:
+
+\`\`\`json
+"forEach": { "items": "{{variables.ids}}", "itemVariable": "id",
+             "indexVariable": "i", "concurrency": 4 }
+\`\`\`
+
+\`items\` is one of a single \`{{...}}\` placeholder whose value is an array
+(\`{{variables.ids}}\`, \`{{fetchIds.response.body.items}}\`), a JSON array literal
+(\`[1, 2]\`), or a \`$\` JSONPath rooted at \`{ variables, env, data, <nodeId> }\`
+(\`$.fetch.response.body.items\`); at most 1000 items run and further items are
+ignored. The sub-workflow reads the current element as
+\`{{variables.<itemVariable>}}\` — required, the node fails without it — and its
+zero-based index as \`{{variables.<indexVariable>}}\` when set. \`concurrency\`
+(1-16, default 1) runs that many iterations at once; above 1 the node fails at
+run time when the target has browser steps, which share one page. The node
+passes only when every iteration passes; \`stopOnFailure\` (default true) stops
+starting iterations at the first failure. Under \`forEach\`, \`outputMapping\`
+variables become arrays in item order — \`null\` where an iteration did not run
+or did not produce the variable — and each iteration is its own sub-run of the
+target, listed in the node result under \`subWorkflow.forEach\`.
 
 ## Edges
 
@@ -427,6 +484,18 @@ Read the returned \`diagnosis\` and confirm \`touchedNodeIds\` / \`touchedEdgeId
 include the intended edits before running. A successful write means the edit
 was saved, not that the graph is runnable; diagnosis is reported after saving.
 On a revision conflict, read the workflow again and recompute the complete patch.
+
+## From an OpenAPI or WSDL file
+
+To build a workflow from a spec file, read the file yourself and call
+\`workflows_importOpenapi\` (spec text) or \`workflows_importWsdl\` (WSDL text).
+Both parse only — nothing is saved — and return node templates ready to pass
+back: the \`nodes\` and \`edges\` go to \`workflows_create\` for a new workflow,
+or \`upsertNodes\`/\`upsertEdges\` on \`workflows_patch\` to add them to an existing
+one. OpenAPI templates carry \`openapiMeta\` and \`responseSchemas\`, so each
+endpoint's response-body contract check defaults to \`fail\`; WSDL templates
+carry a generated SOAP envelope. The returned node ids are fresh import ids —
+rename them if you care about the names.
 `
 
 const PLACEHOLDERS = `# Placeholders
@@ -521,13 +590,22 @@ node to take its \`pass\` branch.
 | source | what it reads | path |
 | --- | --- | --- |
 | \`status\` | the response status code | **must be \`""\`** |
-| \`prev\` | the upstream response object | \`response.body.<field>\`, \`response.headers.<name>\`, \`response.statusCode\`, \`response.duration\` |
+| \`prev\` | the upstream response object | dot, \`$\` JSONPath or \`xpath:\` — the three forms below |
 | \`headers\` | one response header | the header name, e.g. \`content-type\` |
 | \`cookies\` | one response cookie | the cookie name, e.g. \`session\` |
 | \`variables\` | one workflow variable | the variable name, e.g. \`token\` |
 
-Array elements use \`[0]\`: \`response.body.items[0].id\` — the same grammar as extractors and evidence paths. A **bare field name is not a path**. \`{"source": "prev", "path": "id"}\` does not
-address anything; the value lives at \`response.body.id\`. \`assertion_validate\`
+A \`prev\` path has three forms, the same grammar as extractors and evidence
+paths. A **dot path** starts at the response object: \`response.body.<field>\`
+with \`[0]\` for array indexes (\`response.body.items[0].id\`),
+\`response.headers.<name>\`, \`response.fault.code\` (a SOAP fault),
+\`response.statusCode\`, \`response.duration\`. A **\`$\` path** is RFC 9535 JSONPath
+rooted at the whole node result: \`$.response.body.items[?@.id==3].name\`, with
+the response time at \`$.duration\`. An **\`xpath:\` path** is XPath 1.0 over the
+XML body: \`xpath://*[local-name()="Total"]/text()\`, prefixes declared inline as
+\`xpath[s=uri]:…\`. A **bare field name is not a path**:
+\`{"source": "prev", "path": "id"}\` does not address anything; the value lives
+at \`response.body.id\`. \`assertion_validate\`
 canonicalizes a path that is merely missing its prefix (\`body.id\` becomes
 \`response.body.id\`) and rejects anything that cannot address a value, with a
 message naming the accepted shapes.
@@ -546,7 +624,10 @@ For \`headers\`, \`cookies\` and \`variables\` the path is just the name — no
 - \`matchesSnapshot\` compares the value at \`path\` with the baseline the
   rule's first run recorded, and fails with a diff when it changes.
   \`ignorePaths\` lists JSONPath expressions to leave out of the comparison
-  (\`["$..updatedAt"]\`).
+  (\`["$..updatedAt"]\`). A changed snapshot is the user's call: ask them to
+  click **Accept snapshot** on the failed rule in the run inspector, or to
+  rerun the CLI with \`--update-snapshots\` — never replace or delete the
+  rule to turn a run green.
 - \`count\` compares the length of an array or string and needs a non-negative
   integer.
 - \`matches\` / \`notMatches\` take a regular expression: bare (\`"^ord_"\`) or a
@@ -631,7 +712,7 @@ Clear every \`error\` before running.
 | \`assertion_branch_handle_invalid\` | an edge leaving an assertion has no \`sourceHandle\`, or one that is not \`pass\`/\`fail\`. The branch stops silently at run time. |
 | \`assertion_branch_duplicate\` | more than one edge leaves one assertion handle — the branches run in parallel (notice, not warning) |
 | \`assertion_fail_wired_on_all\` | a \`fail\` handle is wired straight to \`end\`, which does what leaving it unconnected already does — an unwired \`fail\` is the normal expected shape (notice) |
-| \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, response-producing (\`http-request\` or \`sse\`) node reachable upstream |
+| \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, response-producing (\`http-request\`, \`sse\`, \`websocket\` or \`grpc\`) node reachable upstream |
 | \`assertion_source_path_invalid\` | the path cannot address a value for that source — see \`apiweave://guide/assertions\` |
 | \`assertion_source_unknown\` / \`assertion_operator_unknown\` | not a member of the enum |
 | \`assertion_expected_missing\` | the operator needs an \`expectedValue\` (present, not truthy; \`false\`, \`0\` and \`""\` are valid) |
@@ -647,26 +728,43 @@ Clear every \`error\` before running.
 | \`variable_source_missing\` | \`{{variables.x}}\` is read but nothing produces it |
 | \`variable_producer_duplicate\` | two nodes write the same variable |
 | \`variable_producer_not_upstream\` | the producer is not upstream of the consumer, so the value is not set yet |
+| \`unknown_function\` | a \`{{fn(...)}}\` placeholder names no real dynamic function, so it goes out as literal text — the functions that do exist are listed in \`apiweave://guide/placeholders\` |
+
+## Browser steps
+
+| code | meaning |
+| --- | --- |
+| \`browser_parallel_branches\` | browser steps share one page, so page-driving nodes (a \`browser\` step, or a \`workflow\` call into a workflow with browser steps) on branches neither of which reaches the other would act on it in the same run — an error; wire them into one chain |
+| \`browser_chain_starts_without_navigate\` | the first step of the chain is not a \`navigate\`, so it runs on an empty page (warning) |
+| \`browser_selector_fallback\` | the locator is a raw recorder \`selector\`, which works but breaks easily (notice) — prefer a role, label or test id |
 
 ## Run-correlated (pass a \`runId\`)
 
 | code | meaning |
 | --- | --- |
-| \`http_request_failed\` | a request returned >= 400 or failed in transport; \`evidence.blockedNodeIds\` lists what it stopped |
+| \`http_request_failed\` | a request failed, and \`evidence.cause\` says why: \`transport\` (no response arrived), \`status\` (>= 400), \`expected_status\` (not one of the node's \`expectedStatus\`), \`rpc_error\` (a JSON-RPC \`error\` member), \`soap_fault\` (a SOAP Fault) or \`post_response\` (a failed post-response script, or a retry whose \`until\` condition never held). \`evidence.statusCode\` is present when a response arrived; \`evidence.blockedNodeIds\` lists what it stopped |
+| \`contract_violation\` | with the \`responseSchemas\` check failing the node, the body did not match the schema for its status, or the status is not declared at all; read the violations in the node result's \`assertions\` → \`schemaErrors\`, via \`runs_getNodeResult\` with \`sections: ["assertions"]\` |
+| \`sse_stream_failed\` / \`websocket_stream_failed\` | an SSE stream or WebSocket connection failed in transport or returned an error status; \`evidence.blockedNodeIds\` lists what it stopped |
 | \`grpc_call_failed\` | a gRPC call ended with a status other than the expected one; \`evidence.statusCode\` is the gRPC code number |
+| \`workflow_call_failed\` | a Call Workflow node failed inside the workflow it calls; \`evidence.childRunIds\` names the failed child run(s) — read one with \`runs_getNodeResult\` to see which step inside the callee failed |
 | \`assertion_failed\` | a rule compared false |
 | \`assertion_source_mismatch\` | the run resolved a different source node than static analysis expects |
+| \`assertion_source_missing_at_run\` / \`assertion_source_ambiguous_at_run\` | in the run, the assertion's response source was unavailable, or more than one was reachable |
 | \`extractor_path_missing\` / \`extractor_type_mismatch\` | the path did not match the real response shape |
 | \`extractor_producer_not_executed\` | the producing node never ran |
 | \`response_body_truncated\` / \`response_body_unavailable\` | the body was not fully captured, so path checks are inconclusive |
 | \`secret_reference_unresolved\` | \`{{secrets.NAME}}\` had no value in any scope |
+| \`secret_resolution_metadata_missing\` | the run record carries no resolution metadata for a referenced secret — the referencing node never ran, or the run predates the reference (notice) |
+| \`run_result_unknown_node\` | the run recorded a node the stored workflow no longer has — the graph changed after the run (notice) |
 | \`nodes_not_executed\` | nodes the run never reached |
 
 ## Not covered
 
 \`workflow\` (call-workflow) node targets are validated on save, not by the
-analyzer. \`{{env.*}}\` references are not checked against the selected
-environment. Both still fail at run time if wrong.
+analyzer. A for-each \`items\` source is not checked statically either — the
+save is lenient on purpose, and only the run proves \`forEach.items\` resolves
+to an array. \`{{env.*}}\` references are not checked against the selected
+environment. All still fail at run time if wrong.
 `
 
 const REDACTION = `# What MCP reads withhold
@@ -707,17 +805,22 @@ usually omit it — patch only touches the nodes you name.
 Runs are metadata only: status, timing, aggregate counts and failed-node
 detail with the *type* and *state* of actual values but never the values
 themselves. No response bodies, headers, cookies, URLs or variable values
-cross this bridge on any run tool except one: \`runs_getNodeResult\` returns
+cross this bridge on any run tool except three. \`runs_getNodeResult\` returns
 bounded evidence for up to 50 nodes of a run — selected sections, an
-extractor-grammar path within a JSON response body, and capped text previews
-with explicit truncation accounting — after the same secret-redaction pass
-every other read gets. Bodies travel as previews, never whole. A browser
-step's URL, title, expected and actual values and masked ARIA snapshot are
-evidence of the same kind; \`screenshot: true\` also returns that step's JPEG,
-with password fields and every masked value painted over. \`browser_inspect\`
-returns the page its run left open under the same masking. Everything
-else about runs stays metadata-only; to see other payloads, open the run in
-the desktop app.
+extractor-grammar path into the response record (body, headers, fault,
+trailers), capped text previews with explicit truncation accounting, a Call
+Workflow node's child run ids, and a browser step's URL, title, expected and
+actual values and masked ARIA snapshot; \`screenshot: true\` also returns that
+step's JPEG, with password fields and every masked value painted over.
+\`workflows_debugContext\` returns the same kind of bounded evidence around a
+failure: truncated error previews with explicit byte accounting, and a failed
+browser step's URL, title, expected and actual values and the opening of its
+masked ARIA snapshot. \`browser_inspect\` returns the page its run left open —
+URL, title and masked ARIA snapshot — and with \`screenshot: true\` the
+viewport JPEG, painted over the same way. All three run the same
+secret-redaction pass every other read gets, and bodies travel as previews,
+never whole. Everything else about runs stays metadata-only; to see other
+payloads, open the run in the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response
 server-side and returns *rules*, so you get verified paths without the payload.
@@ -743,9 +846,9 @@ changed or deleted over MCP; that is a desktop action.
  * slug that no longer exists is worse than no pointer at all.
  */
 export const MCP_INSTRUCTIONS = `APIWeave is a desktop app for building and running API test workflows. A
-workflow is a graph of nodes (requests, assertions, delays) that runs against a
-real service. Workflows live in APIWeave's database, not in files — these tools
-are the only way to reach one.
+workflow is a graph of nodes — HTTP, gRPC, WebSocket and SSE calls, browser
+steps, assertions, delays — that runs against a real service. Workflows live in
+APIWeave's database, not in files — these tools are the only way to reach one.
 
 Scope: if launched from APIWeave, APIWEAVE_WORKSPACE_ID plus APIWEAVE_WORKFLOW_ID
 or APIWEAVE_PROJECT_ID name what the user was looking at. Start there.

@@ -392,11 +392,17 @@ describe("RunScheduler", () => {
 
       // ...and the caller points at it, without absorbing the child's nodes.
       const callerRun = runs.getById(callerRunId)
-      expect(callerRun?.results.find((r) => r.nodeId === "call1")?.subWorkflow).toMatchObject({
+      const callResult = callerRun?.results.find((r) => r.nodeId === "call1")
+      expect(callResult?.subWorkflow).toMatchObject({
         workflowId: target.workflowId,
         runId: childRun.runId,
         status: "failed",
       })
+      // The failure text is the caller node's stored `error`, so the run record,
+      // the CLI reporters and MCP evidence all say which step inside the callee
+      // broke. The cause is the child step's raw error, so `safeErrorClass`
+      // classes it like any other: the URL it named never reaches the record.
+      expect(callResult?.error).toBe(`Sub-workflow target-wf failed at "sub_http": Request configuration invalid`)
       expect(callerRun?.results.map((r) => r.nodeId)).not.toContain("sub_http")
       expect(Object.keys(callerRun?.nodeStatuses ?? {})).not.toContain("sub_http")
     })
@@ -1775,6 +1781,18 @@ describe("safeErrorClass", () => {
       ["Called workflow wf 1 not found", "Node execution failed"],
       ["Call Workflow node has no target workflow configured", "Call Workflow node has no target workflow configured"],
       ["Call Workflow recursion depth exceeded", "Call Workflow recursion depth exceeded"],
+      ["Sub-workflow Login failed at \"Fill password\": Status 404 (+1 more)", "Sub-workflow Login failed at \"Fill password\": Status 404 (+1 more)"],
+      ["Sub-workflow Login failed at \"Check\": 2 assertions failed", "Sub-workflow Login failed at \"Check\": 2 assertions failed"],
+      ["Sub-workflow Login failed at \"Open\": Not a requestable http(s) URL: ftp://s3cr3t", "Sub-workflow Login failed at \"Open\": Request configuration invalid"],
+      ["Sub-workflow Login failed at \"Open\": Error: Bearer s3cr3t (+2 more)", "Sub-workflow Login failed at \"Open\": Node execution failed (+2 more)"],
+      // A step name holding the separator moves text into the classed cause, never out of it.
+      ["Sub-workflow Login failed at \"a\": b\": Bearer s3cr3t", "Sub-workflow Login failed at \"a\": Node execution failed"],
+      ["Sub-workflow Login failed at \"Pay\": Sub-workflow Card failed at \"Fill\": Bearer s3cr3t", "Sub-workflow Login failed at \"Pay\": Sub-workflow Card failed at \"Fill\": Node execution failed"],
+      ["Sub-workflow Login failed: socket hang up s3cr3t failed", "Sub-workflow Login failed: Node execution failed"],
+      ["Sub-workflow Login failed", "Sub-workflow Login failed"],
+      ["Sub-workflow Login failed in iteration 2", "Sub-workflow Login failed in iteration 2"],
+      ["Sub-workflow Login: 3 of 5 iteration(s) failed", "Sub-workflow Login: 3 of 5 iteration(s) failed"],
+      ["Sub-workflow: a prefix only the executor writes, failed", "Node execution failed"],
       ["OAuth 2.0 token request failed: 401 timeout", "OAuth 2.0 token request failed: 401 timeout"],
       ["AWS Signature V4 needs a region", "AWS Signature V4 needs a region"],
       ["Digest auth challenge missing", "Digest auth challenge missing"],

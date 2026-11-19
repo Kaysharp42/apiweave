@@ -276,6 +276,59 @@ describe("Phase 3 — one call explains a known failure", () => {
     expect(context.omittedNodeIds).toEqual([])
   })
 
+  it("explains a failed Call Workflow node with the child run to open", async () => {
+    const workspaceId = await seedWorkspace()
+    // The target must exist: workflow creation validates call targets.
+    const child = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "Login" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "caller",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call1", type: "workflow", position: { x: 100, y: 0 }, config: { targetWorkflowId: child.workflowId } },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "call1" },
+        { edgeId: "e2", source: "call1", target: "end" },
+      ],
+    })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{
+        nodeId: "call1",
+        status: "failed",
+        duration: 33,
+        error: 'Sub-workflow Login failed at "Fill password": Status 404',
+        subWorkflow: {
+          workflowId: child.workflowId,
+          runId: "run-child-9",
+          status: "failed",
+          nodeCount: 3,
+          failedNodeCount: 1,
+          outputVariableNames: ["token"],
+        },
+      }],
+      failedNodes: ["call1"],
+    })
+
+    const context = await debugContext({ workspaceId, workflowId: workflow.workflowId })
+    expect(context.failureSummary.failedNodeIds).toEqual(["call1"])
+    const item = context.evidence.find((entry) => entry.nodeId === "call1")
+    expect(item).toMatchObject({
+      status: "failed",
+      hasError: true,
+      errorPreview: 'Sub-workflow Login failed at "Fill password": Status 404',
+      // The child run is what the agent opens next.
+      call: { workflowId: child.workflowId, runId: "run-child-9", status: "failed", nodeCount: 3, failedNodeCount: 1 },
+    })
+    expect(item?.moreDetail.args.sections).toContain("call")
+    if (context.diagnosis.status === "complete") {
+      expect(context.diagnosis.items.map((entry) => entry.code)).toContain("workflow_call_failed")
+    }
+  })
+
   it("reports environment key presence with base-chain provenance, never values", async () => {
     const seed = await seedFailure()
     const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })

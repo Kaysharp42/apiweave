@@ -28,7 +28,10 @@ export const WebsocketNodeDataSchema = z
     timeout: z.number().int().min(0).max(300).optional().describe("Maximum time to wait for matching messages, in seconds. Zero waits until a finish rule matches."),
     maxMessages: z.number().int().positive().max(100).optional().describe("Maximum incoming messages retained in the bounded result. Without finish rules, reaching this limit closes the connection. Defaults to 1."),
     finishConditions: z.array(StreamFinishConditionSchema).max(20).optional().describe("All rules must match one received message to close the connection and activate the Complete output."),
-    sslVerify: z.boolean().optional(),
+    sslVerify: z
+      .boolean()
+      .optional()
+      .describe("Verify the TLS certificate chain for the wss:// handshake (default true). Per-node opt-out for self-signed dev endpoints."),
     continueOnFail: z.boolean().optional(),
     extractors: z.record(z.string(), z.string()).optional().describe('Captures values from the collected result, e.g. {"id": "response.body.messages[0].data"}.'),
   })
