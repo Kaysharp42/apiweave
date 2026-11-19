@@ -154,9 +154,20 @@ rejected config names its node's list index and field in the error path.
   instead of \`body\`, POSTed as \`{"jsonrpc":"2.0","method","params","id"}\`. A response carrying an
   \`error\` member fails the node; set \`"allowRpcError": true\` to opt out and assert
   \`response.body.error.code\` / \`response.body.error.message\`.
+- SOAP: \`"bodyType": "soap"\` with \`"soap": {"version": "1.1" | "1.2", "action": "...",
+  "envelope": "<SOAP-ENV:Envelope>…as XML text…"}\` instead of \`body\`. Version 1.1
+  (the default) sends \`text/xml\` with a \`SOAPAction\` header; 1.2 sends
+  \`application/soap+xml\` with the action in the Content-Type. A SOAP Fault in the
+  response fails the node unless the status is its \`expectedStatus\`; the fault
+  reads at \`response.fault.code\` / \`response.fault.reason\`, and other fields are
+  read with XPath: \`xpath://*[local-name()="Total"]/text()\`, prefixes declared
+  inline as \`xpath[s=uri]:…\`.
 - \`extractors\` is a map of variable name to response path. After this node runs,
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
-  \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.
+  \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\` — or a \`$\`
+  JSONPath over the whole node result
+  (\`$.response.body.items[?@.id==3].name\`), or, for an XML body, XPath
+  (\`xpath://*[local-name()="Total"]/text()\`).
 - \`continueOnFail: true\` lets the run continue past a failed request.
 - \`expectedStatus\` — the status code(s) this request is expected to return (a number
   or an array of numbers, 100-599). The node passes when the response matches and
@@ -343,6 +354,28 @@ input mapping is rejected — let the sub-workflow read the secret itself. The
 target must live in the same workspace and cannot be the calling workflow.
 Recursion is capped at 8 levels.
 
+\`forEach\` runs the target once per element instead of once:
+
+\`\`\`json
+"forEach": { "items": "{{variables.ids}}", "itemVariable": "id",
+             "indexVariable": "i", "concurrency": 4 }
+\`\`\`
+
+\`items\` is one of a single \`{{...}}\` placeholder whose value is an array
+(\`{{variables.ids}}\`, \`{{fetchIds.response.body.items}}\`), a JSON array literal
+(\`[1, 2]\`), or a \`$\` JSONPath rooted at \`{ variables, env, data, <nodeId> }\`
+(\`$.fetch.response.body.items\`); at most 1000 items run and further items are
+ignored. The sub-workflow reads the current element as
+\`{{variables.<itemVariable>}}\` — required, the node fails without it — and its
+zero-based index as \`{{variables.<indexVariable>}}\` when set. \`concurrency\`
+(1-16, default 1) runs that many iterations at once; above 1 the node fails at
+run time when the target has browser steps, which share one page. The node
+passes only when every iteration passes; \`stopOnFailure\` (default true) stops
+starting iterations at the first failure. Under \`forEach\`, \`outputMapping\`
+variables become arrays in item order — \`null\` where an iteration did not run
+or did not produce the variable — and each iteration is its own sub-run of the
+target, listed in the node result under \`subWorkflow.forEach\`.
+
 ## Edges
 
 \`\`\`json
@@ -521,13 +554,22 @@ node to take its \`pass\` branch.
 | source | what it reads | path |
 | --- | --- | --- |
 | \`status\` | the response status code | **must be \`""\`** |
-| \`prev\` | the upstream response object | \`response.body.<field>\`, \`response.headers.<name>\`, \`response.statusCode\`, \`response.duration\` |
+| \`prev\` | the upstream response object | dot, \`$\` JSONPath or \`xpath:\` — the three forms below |
 | \`headers\` | one response header | the header name, e.g. \`content-type\` |
 | \`cookies\` | one response cookie | the cookie name, e.g. \`session\` |
 | \`variables\` | one workflow variable | the variable name, e.g. \`token\` |
 
-Array elements use \`[0]\`: \`response.body.items[0].id\` — the same grammar as extractors and evidence paths. A **bare field name is not a path**. \`{"source": "prev", "path": "id"}\` does not
-address anything; the value lives at \`response.body.id\`. \`assertion_validate\`
+A \`prev\` path has three forms, the same grammar as extractors and evidence
+paths. A **dot path** starts at the response object: \`response.body.<field>\`
+with \`[0]\` for array indexes (\`response.body.items[0].id\`),
+\`response.headers.<name>\`, \`response.fault.code\` (a SOAP fault),
+\`response.statusCode\`, \`response.duration\`. A **\`$\` path** is RFC 9535 JSONPath
+rooted at the whole node result: \`$.response.body.items[?@.id==3].name\`, with
+the response time at \`$.duration\`. An **\`xpath:\` path** is XPath 1.0 over the
+XML body: \`xpath://*[local-name()="Total"]/text()\`, prefixes declared inline as
+\`xpath[s=uri]:…\`. A **bare field name is not a path**:
+\`{"source": "prev", "path": "id"}\` does not address anything; the value lives
+at \`response.body.id\`. \`assertion_validate\`
 canonicalizes a path that is merely missing its prefix (\`body.id\` becomes
 \`response.body.id\`) and rejects anything that cannot address a value, with a
 message naming the accepted shapes.
@@ -709,7 +751,8 @@ detail with the *type* and *state* of actual values but never the values
 themselves. No response bodies, headers, cookies, URLs or variable values
 cross this bridge on any run tool except one: \`runs_getNodeResult\` returns
 bounded evidence for up to 50 nodes of a run — selected sections, an
-extractor-grammar path within a JSON response body, and capped text previews
+extractor-grammar path into the response record (body, headers, fault,
+trailers), and capped text previews
 with explicit truncation accounting — after the same secret-redaction pass
 every other read gets. Bodies travel as previews, never whole. A browser
 step's URL, title, expected and actual values and masked ARIA snapshot are
@@ -743,9 +786,9 @@ changed or deleted over MCP; that is a desktop action.
  * slug that no longer exists is worse than no pointer at all.
  */
 export const MCP_INSTRUCTIONS = `APIWeave is a desktop app for building and running API test workflows. A
-workflow is a graph of nodes (requests, assertions, delays) that runs against a
-real service. Workflows live in APIWeave's database, not in files — these tools
-are the only way to reach one.
+workflow is a graph of nodes — HTTP, gRPC, WebSocket and SSE calls, browser
+steps, assertions, delays — that runs against a real service. Workflows live in
+APIWeave's database, not in files — these tools are the only way to reach one.
 
 Scope: if launched from APIWeave, APIWEAVE_WORKSPACE_ID plus APIWEAVE_WORKFLOW_ID
 or APIWEAVE_PROJECT_ID name what the user was looking at. Start there.

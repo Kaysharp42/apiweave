@@ -214,10 +214,12 @@ agent cannot do itself. See
 `workspaces_map` orients an agent in a workspace with one paged read (30
 workflows per page by default, `collectionId` narrows to one project). Per
 workflow it returns `workflowId`, `name`, `rev`, `collectionId`, the endpoints
-its request and SSE nodes call as `METHOD /path/{{…}}` (host, query string and
-userinfo dropped, placeholders collapsed so a route appears once), the variable
-names it produces and consumes, the `env` and `secrets` names it references, the
-workflows its `workflow` nodes call, and its latest run's `runId` and `status`.
+it calls — HTTP request, SSE and WebSocket nodes as `METHOD /path/{{…}}`, a
+gRPC call as `RPC /service/method`, a browser navigate as `PAGE /path` (host,
+query string and userinfo dropped, placeholders collapsed so a route appears
+once) — the variable names it produces and consumes, the `env` and `secrets`
+names it references, the workflows its `workflow` nodes call, and its latest
+run's `runId` and `status`.
 Empty lists are left out; a list longer than 20 names is cut and the rest
 counted in `omitted`. Everything comes from names and path templates, never a
 config value, and the latest runs for a page come from a single query.
