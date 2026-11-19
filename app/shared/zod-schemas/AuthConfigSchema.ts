@@ -1,15 +1,26 @@
 import { z } from "zod"
 
 export const BearerAuthConfigSchema = z
-  .object({ token: z.string() })
+  .object({
+    token: z
+      .string()
+      .describe('Sent as "Authorization: Bearer <token>". Placeholders are substituted; reference the credential as "{{secrets.NAME}}" rather than inlining it.'),
+  })
   .strict()
 
 export const BasicAuthConfigSchema = z
-  .object({ username: z.string(), password: z.string() })
+  .object({
+    username: z.string().describe("Basic username. Placeholders are substituted."),
+    password: z.string().describe('Basic password. Placeholders are substituted; prefer a "{{secrets.NAME}}" reference over a literal.'),
+  })
   .strict()
 
 export const ApiKeyAuthConfigSchema = z
-  .object({ key: z.string(), value: z.string(), addTo: z.enum(["header", "query"]) })
+  .object({
+    key: z.string().describe('The parameter name, e.g. "X-Api-Key". Placeholders are substituted.'),
+    value: z.string().describe('The parameter value. Placeholders are substituted; prefer a "{{secrets.NAME}}" reference over a literal.'),
+    addTo: z.enum(["header", "query"]).describe('Where the pair is sent: "header" or "query".'),
+  })
   .strict()
 
 /** `{{secrets.NAME}}` and nothing else, or empty while the field is unset. */
@@ -24,7 +35,7 @@ export const OAuth2AuthConfigSchema = z
       .describe('"client_credentials" runs headless (app and CLI). "authorization_code" (with PKCE) needs the user to sign in once with Get token in the app.'),
     tokenUrl: z.string().describe("Token endpoint. Placeholders are substituted."),
     authorizationUrl: z.string().optional().describe("authorization_code only: the authorization endpoint opened in the browser."),
-    clientId: z.string(),
+    clientId: z.string().describe("The OAuth client id. Placeholders are substituted."),
     clientSecret: SecretReferenceSchema.optional().describe(
       'A "{{secrets.NAME}}" reference — a literal is rejected. Required for client_credentials; optional (confidential clients) for authorization_code.',
     ),
@@ -62,7 +73,9 @@ export const MAX_JWT_LIFETIME_SECONDS = 86_400
 
 export const JwtAuthConfigSchema = z
   .object({
-    algorithm: z.enum(["HS256", "RS256", "ES256"]),
+    algorithm: z
+      .enum(["HS256", "RS256", "ES256"])
+      .describe('The signing algorithm: HS256 (shared secret), RS256 (RSA) or ES256 (P-256 EC).'),
     secret: SecretReferenceSchema.describe(
       'A "{{secrets.NAME}}" reference to the signing key — a literal is rejected: the shared secret for HS256, a PEM private key (RSA for RS256, P-256 EC for ES256) otherwise.',
     ),
@@ -78,10 +91,12 @@ export const JwtAuthConfigSchema = z
 
 export const AuthConfigSchema = z
   .object({
-    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4", "digest", "jwt"]),
-    bearer: BearerAuthConfigSchema.optional(),
-    basic: BasicAuthConfigSchema.optional(),
-    apiKey: ApiKeyAuthConfigSchema.optional(),
+    type: z
+      .enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4", "digest", "jwt"])
+      .describe('Which auth to apply; the member of the same name below holds its settings. "none" (or omitting auth) sends nothing extra.'),
+    bearer: BearerAuthConfigSchema.optional().describe("Settings for type \"bearer\"."),
+    basic: BasicAuthConfigSchema.optional().describe("Settings for type \"basic\"."),
+    apiKey: ApiKeyAuthConfigSchema.optional().describe("Settings for type \"apiKey\"."),
     oauth2: OAuth2AuthConfigSchema.optional(),
     awsSigV4: AwsSigV4AuthConfigSchema.optional().describe(
       "Signs the final request (after the pre-request script) with AWS Signature Version 4, on every attempt. A signed request does not follow redirects.",

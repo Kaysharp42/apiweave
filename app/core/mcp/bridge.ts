@@ -289,11 +289,6 @@ async function dispatchAsTool(
 }
 
 /**
- * A tool that returns a picture (`imageResult`) carries it as a `screenshot`
- * field; an agent gets it as MCP image content, which a model sees as an image,
- * rather than as a base64 string it would read as text.
- */
-/**
  * The workspace a write touched: the one the call named, or, for a new
  * workspace, the one it created — which the renderer needs to offer that
  * workspace a repository, since an agent cannot create one itself.
@@ -306,6 +301,11 @@ function writtenWorkspaceId(spec: McpToolSpec, payload: Record<string, unknown>,
   return typeof created === "string" ? created : undefined
 }
 
+/**
+ * A tool that returns a picture (`imageResult`) carries it as a `screenshot`
+ * field; an agent gets it as MCP image content, which a model sees as an image,
+ * rather than as a base64 string it would read as text.
+ */
 function withoutImage(spec: McpToolSpec, data: unknown): { data: unknown; image?: { mime: string; base64: string } } {
   if (spec.imageResult !== true || typeof data !== "object" || data === null || !("screenshot" in data)) return { data }
   const { screenshot, ...rest } = data

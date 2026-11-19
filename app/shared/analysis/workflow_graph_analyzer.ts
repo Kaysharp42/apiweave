@@ -354,8 +354,73 @@ export function isValidRuntimePath(path: string, includeDuration: boolean): bool
   return root === "body" || root === "headers" || root === "trailers"
 }
 
+/**
+ * Every diagnostic code `analyzeWorkflowGraph` can emit, and nothing else: the
+ * `diagnostic()` helper below is typed with this list, so an emit site cannot
+ * use a code it does not declare. The diagnostics guide
+ * (`apiweave://guide/diagnostics`) promises a row per code, and
+ * `core/mcp/__tests__/diagnostic-codes.test.ts` pins the two together — add the
+ * row there in the same change as the code, or the test fails.
+ */
+export const WORKFLOW_DIAGNOSTIC_CODES = [
+  // Topology
+  "missing_start_node",
+  "duplicate_start_node",
+  "missing_end_node",
+  "duplicate_node_id",
+  "duplicate_edge_id",
+  "dangling_edge",
+  "edge_source_handle_ignored",
+  "stream_edge_handle_invalid",
+  "unreachable_nodes",
+  "cycle_detected",
+  "browser_parallel_branches",
+  // Assertions and branching
+  "assertion_rules_missing",
+  "assertion_source_missing",
+  "assertion_source_ambiguous",
+  "assertion_source_unknown",
+  "assertion_operator_unknown",
+  "assertion_source_path_invalid",
+  "assertion_expected_missing",
+  "assertion_expected_invalid",
+  "assertion_branch_handle_invalid",
+  "assertion_branch_duplicate",
+  "assertion_fail_wired_on_all",
+  "continue_on_fail_status_check_migratable",
+  // Dataflow
+  "extractor_path_invalid",
+  "extractor_path_missing",
+  "extractor_type_mismatch",
+  "variable_source_missing",
+  "variable_producer_duplicate",
+  "variable_producer_not_upstream",
+  "extractor_producer_not_executed",
+  "unknown_function",
+  // Browser steps
+  "browser_chain_starts_without_navigate",
+  "browser_selector_fallback",
+  // Run-correlated
+  "run_result_unknown_node",
+  "http_request_failed",
+  "sse_stream_failed",
+  "websocket_stream_failed",
+  "grpc_call_failed",
+  "response_body_truncated",
+  "response_body_unavailable",
+  "assertion_source_mismatch",
+  "assertion_source_missing_at_run",
+  "assertion_source_ambiguous_at_run",
+  "assertion_failed",
+  "secret_resolution_metadata_missing",
+  "secret_reference_unresolved",
+  "nodes_not_executed",
+] as const
+
+type WorkflowDiagnosticCode = (typeof WORKFLOW_DIAGNOSTIC_CODES)[number]
+
 function diagnostic(
-  code: string,
+  code: WorkflowDiagnosticCode,
   severity: WorkflowDiagnostic["severity"],
   category: WorkflowDiagnostic["category"],
   nodeIds: readonly string[],

@@ -23,9 +23,13 @@ import { z } from "zod"
  */
 export const KeyValuePairSchema = z
   .object({
-    key: z.string(),
-    value: z.string(),
-    active: z.boolean().optional(),
+    key: z
+      .string()
+      .describe('The entry\'s name, e.g. "Authorization". Empty is the editor\'s incomplete-row state and is skipped at run time.'),
+    value: z
+      .string()
+      .describe('The entry\'s value. Placeholders are substituted at run time; reference credentials as "{{secrets.NAME}}" rather than inlining them.'),
+    active: z.boolean().optional().describe("When false the entry is stored but not sent. Defaults to true."),
   })
   .strict()
 
