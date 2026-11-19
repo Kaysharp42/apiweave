@@ -32,6 +32,26 @@ describe("MCP compact write projections", () => {
     expect(projected?.touchedEdgeIds).toHaveLength(20)
   })
 
+  it("names a replaced node once: remove+upsert of the same id touches one id one time", () => {
+    const projected = projectWorkflowWrite(
+      { domain: "workflows", action: "patch", intent: "write", description: "test" },
+      {
+        removeNodeIds: ["email"],
+        upsertNodes: [{ nodeId: "email", type: "browser" }, { nodeId: "submit", type: "browser" }],
+      },
+      {
+        workflowId: "wf-1",
+        workspaceId: "ws-1",
+        rev: 2,
+        nodes: [],
+        edges: [],
+      } as never,
+    )
+
+    expect(projected?.touchedNodeIds).toEqual(["email", "submit"])
+    expect(projected?.touchedNodeIdsTotal).toBe(2)
+  })
+
   it("orders and bounds diagnosis details, while retaining total severity counts", () => {
     const diagnosis = compactWorkflowDiagnosis({
       workflowId: "wf-1",
