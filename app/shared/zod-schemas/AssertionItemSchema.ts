@@ -2,6 +2,7 @@ import { z } from "zod"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { AssertionOperatorSchema } from "./AssertionOperatorSchema"
 import { AssertionSourceSchema } from "./AssertionSourceSchema"
+import { PATH_GRAMMAR_MESSAGE } from "../extractors/extractorPath"
 
 /**
  * Assertion config as produced by BOTH renderer editors (the inline
@@ -19,7 +20,7 @@ export const AssertionItemSchema = z
     path: z
       .string()
       .describe(
-        'Locates the value inside `source`, and its shape depends on `source`. "prev": a path into the response object — "response.body.<field>" (dot notation, [0] for array indexes, e.g. response.body.data[0].id), "response.headers.<name>", "response.fault.code", "response.statusCode" or "response.duration"; a bare field name like "id" is NOT valid. "status": must be the empty string. "headers"/"cookies"/"variables": just the name (e.g. "content-type", "session", "token"), with no response. prefix.',
+        `Locates the value inside \`source\`, and its shape depends on \`source\`. "prev": a path into the upstream response object — ${PATH_GRAMMAR_MESSAGE} "status": must be the empty string. "headers"/"cookies"/"variables": just the name (e.g. "content-type", "session", "token"), with no response. prefix.`,
       ),
     operator: AssertionOperatorSchema.describe(
       'How to compare. "exists"/"notExists"/"matchesSnapshot" take no expectedValue; every other operator requires one. "count" requires a non-negative integer and compares the length of an array or string. "matches"/"notMatches" take a regular expression, bare ("^ok") or as a literal with flags ("/^ok$/i"). "type" takes one of string, number, integer, boolean, object, array, null. "matchesSchema" takes a JSON Schema object (draft 2020-12 by default; set "$schema" for draft-07, 2019-09 or draft-04) and validates the value at path, usually "response.body". "status" source accepts only equals, notEquals, gt, gte, lt or lte. "matchesSnapshot" compares the value at path with the baseline recorded for this rule: the first run records it and passes; a later run fails with a diff unless the baseline is accepted or `--update-snapshots` is set.',

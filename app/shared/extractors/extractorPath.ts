@@ -29,6 +29,21 @@ import { isXPath, resolveXPath } from "./xpathQuery"
  */
 export const EXTRACTOR_ROOT = "response"
 
+/**
+ * The three path grammars a `prev` path — and an extractor path — accepts, as
+ * one sentence a JSON Schema description or a validation message can embed.
+ * Stated here, in the module that dispatches the grammars, so the assertion
+ * schema's agent-facing text and the authoring service's validation message
+ * quote one source instead of drifting apart.
+ */
+export const PATH_GRAMMAR_MESSAGE =
+  '"response.body.<field>" (dots and [0] array indexes, e.g. response.body.data[0].id), "response.headers.<name>", ' +
+  '"response.fault.code" (a parsed SOAP fault), "response.statusCode" or "response.duration"; a "$"-prefixed path is ' +
+  'instead RFC 9535 JSONPath rooted at the same node result (e.g. $.response.body.items[?@.id==3].name, response ' +
+  'time at $.duration); an "xpath:"-prefixed path is instead XPath 1.0 over the XML body (e.g. ' +
+  'xpath://*[local-name()="Total"]/text(), prefixes declared inline as xpath[s=uri]:expression). A bare field name ' +
+  'like "id" is not a path — write "response.body.id".'
+
 const ARRAY_SEGMENT_RE = /^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/
 const IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
