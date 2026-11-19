@@ -20,6 +20,17 @@ import { MCP_GUIDES } from "./guide"
  *  - `runs.createIterations` — the renderer's "Run with data…": a background
  *    run per row. An agent runs a data set one row per `runs_create` (`data`),
  *    and waits on each, so every iteration gets its own approval and summary.
+ *  - `runs.createLoad`, `runs.loadResult`, `runs.loadReport` — a load run is
+ *    the workflow fanned out as up to thousands of real requests in parallel;
+ *    the user starts it (Run options → Load run…, or the CLI's
+ *    `--concurrency`) and an agent never does. `createLoad` also does not
+ *    thread `context.agent` (unlike `runs.create`), so whitelisting it as-is
+ *    would skip the secret-approval gate entirely.
+ *  - `runs.acceptSnapshot` — overwrites a `matchesSnapshot` baseline with a
+ *    caller-supplied value, and an agent has only ever seen the response
+ *    through redacted, truncated previews, so any value it could send is not
+ *    the real one. Accepting a changed snapshot is the user's call: Accept
+ *    snapshot in the run inspector, or the CLI's `--update-snapshots`.
  *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
  *    history; the user's call from the History panel, never an agent's.
  *  - `runs.getArtifact` — a screenshot as a base64 string in JSON text. An
@@ -187,7 +198,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("runs", "get", "read", "Get a metadata-only run snapshot: status, timing, per-status node counts and failed-node details (expected status, unresolved placeholders), never per-node results — use runs_getNodeResult for evidence. Its `runRev` is only this run record's revision, never a workflow revision; use workflows_get's `rev` for expectedRevision.", { resultProjection: "run" }),
   tool("runs", "getNodeResult", "read", "Inspect run evidence for up to 50 nodes: pick sections (error, assertions, extractors, request, response, browser), select within a JSON response body by extractor-grammar path, and window text previews (response bodies and a browser step's ARIA snapshot). Bodies and snapshots travel as capped previews with explicit truncation accounting, never whole; the page is held to 32 KiB and over-budget previews are marked budgetOmitted for a single-node refetch. A browser step reports its action, page URL and title, expected/actual values, hasScreenshot (the image itself is never in this read) and the masked ARIA snapshot. Unknown ids are reported as missing; skipped sections are named in omittedSections. Secret values are redacted like every other MCP read. screenshot: true with one nodeId also returns that step's failure screenshot as image content.", { name: "runs_getNodeResult", imageResult: true }),
   tool("browser", "inspect", "write", "Inspect a web page: run a workflow headless up to a browser step (beforeNodeId) — or all of it — and return the page it left open: URL, title and its masked ARIA snapshot (roles, accessible names, field values). Use it before writing browser steps, to pick role/label locators from the real page instead of guessing from source. Sends real traffic like runs_create and records a run; a run that would send stored secrets waits for the user's approval first (deniedByUser:true means they refused or did not answer — tell the user, do not retry). Waits up to waitMs (default 10000, max 30000): on deadline it returns terminal:false with the runId — call browser_inspect with that runId to keep waiting, which starts no run and asks for no second approval; a timeout or disconnect never cancels the run. No page open (no navigate step ran yet) returns page: null. screenshot: true adds a JPEG of the viewport as image content.", { openWorld: true, imageResult: true }),
-  tool("runs", "history", "read", "Run history for a workspace or one workflow, newest first: runId, status, startedAt, durationMs and failedNodeCount per row (failedNodes when non-empty), never per-node results. Filter by workflowId or status; the latest run is limit 1, the latest failure adds status failed.", { resultProjection: "runHistory" }),
+  tool("runs", "history", "read", "Run history for a workspace or one workflow, newest first: runId, status, startedAt, durationMs and failedNodeCount per row (failedNodes when non-empty), never per-node results. A row that is one iteration of a data-driven or load run carries `iteration` (groupId, 1-based index, count) — a load run's iterations are ordinary runs, so the latest row can be one. Filter by workflowId or status; the latest run is limit 1, the latest failure adds status failed.", { resultProjection: "runHistory" }),
   tool("runs", "cancel", "write", "Cancel a queued or running run and return its metadata-only snapshot.", { destructive: true, idempotent: true, resultProjection: "run" }),
 
   // Secrets — read-only metadata surface (never plaintext, never sealed bytes)

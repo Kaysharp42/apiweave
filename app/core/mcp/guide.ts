@@ -58,6 +58,9 @@ follows edges; nothing runs unless an edge leads to it.
    A wait timeout returns the runId for \`runs_wait\` and never cancels the run.
    A run using stored secrets waits for the user's approval;
    \`deniedByUser: true\` means they refused — say so, do not retry.
+   A load run is not an agent tool: ask the user for Run options → Load
+   run… in the app, or the CLI \`apiweave run <path> --workflow <name>
+   --concurrency 20 --iteration-count 200 --threshold "p95<500"\`.
    Before writing a browser step, read the page with \`browser_inspect\`.
 6. **Debug** with \`workflows_debugContext\` (one bounded call: failed nodes,
    diagnosis, configs, placeholders, error previews), then
@@ -191,7 +194,11 @@ rejected config names its node's list index and field in the error path.
   which defaults to \`"fail"\` for an imported endpoint and \`"off"\`
   otherwise. With the check on, the body must match the most specific schema
   for the actual status, and a status the schemas do not declare is itself a
-  violation; violations land in the node result's \`assertions\`.
+  violation; violations land in the node result's \`assertions\`. Under
+  \`warn\` the node still passes, so its violations sit on a PASSED node that
+  failure-focused reads (\`workflows_debugContext\`, \`runs_get\`) never
+  surface: read them with \`runs_getNodeResult\` \`sections: ["assertions"]\`
+  on that node.
 
 ### sse
 
@@ -546,7 +553,10 @@ For \`headers\`, \`cookies\` and \`variables\` the path is just the name — no
 - \`matchesSnapshot\` compares the value at \`path\` with the baseline the
   rule's first run recorded, and fails with a diff when it changes.
   \`ignorePaths\` lists JSONPath expressions to leave out of the comparison
-  (\`["$..updatedAt"]\`).
+  (\`["$..updatedAt"]\`). A changed snapshot is the user's call: ask them to
+  click **Accept snapshot** on the failed rule in the run inspector, or to
+  rerun the CLI with \`--update-snapshots\` — never replace or delete the
+  rule to turn a run green.
 - \`count\` compares the length of an array or string and needs a non-negative
   integer.
 - \`matches\` / \`notMatches\` take a regular expression: bare (\`"^ord_"\`) or a

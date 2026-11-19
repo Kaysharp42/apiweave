@@ -152,9 +152,12 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     handle: ({ workspaceId, ...input }) => runs.createIterations(workspaceId, input),
   })
 
-  // Renderer only (not on the MCP whitelist): a load run, the workflow in
-  // parallel. Returns iteration 1's run; its `iteration.groupId` reads the
-  // finished aggregate through `loadResult` and `loadReport`.
+  // Renderer only (not on the MCP whitelist — see core/mcp/tools.ts): a load
+  // run, the workflow in parallel. Returns iteration 1's run; its
+  // `iteration.groupId` reads the finished aggregate through `loadResult` and
+  // `loadReport`. Must not be whitelisted as-is: unlike `runs.create` above,
+  // this handler does not thread `context.agent`, so an agent-started load run
+  // would send stored secrets with no approval gate.
   router.register("runs", "createLoad", {
     input: createLoadInput,
     output: RunSchema,
@@ -171,6 +174,9 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     },
   })
 
+  // Renderer only: the finished aggregate of one load run, as data (below)
+  // and as a report. Off the MCP whitelist with the load run itself
+  // (core/mcp/tools.ts).
   router.register("runs", "loadResult", {
     input: loadGroupInput,
     output: LoadRunSchema.nullable(),
@@ -242,6 +248,11 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     },
   })
 
+  // Deliberately off the MCP whitelist (see core/mcp/tools.ts): the caller
+  // supplies the new baseline, and an agent has only ever seen the response
+  // through redacted, truncated previews — the value it could send is not the
+  // real one. Accepting a changed snapshot is the user's call: Accept
+  // snapshot in the run inspector, or the CLI's --update-snapshots.
   router.register("runs", "acceptSnapshot", {
     input: z
       .object({

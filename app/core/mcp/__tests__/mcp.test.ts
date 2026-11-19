@@ -220,6 +220,18 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "projects.runReport",
       // A background run per row; an agent passes one row per runs_create.
       "runs.createIterations",
+      // A load run fans the workflow out as up to thousands of parallel real
+      // requests: the user's call (Run options → Load run…, or the CLI's
+      // --concurrency), never an agent's. createLoad also never threads
+      // `context.agent`, so whitelisting it as-is would bypass the
+      // secret-approval gate runs_create waits behind.
+      "runs.createLoad",
+      "runs.loadResult",
+      "runs.loadReport",
+      // Accepting a changed snapshot baseline takes a caller-supplied value an
+      // agent only ever saw redacted/truncated: the user's call alone (Accept
+      // snapshot in the run inspector, or the CLI's --update-snapshots).
+      "runs.acceptSnapshot",
       // Deleting run history is irreversible and the user's call alone.
       "runs.delete",
       "runs.clearHistory",
