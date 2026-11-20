@@ -21,4 +21,6 @@ export type ShortcutAction =
   | "focusUp"
   | "focusDown"
   | "focusLeft"
-  | "focusRight";
+  | "focusRight"
+  | "previousNode"
+  | "nextNode";

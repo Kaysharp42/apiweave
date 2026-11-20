@@ -20,6 +20,6 @@ export interface CanvasCommandActions {
   ungroup: () => void;
   toggleLock: () => void;
   toggleSnapToGrid: () => void;
-  focusMode: () => void;
+  editSelectedNode: () => void;
   addNode: (template: CanvasNodeTemplate) => void;
 }

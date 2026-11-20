@@ -71,6 +71,7 @@ import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange";
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings";
+import type { WindowChromeState } from "@shared/types/WindowChromeState";
 import type {
   UpdatePolicy,
   UpdatesBridge,
@@ -139,7 +140,7 @@ type IpcBridge = {
 
 type DesktopBridge = {
   readonly platform?: string;
-  readonly applyTheme?: (dark: boolean) => Promise<void>;
+  readonly applyChrome?: (state: WindowChromeState) => Promise<void>;
   readonly onCloseRequested: (handler: () => Promise<boolean>) => () => void;
   readonly screenReader?: boolean;
   readonly getBackground?: () => Promise<BackgroundSettings>;
@@ -967,11 +968,12 @@ export const desktop = {
   /** `process.platform` in the desktop shell; null in the browser build. */
   platform: (): string | null => getDesktopBridge()?.platform ?? null,
   /**
-   * Repaint the window background and native controls for a theme. Resolves
-   * immediately outside Electron, where there is no window to repaint.
+   * Repaint the window background and native controls for a theme, dimmed
+   * while a dialog's backdrop dims the page. Resolves immediately outside
+   * Electron, where there is no window to repaint.
    */
-  applyTheme: (dark: boolean): Promise<void> =>
-    getDesktopBridge()?.applyTheme?.(dark).catch(unwrapRemoteError) ??
+  applyChrome: (state: WindowChromeState): Promise<void> =>
+    getDesktopBridge()?.applyChrome?.(state).catch(unwrapRemoteError) ??
     Promise.resolve(),
   /** Main's quit handshake: the handler resolves whether the window may close. */
   onCloseRequested: (handler: () => Promise<boolean>) =>

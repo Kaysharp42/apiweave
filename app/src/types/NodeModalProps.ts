@@ -1,4 +1,5 @@
 import type { NodeModalNode } from "./NodeModalNode";
+import type { NodeEditorSteps } from "./NodeEditorSteps";
 
 export interface NodeModalProps {
   open: boolean;
@@ -8,8 +9,8 @@ export interface NodeModalProps {
   onSave: (node: NodeModalNode) => void;
   /** The canvas's explicit save (Ctrl+S), run after the draft is applied. */
   onSaveWorkflow: () => void;
-  onPrevious?: () => void;
-  onNext?: () => void;
+  /** Previous/Next. The draft is applied before `onStep` moves the editor. */
+  steps: NodeEditorSteps;
   /** Workspace scope for the Call Workflow target picker. */
   workspaceId: string;
   /** Excluded from the Call Workflow target picker — a workflow can't call itself. */

@@ -9,6 +9,36 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Previous and Next in the node editor.** The editor's title bar steps to
+  the node before or after the one it shows, so a workflow can be walked
+  without closing one node to open the next. Next follows the node's outgoing
+  edges; at a fork (an Assertion's pass and fail, a fan-out) it opens a
+  numbered picker with the branch the last run took highlighted, and Next
+  again takes it. Previous goes back the way you came, or follows incoming
+  edges, offering each input of a Merge. `←`/`→` step when focus is not in a
+  text field, `Alt+←`/`Alt+→` from anywhere. Each step applies your edits,
+  and the editor keeps its layout: a hidden Response pane stays hidden, and
+  each node type stays on the tab you last chose.
+
+### Changed
+
+- **Focus selected node** in the command palette is now **Edit selected
+  node**: it opens the node editor, where Previous and Next replace focus
+  mode's own stepping order.
+- Every dialog shares one backdrop. In the light theme, confirm and prompt
+  dialogs and side panels dim slightly more, and the JSON editor's pale veil
+  matches the rest.
+
+### Fixed
+
+- The window's minimize, maximize and close buttons (Windows and Linux) now
+  dim with the rest of the window while a dialog is open, instead of staying
+  bright above its backdrop.
+
 ## [1.1.0] — 2026-11-20
 
 ### Added

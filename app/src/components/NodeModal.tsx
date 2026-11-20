@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   CheckCircle2,
   Cookie,
@@ -19,6 +19,7 @@ import {
 import { Badge } from "./atoms/Badge";
 import { TemplateInput } from "./molecules/TemplateAutocomplete";
 import { Tooltip } from "./atoms/Tooltip";
+import { Modal } from "./molecules/Modal";
 import ButtonSelect from "./ButtonSelect";
 import {
   HTTPRequestConfigPanel,
@@ -37,7 +38,6 @@ import {
   NodeModalShell,
 } from "./node-modal";
 import { normalizeHttpRequestConfig } from "./node-modal/httpRequestConfigCompat";
-import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
 import { readSnapshotActual } from "../utils/snapshotActual";
 import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation";
 import type { HttpMethod } from "@shared/types/HttpMethod";
@@ -64,6 +64,10 @@ import type {
   NodeModalBrowserTabKey,
   NodeModalMergeTabKey,
   NodeModalShellTab,
+  NodeEditorDraft,
+  NodeEditorHandle,
+  NodeEditorProps,
+  NodeEditorSteps,
   SelectOption,
 } from "../types";
 
@@ -168,23 +172,49 @@ function formatDelayBadge(duration: number | undefined): string {
   return `~${Number.isInteger(seconds) ? seconds.toFixed(0) : seconds.toFixed(1)}s`;
 }
 
-export function NodeModal({
-  open,
+/** A fresh draft of `node`: its data, with nothing edited yet. */
+function draftFor(node: NodeModalProps["node"]): NodeEditorDraft {
+  const working = { current: { ...node.data } as Record<string, unknown> };
+  return { nodeId: node.id, working, applied: working.current };
+}
+
+function httpConfigFor(node: NodeModalProps["node"]): NodeModalHTTPRequestConfig {
+  return normalizeHttpRequestConfig(
+    (node.data.config || {}) as NodeModalHTTPRequestConfig,
+  );
+}
+
+/**
+ * The editor. It stays mounted while Previous/Next step from node to node, so
+ * the title bar, the tabs and the split between the form and the response do
+ * not rebuild (a fresh split lays itself out a frame late, drawing the
+ * response over the form). What belongs to one node is keyed by its id in
+ * the shell, so each panel there still seeds its state from the node it shows.
+ */
+function NodeEditor({
+  ref,
+  nameRef,
   node,
   onClose,
   onSave,
   onSaveWorkflow,
-  onPrevious,
-  onNext,
+  steps,
   workspaceId,
   currentWorkflowId,
   getNodeOutput,
-}: NodeModalProps) {
-  const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
-  // The draft as last applied to the node. Every edit replaces
-  // `workingDataRef.current`, so a different object means unapplied edits.
-  const appliedDataRef = useRef(workingDataRef.current);
-  const nameLabelRef = useRef<HTMLElement | null>(null);
+}: NodeEditorProps) {
+  const [draft, setDraft] = useState(() => draftFor(node));
+  const [httpConfig, setHttpConfig] = useState(() => httpConfigFor(node));
+  // A step hands the editor another node. Start over from it here, during
+  // render, not in an effect: an effect runs after the new node's fields
+  // have painted once beside the old node's request bar.
+  if (draft.nodeId !== node.id) {
+    setDraft(draftFor(node));
+    setHttpConfig(httpConfigFor(node));
+  }
+  const workingDataRef = draft.working;
+  // Each node type keeps its own tab across steps, so walking a run on
+  // Settings stays on Settings.
   const [activeTab, setActiveTab] = useState<NodeModalHttpTabKey>("params");
   const [sseActiveTab, setSseActiveTab] = useState<NodeModalSseTabKey>("endpoint");
   const [websocketActiveTab, setWebsocketActiveTab] =
@@ -198,34 +228,10 @@ export function NodeModal({
     useState<NodeModalDelayTabKey>("duration");
   const [mergeActiveTab, setMergeActiveTab] =
     useState<NodeModalMergeTabKey>("strategy");
-  const [httpConfig, setHttpConfig] = useState<NodeModalHTTPRequestConfig>(() =>
-    normalizeHttpRequestConfig(
-      (node.data.config || {}) as NodeModalHTTPRequestConfig,
-    ),
-  );
-
-  useEffect(() => {
-    if (!open) return;
-    workingDataRef.current = { ...node.data };
-    appliedDataRef.current = workingDataRef.current;
-    setActiveTab("params");
-    setSseActiveTab("endpoint");
-    setWebsocketActiveTab("endpoint");
-    setGrpcActiveTab("endpoint");
-    setBrowserActiveTab("step");
-    setAssertionActiveTab("rules");
-    setDelayActiveTab("duration");
-    setMergeActiveTab("strategy");
-    setHttpConfig(
-      normalizeHttpRequestConfig(
-        (node.data.config || {}) as NodeModalHTTPRequestConfig,
-      ),
-    );
-  }, [node.id, open]);
 
   const applyDraft = () => {
-    if (workingDataRef.current === appliedDataRef.current) return;
-    appliedDataRef.current = workingDataRef.current;
+    if (workingDataRef.current === draft.applied) return;
+    draft.applied = workingDataRef.current;
     onSave({
       ...node,
       data: workingDataRef.current as unknown as typeof node.data,
@@ -243,20 +249,24 @@ export function NodeModal({
     onClose();
   };
 
+  useImperativeHandle(ref, () => ({ close: handleClose }));
+
   const handleLabelChange = (newLabel: string) => {
     workingDataRef.current = { ...workingDataRef.current, label: newLabel };
   };
 
-  const navigate = (callback: (() => void) | undefined) => {
-    if (!callback) return;
-    applyDraft();
-    callback();
+  // Stepping keeps the draft, the way closing does.
+  const shellSteps: NodeEditorSteps = {
+    ...steps,
+    onStep: (direction, target) => {
+      applyDraft();
+      steps.onStep(direction, target);
+    },
   };
 
   // The save shortcut works inside the editor too, including in its text
   // fields: apply the draft, then run the canvas's normal explicit save.
   useEffect(() => {
-    if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (matchShortcut(event) !== "save") return;
@@ -267,23 +277,6 @@ export function NodeModal({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   });
-
-  useEffect(() => {
-    if (!open || (!onPrevious && !onNext)) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isEditableKeyboardTarget(event.target)) return;
-      if (event.key === "ArrowLeft" && onPrevious) {
-        event.preventDefault();
-        navigate(onPrevious);
-      }
-      if (event.key === "ArrowRight" && onNext) {
-        event.preventDefault();
-        navigate(onNext);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onNext, onPrevious, open]);
 
   const updateHttpConfig = (newConfig: NodeModalHTTPRequestConfig) => {
     const normalizedConfig = normalizeHttpRequestConfig(newConfig);
@@ -605,7 +598,7 @@ export function NodeModal({
 
   return (
     <NodeModalShell
-      open={open}
+      nodeId={node.id}
       nodeType={node.type}
       nodeLabel={node.data.label || ""}
       tabs={shellTabs}
@@ -631,9 +624,8 @@ export function NodeModal({
       onClose={handleClose}
       onCancel={handleCancel}
       onSave={handleClose}
-      {...(onPrevious ? { onPrevious: () => navigate(onPrevious) } : {})}
-      {...(onNext ? { onNext: () => navigate(onNext) } : {})}
-      initialFocus={nameLabelRef}
+      steps={shellSteps}
+      nameRef={nameRef}
       requestBar={
         node.type === "http-request" ? renderHttpRequestBar() : renderTypeBar()
       }
@@ -641,6 +633,35 @@ export function NodeModal({
     >
       {renderConfigPanel()}
     </NodeModalShell>
+  );
+}
+
+/**
+ * The node editor's dialog. It stays open while the editor steps from node to
+ * node, so a step does not replay the dialog's open transition or flash the
+ * backdrop.
+ */
+export function NodeModal({ open, ...editor }: NodeModalProps) {
+  const editorRef = useRef<NodeEditorHandle | null>(null);
+  const nameLabelRef = useRef<HTMLElement | null>(null);
+
+  return (
+    <Modal
+      isOpen={open}
+      onClose={() => editorRef.current?.close()}
+      title=""
+      size="fullscreen"
+      scrollable={false}
+      showClose={false}
+      initialFocus={nameLabelRef}
+      className="max-w-[1800px]! rounded-xs! shadow-(--aw-shadow-modal)!"
+    >
+      <NodeEditor
+        ref={editorRef}
+        nameRef={nameLabelRef}
+        {...editor}
+      />
+    </Modal>
   );
 }
 

@@ -67,6 +67,13 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **`app://` protocol handler** serves the renderer from the packaged bundle under a locked-down CSP instead of a plain file URL.
 
+**Window chrome** is split between the renderer and main. The app draws its own header, but on Windows and Linux the minimize, maximize and close buttons come from Electron's `titleBarOverlay`. The OS draws them natively over the window's top-right corner, which is also what gives Windows 11 its snap layouts. Nothing in the page can paint over a native layer, so main colours it. The renderer tells main what it needs over the privileged `window:applyChrome` channel: the resolved theme, and whether a dialog is dimming the page. Every dialog's backdrop is the `Backdrop` atom, which counts itself in `WindowChromeStore` while it is mounted. While that count is above zero, main mixes the backdrop's colour and opacity over the strip and its symbols (`electron/window_chrome.ts`), so the controls dim with everything else. The opacity is 80% `#09090b` in dark and 40% `#3a3026` in light. The atom and `window_chrome.ts` hold the same values, so a change to the backdrop must be made in both. On macOS the traffic lights are coloured by the OS and are not dimmed.
+
+```text
+dialog opens -> <Backdrop /> mounts -> backdrops: 1 -> applyChrome({ dark, dimmed: true })
+             -> main: setTitleBarOverlay({ color: "#0c0c0e", symbolColor: "#39393b" })   (dark)
+```
+
 ## Resource Model
 
 APIWeave is a local-first app built around seven stored resource types, organized into workspaces. Every resource lives in the local SQLite database on your machine. A **workspace** is the container for your workflows, environments, projects, and presets; a personal workspace is created for you, and you can create more, or open one from a git repository. A workspace can be tracked in a local git repository, one commit per change, and connected to a remote that the app fetches from and pushes to as part of each sync cycle — see [Keep Tests in a Git Repository](../guides/git-workflows.md) and the [roadmap](../../ROADMAP.md).

@@ -159,12 +159,12 @@ export function createCanvasCommandRegistry(
       run: actions.toggleSnapToGrid,
     },
     {
-      id: "canvas.focus-mode",
-      title: "Focus selected node",
+      id: "canvas.edit-node",
+      title: "Edit selected node",
       group: "Canvas",
-      keywords: ["focus", "node", "inspect", "full screen"],
+      keywords: ["edit", "open", "node", "inspect", "details", "focus"],
       when: () => actions.isHydrated,
-      run: actions.focusMode,
+      run: actions.editSelectedNode,
     },
     {
       id: "help.tutorials",

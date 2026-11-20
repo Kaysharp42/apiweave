@@ -9,6 +9,7 @@ import {
 } from "react";
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from "lucide-react";
 import { Dialog, Transition, TransitionChild } from "@headlessui/react";
+import { Backdrop } from "./atoms/Backdrop";
 import { Button } from "./atoms/Button";
 import { BeautifyButton } from "./molecules/BeautifyButton";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
@@ -793,16 +794,7 @@ export function WorkflowJsonEditor({
   return (
     <Transition key={initialValue} show={open} as={Fragment}>
       <Dialog onClose={requestClose} className="relative z-50">
-        <TransitionChild
-          enter="ease-out duration-200 motion-reduce:transition-none"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-150 motion-reduce:transition-none"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-(--aw-surface)/70 dark:bg-(--aw-surface-dark)/80" />
-        </TransitionChild>
+        <Backdrop />
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <TransitionChild
             enter="ease-out duration-200 motion-reduce:transition-none"

@@ -26,6 +26,7 @@
   - [Call Workflow](#call-workflow)
 - [Reusing a Node Configuration](#reusing-a-node-configuration)
 - [Canvas Actions](#canvas-actions)
+  - [Stepping between nodes in the editor](#stepping-between-nodes-in-the-editor)
   - [Version history](#version-history)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Recommended Build Pattern](#recommended-build-pattern)
@@ -575,6 +576,17 @@ To rerun only part of a workflow after fixing a step, use **Run from here** on a
 
 Failure handling is per node. By default a failed node stops the run along its path; other parallel branches still finish, and the run is marked failed. Turn on a node's **Continue on failure** (in its Settings tab) to let the run carry on past that node; the run is still marked failed.
 
+### Stepping between nodes in the editor
+
+The node editor's title bar has **Previous** at its left edge and **Next** at its right, so you can walk a workflow without closing one node to open the next. Hover a button to see where it goes: the node's name and what it does, such as `Next: Click · click getByRole('button', { name: 'Save' })` or `Next: Get user · GET /users/{{variables.id}}`.
+
+- **Next** follows the node's outgoing edges. When there are several (an Assertion's pass and fail, a fan-out), the button shows a branch icon and a count, and pressing it opens a numbered picker. Pass and ready branches are listed first, fail branches last, and the branch the last run took is highlighted, so pressing **Next** again takes it. Following a run through the editor is `→ → → …`.
+- **Previous** goes back the way you came. With nothing to go back through (you opened the editor on this node), it follows the incoming edges, and a Merge offers each of its inputs.
+- Start, End, frames and notes are never stepped to.
+- In the picker, `↑`/`↓` move, `1`–`9` pick a row, `Enter` takes the highlighted one, and `Escape` closes the picker without closing the editor.
+
+Each step applies your edits to the node you leave, the way closing does. The editor keeps its layout across steps: a hidden Response pane stays hidden, the split keeps its width, and each node type stays on the tab you last chose for it. When you close the editor, the canvas selects and centres the node you ended on. **Edit selected node** in the command palette (`Ctrl+K`) opens the editor on the selected node.
+
 ### Version history
 
 Undo (`Ctrl+Z`) covers the edits on the canvas since it opened. **Version history**
@@ -652,6 +664,8 @@ On macOS every `Ctrl` shortcut below uses `⌘` instead, except `Ctrl+Tab` and `
 | `Ctrl+G` | Group the selected nodes in a frame |
 | `Ctrl+Shift+G` | Ungroup the selected frame |
 | `Ctrl+Shift+Arrow` | Select the nearest node in that direction |
+| `←` / `→` | In the node editor, step to the previous / next node (when focus is not in a text field) |
+| `Alt+←` / `Alt+→` | In the node editor, step to the previous / next node, from anywhere including text fields |
 
 The copy and paste shortcuts are context-aware. When the cursor is inside a text editor (request body, response view, or any field in a node modal), normal text copy and paste take precedence.
 

@@ -22,7 +22,7 @@ function createActions(overrides: Partial<Parameters<typeof createCanvasCommandR
     ungroup: vi.fn(),
     toggleLock: vi.fn(),
     toggleSnapToGrid: vi.fn(),
-    focusMode: vi.fn(),
+    editSelectedNode: vi.fn(),
     addNode: vi.fn(),
     ...overrides,
   };

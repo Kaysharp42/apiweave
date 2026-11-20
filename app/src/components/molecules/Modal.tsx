@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { X } from "lucide-react";
+import { Backdrop } from "../atoms/Backdrop";
 import type { ModalInternalProps } from "../../types";
 
 export function Modal({
@@ -34,20 +35,7 @@ export function Modal({
         onClose={onClose}
         {...(initialFocus && { initialFocus })}
       >
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-200 motion-reduce:transition-none"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-150 motion-reduce:transition-none"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div
-            className="fixed inset-0 bg-text-primary/40 dark:bg-surface-dark/80"
-            aria-hidden="true"
-          />
-        </Transition.Child>
+        <Backdrop />
 
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Transition.Child

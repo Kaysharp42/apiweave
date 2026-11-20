@@ -145,6 +145,20 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
     description: "Select the node to the right",
     chords: [{ key: "arrowright", modifier: "mod", shift: true }],
   },
+  // The bare arrow belongs to a text field while one has focus; the Alt chord
+  // works from inside one too. See NodeStepButton.
+  {
+    action: "previousNode",
+    group: "Node editor",
+    description: "Previous node",
+    chords: [{ key: "arrowleft" }, { key: "arrowleft", alt: true }],
+  },
+  {
+    action: "nextNode",
+    group: "Node editor",
+    description: "Next node (pick a branch at a fork)",
+    chords: [{ key: "arrowright" }, { key: "arrowright", alt: true }],
+  },
 ];
 
 /** Read per call rather than at load, so a test can stand in for macOS. */
@@ -185,7 +199,9 @@ function eventKey(event: KeyboardEvent): string | undefined {
 }
 
 function chordMatches(event: KeyboardEvent, chord: KeyChord): boolean {
-  if (event.altKey || eventKey(event) !== chord.key) return false;
+  if (Boolean(event.altKey) !== Boolean(chord.alt) || eventKey(event) !== chord.key) {
+    return false;
+  }
   // "?" already took Shift to type; its key value says so.
   const shiftMatches =
     chord.key === "?" || Boolean(event.shiftKey) === Boolean(chord.shift);
@@ -216,6 +232,7 @@ export function chordKeys(chord: KeyChord): string[] {
   const keys: string[] = [];
   if (chord.modifier === "mod") keys.push(isMac() ? "⌘" : "Ctrl");
   if (chord.modifier === "ctrl") keys.push(isMac() ? "⌃" : "Ctrl");
+  if (chord.alt) keys.push(isMac() ? "⌥" : "Alt");
   if (chord.shift) keys.push(isMac() ? "⇧" : "Shift");
   keys.push(KEY_NAMES[chord.key] ?? chord.key.toUpperCase());
   return keys;

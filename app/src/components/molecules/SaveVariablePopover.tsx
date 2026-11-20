@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
+import { usePopoverDismiss } from "../../hooks/usePopoverDismiss";
 import {
   INVALID_VARIABLE_NAME_MESSAGE,
   isValidVariableName,
@@ -86,24 +87,16 @@ export function SaveVariablePopover({
     inputRef.current?.select();
   }, []);
 
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) onCancel();
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onCancel();
-      }
-    };
-
-    document.addEventListener("mousedown", handlePointerDown, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [onCancel]);
+  usePopoverDismiss({
+    active: true,
+    rootRef: containerRef,
+    onOutsidePress: onCancel,
+    onKeyDown: (event) => {
+      if (event.key !== "Escape") return false;
+      onCancel();
+      return true;
+    },
+  });
 
   const trimmedName = name.trim();
   const { error, overwrites } = validateVariableName(

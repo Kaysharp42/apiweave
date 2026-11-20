@@ -18,7 +18,7 @@ function enterDesktopShell() {
   const w = window as unknown as DesktopWindow;
   w.__APIWEAVE_IPC__ = stubbedIpc ?? {};
   w.__APIWEAVE_DESKTOP__ = {
-    applyTheme: () => Promise.resolve(),
+    applyChrome: () => Promise.resolve(),
   };
 }
 

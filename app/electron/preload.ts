@@ -19,6 +19,7 @@ import type { BrowserBridge } from "@shared/types/BrowserBridge"
 import type { BrowserRecordingEvent } from "@shared/types/BrowserRecordingEvent"
 import type { GitBridge } from "@shared/types/GitBridge"
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
+import type { WindowChromeState } from "@shared/types/WindowChromeState"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import {
@@ -110,8 +111,8 @@ contextBridge.exposeInMainWorld("__APIWEAVE_IPC__", ipcBridge)
 type DesktopBridge = {
   /** `process.platform` — the renderer uses it to sit clear of macOS traffic lights. */
   readonly platform: string
-  /** Repaint the window background and native title-bar controls for a theme. */
-  readonly applyTheme: (dark: boolean) => Promise<void>
+  /** Repaint the window background and native title-bar controls: theme, and dimmed under a dialog. */
+  readonly applyChrome: (state: WindowChromeState) => Promise<void>
   /** True when main detected assistive technology — see `screenReaderArgs` there. */
   readonly screenReader: boolean
   /**
@@ -126,7 +127,7 @@ type DesktopBridge = {
 
 const desktopBridge: DesktopBridge = {
   platform: process.platform,
-  applyTheme: (dark) => ipcRenderer.invoke("window:applyTheme", dark) as Promise<void>,
+  applyChrome: (state) => ipcRenderer.invoke("window:applyChrome", state) as Promise<void>,
   screenReader: process.argv.includes(SCREEN_READER_ARG),
   onCloseRequested: (handler) => {
     const listener = (): void => {

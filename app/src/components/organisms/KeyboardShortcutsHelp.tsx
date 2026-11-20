@@ -12,6 +12,7 @@ const GROUPS: ReadonlyArray<KeyboardShortcut["group"]> = [
   "Tabs",
   "Panels",
   "Canvas",
+  "Node editor",
 ];
 
 export function KeyboardShortcutsHelp({

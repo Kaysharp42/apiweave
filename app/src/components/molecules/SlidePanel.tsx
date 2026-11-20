@@ -1,5 +1,6 @@
 import { Dialog, Transition, TransitionChild } from "@headlessui/react";
 import { X } from "lucide-react";
+import { Backdrop } from "../atoms/Backdrop";
 import { IconButton } from "../atoms/IconButton";
 import type { SlidePanelProps } from "../../types";
 
@@ -25,16 +26,7 @@ export function SlidePanel({
   return (
     <Transition show={open}>
       <Dialog onClose={onClose} className="relative z-50">
-        <TransitionChild
-          enter="transition-opacity duration-200 ease-out motion-reduce:transition-none"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="transition-opacity duration-150 ease-in motion-reduce:transition-none"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-text-primary/30 dark:bg-surface-dark/80" />
-        </TransitionChild>
+        <Backdrop />
 
         <div className="fixed inset-0 overflow-hidden">
           <div

@@ -15,6 +15,7 @@ import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
+import useWindowChromeStore from "./stores/WindowChromeStore";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { AgentWorkspaceRepositoryPrompt } from "./components/organisms/AgentWorkspaceRepositoryPrompt";
@@ -285,13 +286,20 @@ function App() {
     } catch {
       // ignore
     }
-    // The window background and native window-control overlay are painted by
-    // main, which cannot read this preference; tell it so a theme flip repaints
-    // them together with the page rather than at the next launch. `darkMode` is
-    // the resolved theme, so this also fires when the OS setting flips under a
-    // `system` preference.
-    void desktop.applyTheme(darkMode).catch(() => undefined);
   }, [darkMode]);
+
+  // The window background and native window-control overlay are painted by
+  // main, which cannot read the theme preference or see a dialog's backdrop;
+  // tell it, so a theme flip repaints them with the page rather than at the
+  // next launch, and a dialog dims the controls with everything else.
+  // `darkMode` is the resolved theme, so this also fires when the OS setting
+  // flips under a `system` preference.
+  const windowDimmed = useWindowChromeStore((s) => s.backdrops > 0);
+  useEffect(() => {
+    void desktop
+      .applyChrome({ dark: darkMode, dimmed: windowDimmed })
+      .catch(() => undefined);
+  }, [darkMode, windowDimmed]);
 
   // Traffic lights sit inside the top-left of the header on macOS; the stylesheet
   // pads the chrome clear of them. Set once — the platform cannot change while

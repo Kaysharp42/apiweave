@@ -7,4 +7,5 @@ export interface KeyChord {
   key: string;
   modifier?: "mod" | "ctrl";
   shift?: boolean;
+  alt?: boolean;
 }

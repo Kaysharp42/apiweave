@@ -75,6 +75,7 @@ function renderModal(node: NodeModalNode, outputs: Readonly<Record<string, unkno
         onClose={vi.fn()}
         onSave={vi.fn()}
         onSaveWorkflow={vi.fn()}
+        steps={{ previous: [], next: [], arrivedBy: null, onStep: vi.fn() }}
         workspaceId="ws-1"
         currentWorkflowId="wf-1"
         getNodeOutput={getNodeOutput}

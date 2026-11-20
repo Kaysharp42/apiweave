@@ -126,8 +126,8 @@ import {
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
 import type { FocusDirection } from "../types/FocusDirection";
-import type { FocusModeDirection } from "../types/FocusModeDirection";
-import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
+import { isEditableNode } from "../utils/nodeNavigation";
+import { useNodeEditorWalk } from "../hooks/useNodeEditorWalk";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { grpcCallType, reconcileGrpcStreamEdges } from "../utils/grpcStreamEdges";
 import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Wand2 } from "lucide-react";
@@ -447,8 +447,12 @@ function WorkflowCanvas({
     },
     [reactFlowInstanceRef],
   );
-  const [modalNode, setModalNode] =
-    useState<Node<WorkflowCanvasNodeData> | null>(null);
+  const {
+    modalNode,
+    steps: nodeEditorSteps,
+    openNodeEditor,
+    closeNodeEditor,
+  } = useNodeEditorWalk(nodes, edges);
   const [showHistory, setShowHistory] = useState(false);
   const [showLoadDialog, setShowLoadDialog] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
@@ -460,7 +464,6 @@ function WorkflowCanvas({
   const [nodeContextMenu, setNodeContextMenu] =
     useState<CanvasNodeContextMenuState | null>(null);
   const [stepMenu, setStepMenu] = useState<StepContextMenuState | null>(null);
-  const [isFocusMode, setIsFocusMode] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
   // CanvasStore) because only the canvas can resolve a nodeId to its live
@@ -985,12 +988,9 @@ function WorkflowCanvas({
       }
       // Frames and notes are canvas objects: a double-click renames them in
       // place (see `GroupNode`/`NoteNode`), it does not open a step editor.
-      if (isEditableNode(node)) {
-        setIsFocusMode(false);
-        setModalNode(node);
-      }
+      if (isEditableNode(node)) openNodeEditor(node);
     },
-    [],
+    [openNodeEditor],
   );
 
   /**
@@ -1190,32 +1190,21 @@ function WorkflowCanvas({
     setNodes(ungroupFrames(current, frames));
   }, [setNodes]);
 
-  const openFocusMode = useCallback(() => {
+  const editSelectedNode = useCallback(() => {
     const node =
       selectedNodeRef.current ?? nodesRef.current.find((item) => item.selected);
     if (!node || !isEditableNode(node)) {
-      toast.info("Select an editable node to enter focus mode");
+      toast.info("Select an editable node to edit it");
       return;
     }
-    setIsFocusMode(true);
-    setModalNode(node);
-  }, []);
+    openNodeEditor(node);
+  }, [openNodeEditor]);
 
-  const stepFocusMode = useCallback(
-    (direction: FocusModeDirection) => {
-      if (!modalNode) return;
-      const targetId = adjacentFocusModeNode(
-        nodesRef.current,
-        edgesRef.current,
-        modalNode.id,
-        direction,
-      );
-      if (!targetId) return;
-      const target = nodesRef.current.find((node) => node.id === targetId);
-      if (target) setModalNode(target);
-    },
-    [modalNode],
-  );
+  /** After a walk, the canvas shows where it ended rather than where it began. */
+  const handleNodeEditorClose = useCallback(() => {
+    const endedOn = closeNodeEditor();
+    if (endedOn !== null) selectAndFrame(endedOn);
+  }, [closeNodeEditor, selectAndFrame]);
 
   /**
    * ReactFlow's own delete pass adds every child of a deleted parent
@@ -1952,7 +1941,7 @@ function WorkflowCanvas({
           useCanvasPrefsStore
             .getState()
             .setCanvasPrefs({ snapToGrid: !canvasPrefs.snapToGrid }),
-        focusMode: openFocusMode,
+        editSelectedNode,
         addNode: addCommandNode,
       }),
     [
@@ -1970,20 +1959,12 @@ function WorkflowCanvas({
       redo,
       runWorkflow,
       saveWorkflow,
-      openFocusMode,
+      editSelectedNode,
       undo,
       ungroupSelected,
     ],
   );
 
-  const previousFocusTarget =
-    isFocusMode && modalNode
-      ? adjacentFocusModeNode(nodes, edges, modalNode.id, "previous")
-      : null;
-  const nextFocusTarget =
-    isFocusMode && modalNode
-      ? adjacentFocusModeNode(nodes, edges, modalNode.id, "next")
-      : null;
 
   /*
    * The camera moves during a run, and only during a run — see `useRunCamera`.
@@ -2359,7 +2340,6 @@ function WorkflowCanvas({
       {modalNode && (
         <Suspense fallback={null}>
           <NodeModal
-            key={modalNode.id}
             open={true}
             node={{
               ...modalNode,
@@ -2382,16 +2362,8 @@ function WorkflowCanvas({
                   (modalNode.data.config as Record<string, unknown>) || {},
               },
             }}
-            onClose={() => {
-              setIsFocusMode(false);
-              setModalNode(null);
-            }}
-            {...(previousFocusTarget
-              ? { onPrevious: () => stepFocusMode("previous") }
-              : {})}
-            {...(nextFocusTarget
-              ? { onNext: () => stepFocusMode("next") }
-              : {})}
+            onClose={handleNodeEditorClose}
+            steps={nodeEditorSteps}
             onSave={(node) =>
               handleModalSave(node as Node<WorkflowCanvasNodeData>)
             }
