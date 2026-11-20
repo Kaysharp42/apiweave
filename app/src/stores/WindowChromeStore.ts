@@ -10,12 +10,38 @@ interface WindowChromeState {
    */
   headerOwnsChrome: boolean;
   setHeaderOwnsChrome: (owns: boolean) => void;
+  /**
+   * How many dialog backdrops are on screen. A count, not a flag: a confirm
+   * can open over a dialog, and closing it must not undim the one beneath.
+   */
+  backdrops: number;
+  addBackdrop: () => void;
+  removeBackdrop: () => void;
 }
 
 const useWindowChromeStore = create<WindowChromeState>()((set) => ({
   headerOwnsChrome: false,
   setHeaderOwnsChrome: (owns: boolean) => set({ headerOwnsChrome: owns }),
+  backdrops: 0,
+  addBackdrop: () => set((state) => ({ backdrops: state.backdrops + 1 })),
+  removeBackdrop: () =>
+    set((state) => ({ backdrops: Math.max(0, state.backdrops - 1) })),
 }));
+
+/**
+ * Counts the calling backdrop as dimming the page while it is mounted. The
+ * native window controls sit above the page, where no backdrop reaches, so
+ * the app asks main to dim them too while any backdrop is up.
+ */
+export function useDimsWindow(): void {
+  const addBackdrop = useWindowChromeStore((s) => s.addBackdrop);
+  const removeBackdrop = useWindowChromeStore((s) => s.removeBackdrop);
+
+  useEffect(() => {
+    addBackdrop();
+    return removeBackdrop;
+  }, [addBackdrop, removeBackdrop]);
+}
 
 /**
  * Claims the window chrome for the calling header while it is mounted.

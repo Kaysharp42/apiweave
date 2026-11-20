@@ -110,6 +110,13 @@ import { installMcpLauncher } from "./mcp_launcher"
 import { registerAgentConnectionHandlers } from "./mcp_agent_connections"
 import { MCP_CATALOG_FILE, MCP_TOKEN_FILE } from "../core/mcp/launcher/contract"
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
+import type { WindowChromeState } from "@shared/types/WindowChromeState"
+import {
+  isWindowChromeState,
+  overlayColors,
+  TITLE_BAR_HEIGHT,
+  windowColors,
+} from "./window_chrome"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 import type { AppInfo } from "@shared/types/AppInfo"
@@ -306,39 +313,15 @@ function installApplicationMenu(): void {
 }
 
 /**
- * The window's own colours, mirrored from the renderer's surface tokens: the
- * page background (`--aw-surface`) and the header the native window controls
- * sit in (`--aw-surface-raised` / `--aw-text-primary`). Kept as literals because
- * main cannot read a CSS variable, and a mismatch is visible as a flash of the
- * wrong colour while the window paints.
+ * Paint what the page cannot: the window background for the renderer's theme,
+ * and the native controls, dimmed with the page under a dialog. The overlay is
+ * Windows/Linux only: macOS shows its traffic lights, which the OS colours.
  */
-const WINDOW_COLORS = {
-  dark: { background: "#09090b", titleBar: "#18181b", symbols: "#fafafa" },
-  light: { background: "#fbf8f3", titleBar: "#fdfbf7", symbols: "#3a3026" },
-} as const
-
-/** `h-header` in index.css — the native overlay is exactly as tall as the bar it covers. */
-const TITLE_BAR_HEIGHT = 48
-
-function windowColors(dark: boolean): (typeof WINDOW_COLORS)[keyof typeof WINDOW_COLORS] {
-  return dark ? WINDOW_COLORS.dark : WINDOW_COLORS.light
-}
-
-/**
- * Paint the window to match the theme the renderer just switched to. The
- * overlay is Windows/Linux only: macOS shows its traffic lights, which the OS
- * colours itself.
- */
-function applyWindowTheme(win: BrowserWindow, dark: boolean): void {
+function applyWindowChrome(win: BrowserWindow, state: WindowChromeState): void {
   if (win.isDestroyed()) return
-  const colors = windowColors(dark)
-  win.setBackgroundColor(colors.background)
+  win.setBackgroundColor(windowColors(state.dark).background)
   if (process.platform !== "darwin") {
-    win.setTitleBarOverlay({
-      color: colors.titleBar,
-      symbolColor: colors.symbols,
-      height: TITLE_BAR_HEIGHT,
-    })
+    win.setTitleBarOverlay({ ...overlayColors(state), height: TITLE_BAR_HEIGHT })
   }
 }
 
@@ -804,16 +787,18 @@ if (!hasSingleInstanceLock) {
         return handler(...args)
       }
     }
-    // The renderer's theme lives in localStorage, which main cannot read. Its
-    // dark-mode effect calls this instead, so a theme flip repaints the native
-    // controls with the page rather than at the next launch. Registered once
-    // here, not per window: `ipcMain.handle` throws on a second registration,
-    // and a window hidden to the tray can be recreated after it was closed.
+    // The renderer's theme lives in localStorage, which main cannot read, and
+    // only the renderer knows when a dialog dims the page. It calls this on
+    // either change, so the native controls repaint with the page rather than
+    // at the next launch, and dim under a dialog's backdrop with everything
+    // else. Registered once here, not per window: `ipcMain.handle` throws on a
+    // second registration, and a window hidden to the tray can be recreated
+    // after it was closed.
     ipcMain.handle(
-      "window:applyTheme",
-      requireTrustedSender((dark: unknown): void => {
-        if (typeof dark !== "boolean" || mainWindow === null) return
-        applyWindowTheme(mainWindow, dark)
+      "window:applyChrome",
+      requireTrustedSender((state: unknown): void => {
+        if (!isWindowChromeState(state) || mainWindow === null) return
+        applyWindowChrome(mainWindow, state)
       }),
     )
     ipcMain.handle("mcp:getStatus", requireTrustedSender(() => mcpStatus()))

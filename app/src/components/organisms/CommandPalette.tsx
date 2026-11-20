@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Combobox, Dialog, DialogPanel } from "@headlessui/react";
 import { Command, Search, Waypoints, Workflow as WorkflowIcon } from "lucide-react";
 import { toast } from "sonner";
+import { Backdrop } from "../atoms/Backdrop";
 import { Input } from "../atoms/Input";
 import { HighlightedText } from "../atoms/HighlightedText";
 import { Kbd } from "../atoms/Kbd";
@@ -178,10 +179,7 @@ export function CommandPalette({
 
   return (
     <Dialog open={open} onClose={onClose} className="relative z-50">
-      <div
-        className="fixed inset-0 bg-text-primary/40 dark:bg-surface-dark/80"
-        aria-hidden="true"
-      />
+      <Backdrop />
       <div className="fixed inset-0 flex items-start justify-center p-4 pt-[12vh]">
         <DialogPanel className="w-full max-w-xl overflow-hidden rounded-xs border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised">
           <Combobox<CommandPaletteItem | null> onChange={selectItem}>

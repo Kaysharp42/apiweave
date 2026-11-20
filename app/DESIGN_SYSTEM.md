@@ -234,6 +234,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | `Skeleton`   | `atoms/Skeleton.tsx`   | Loading placeholder with `variant` (text/circle/rect).                                                                   |
 | `Divider`    | `atoms/Divider.tsx`    | Horizontal/vertical divider line.                                                                                        |
 | `Tooltip`    | `atoms/Tooltip.tsx`    | Hover/focus tooltip on Floating UI.                                                                                      |
+| `Backdrop`   | `atoms/Backdrop.tsx`   | The veil behind every dialog, inside its `Dialog`. Fades with it and dims the native window controls while mounted.      |
 
 ### Molecules
 
@@ -350,6 +351,7 @@ app/
 │       │   ├── Skeleton.tsx       — Loading placeholder
 │       │   ├── Divider.tsx        — Divider line
 │       │   ├── Tooltip.tsx        — Tooltip wrapper
+│       │   ├── Backdrop.tsx       — Dialog backdrop; dims the native window controls
 │       │   ├── flow/
 │       │   │   ├── BaseNode.tsx       — Shared node shell
 │       │   │   ├── NodeHandle.tsx     — Connection handle
