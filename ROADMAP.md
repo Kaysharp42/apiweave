@@ -59,6 +59,15 @@ repositories after signing in, **GitHub profile pictures** in the accounts
 menu, and a release pipeline ready for macOS Developer ID and Windows code
 signing. The 1.0.0 installers themselves are unsigned.
 
+**1.1 (v1.1.0):** **browser steps** recorded, run and repaired in a real
+Chrome, Edge or Playwright Chromium, with pass-or-fail evidence agents can read
+and `--evidence-dir` files for CI reports; **gRPC** (unary and
+server-streaming), **WebSocket**, **SOAP/XML with WSDL import** and
+**JSON-RPC** nodes; **snapshot assertions**; **RFC 9535 JSONPath** and **XPath**
+paths; **for-each on Call Workflow**; **load runs** in the app and the CLI with
+percentile thresholds; **contract checks** against imported OpenAPI schemas;
+and a nine-chapter, 35-lesson tutorial set.
+
 ## Next
 
 - **Signed desktop builds.** Ship installers signed with an Apple Developer ID
