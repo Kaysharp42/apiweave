@@ -9,7 +9,7 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] — 2026-11-20
 
 ### Added
 
@@ -1896,6 +1896,7 @@ clean install. There is no automatic upgrade path from the retired stack. See
 [Installation](docs/getting-started/installation.md) and
 [Architecture](docs/reference/architecture.md) for the current product.
 
+[1.1.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v1.0.0
 [0.22.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Kaysharp42/apiweave/releases/tag/v0.21.0
