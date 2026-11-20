@@ -24,6 +24,10 @@ const nodeModalShellSource = readFileSync(
   join(process.cwd(), "src/components/node-modal/NodeModalShell.tsx"),
   "utf8",
 );
+const nodeModalTitleBarSource = readFileSync(
+  join(process.cwd(), "src/components/node-modal/NodeModalTitleBar.tsx"),
+  "utf8",
+);
 const nodeOutputSource = readFileSync(
   join(process.cwd(), "src/components/node-modal/NodeOutputPanel.tsx"),
   "utf8",
@@ -35,12 +39,12 @@ const badgeSource = readFileSync(
 
 test("NodeModal uses the Modal molecule for focus trapping and Escape key handling", () => {
   assert.match(
-    nodeModalShellSource,
-    /import \{ Modal \} from ["']\.\.\/molecules\/Modal["']/,
+    nodeModalSource,
+    /import \{ Modal \} from ["']\.\/molecules\/Modal["']/,
   );
-  assert.match(nodeModalShellSource, /<Modal/);
-  assert.match(nodeModalShellSource, /isOpen=\{open\}/);
-  assert.match(nodeModalShellSource, /onClose=\{onClose\}/);
+  assert.match(nodeModalSource, /<Modal/);
+  assert.match(nodeModalSource, /isOpen=\{open\}/);
+  assert.match(nodeModalSource, /onClose=\{\(\) => editorRef\.current\?\.close\(\)\}/);
   assert.match(nodeModalSource, /<NodeModalShell/);
   assert.match(nodeModalSource, /onClose=\{handleClose\}/);
 });
@@ -168,11 +172,12 @@ test("HTTPRequestConfigPanel uses the BeautifyButton request body editor", () =>
 
 test("NodeModal restores the compact node name section", () => {
   assert.match(nodeModalSource, /<NodeModalShell/);
-  assert.match(nodeModalShellSource, /<Dialog\.Title/);
-  assert.match(nodeModalShellSource, /aria-label="Node name"/);
-  assert.match(nodeModalShellSource, /placeholder="Enter node name"/);
-  assert.doesNotMatch(nodeModalShellSource, /Node ID/);
-  assert.doesNotMatch(nodeModalShellSource, /Use a short action label/);
+  assert.match(nodeModalShellSource, /<NodeModalTitleBar/);
+  assert.match(nodeModalTitleBarSource, /<Dialog\.Title/);
+  assert.match(nodeModalTitleBarSource, /aria-label="Node name"/);
+  assert.match(nodeModalTitleBarSource, /placeholder="Enter node name"/);
+  assert.doesNotMatch(nodeModalTitleBarSource, /Node ID/);
+  assert.doesNotMatch(nodeModalTitleBarSource, /Use a short action label/);
 });
 
 test("HttpRequestOutputPanel mounts ResponseInspector when output exists", () => {
@@ -232,18 +237,15 @@ test("NodeModal types are barrel-exported from types/index.ts", () => {
 });
 
 test("NodeModal uses Modal molecule with focus trapping", () => {
-  assert.match(nodeModalShellSource, /<Modal/);
-  assert.match(nodeModalShellSource, /isOpen=\{open\}/);
-  assert.match(nodeModalShellSource, /onClose=\{onClose\}/);
-  assert.match(
-    nodeModalShellSource,
-    /\{\.\.\.\(initialFocus && \{ initialFocus \}\)\}/,
-  );
+  assert.doesNotMatch(nodeModalShellSource, /<Modal/);
   assert.match(
     nodeModalSource,
     /const nameLabelRef = useRef<HTMLElement \| null>\(null\)/,
   );
   assert.match(nodeModalSource, /initialFocus=\{nameLabelRef\}/);
+  // The editor outlives a step; only the shell's per-node parts are keyed.
+  assert.doesNotMatch(nodeModalSource, /key=\{editor\.node\.id\}/);
+  assert.match(nodeModalShellSource, /key=\{nodeId\}/);
 });
 
 test("NodeModal uses CSS variable tokens for colors", () => {

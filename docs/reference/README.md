@@ -9,6 +9,7 @@ None. Reference docs assume you already know what you are looking for. If you ar
 ## Architecture
 
 - [Architecture](architecture.md): the components (renderer, Electron main process, IPC handler registry, repositories, runner, MCP bridge, embedded SQLite), and how a workflow run moves through them.
+- [Node Editor Internals](node-editor.md): how the node editor's dialog is layered, how Previous/Next pick their targets, and the rendering rules that keep a step from flashing.
 
 ## Placeholders and Functions
 
