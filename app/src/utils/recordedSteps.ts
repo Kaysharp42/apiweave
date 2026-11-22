@@ -3,7 +3,7 @@ import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
 import type { RecordingPlacement } from "../types/RecordingPlacement";
-import { BROWSER_ACTIONS } from "./browserStep";
+import { browserActionLabel } from "@shared/browser/browser_action_labels";
 import { absoluteNodePosition, FRAME_NODE_TYPE, GROUP_PAD } from "./canvasGroups";
 
 /** Steps per row inside a recording's frame, so a long recording wraps instead of running off the canvas. */
@@ -17,7 +17,7 @@ const FRAME_OFFSET_Y = 200;
 
 /** The step's title on the canvas: the action's name, as the palette names it. */
 export function recordedStepLabel(action: string): string {
-  return BROWSER_ACTIONS.find((entry) => entry.value === action)?.label ?? "Browser step";
+  return browserActionLabel(action);
 }
 
 function frameSize(count: number): { width: number; height: number } {

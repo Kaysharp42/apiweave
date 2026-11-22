@@ -112,7 +112,9 @@ const WORKFLOW_AUTHORING = `# Nodes and edges
 
 ## Node types
 
-Every node is \`{ nodeId, type, config?, label?, position? }\`. \`position\` is
+Every node is \`{ nodeId, type, config?, label?, position? }\`. \`label\` is the
+name the canvas shows — set it on every node you add; a browser node without
+one is named after its action. \`position\` is
 canvas layout only — execution order comes from the edges, never from position
 or array order. The write tools advertise \`config\` as an open object:
 \`workflows_nodeSchema\` returns one type's config fields as JSON Schema, and a
@@ -314,7 +316,8 @@ its complete node, its edges kept:
 
 \`\`\`json
 { "removeNodeIds": ["fill-email"], "upsertNodes": [
-  { "nodeId": "fill-email", "type": "browser", "position": { "x": 220, "y": 0 },
+  { "nodeId": "fill-email", "type": "browser", "label": "Type into a field",
+    "position": { "x": 220, "y": 0 },
     "config": { "action": "fill",
                 "locator": { "kind": "label", "value": "Email address" },
                 "value": "{{secrets.EMAIL}}" } }] }
