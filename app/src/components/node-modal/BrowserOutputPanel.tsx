@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
 import { Accessibility, Camera, FileText, Scale } from "lucide-react";
+import { BrowserScreenshot } from "../molecules/BrowserScreenshot";
 import { Card } from "../molecules/Card";
 import { DetailField } from "../molecules/DetailField";
 import { EmptyState } from "../molecules/EmptyState";
 import { StatusBadge } from "../molecules/StatusBadge";
-import { Spinner } from "../atoms/Spinner";
-import { apiweave, IpcError } from "../../utils/apiweaveClient";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import type { BrowserOutputPanelProps, StatusBadgeProps } from "../../types";
 
@@ -21,39 +19,6 @@ const AccessibilityCardIcon = createCardIcon(Accessibility);
 
 function normalizeStatus(status: string): StatusBadgeProps["status"] {
   return status === "running" || status === "success" || status === "error" || status === "warning" ? status : "idle";
-}
-
-/** The step's screenshot, read from the run's artifacts when the pane shows it. */
-function Screenshot({ workspaceId, artifactId }: { workspaceId: string; artifactId: string }) {
-  const [source, setSource] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setSource(null);
-    setError(null);
-    apiweave.runs
-      .getArtifact(workspaceId, artifactId)
-      .then((artifact) => {
-        if (!cancelled) setSource(`data:${artifact.mime};base64,${artifact.base64}`);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof IpcError ? cause.message : "The screenshot could not be loaded.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workspaceId, artifactId]);
-
-  if (error !== null) return <p className="text-sm text-text-secondary dark:text-text-secondary-dark">{error}</p>;
-  if (source === null) return <Spinner size="sm" />;
-  return (
-    <img
-      src={source}
-      alt="The page after the step ran. Password fields are painted over."
-      className="w-full rounded-xs border border-border dark:border-border-dark"
-    />
-  );
 }
 
 /** A browser step's result: what it compared, where the page was, and on failure what the page looked like. */
@@ -103,7 +68,7 @@ export function BrowserOutputPanel({ output, executionStatus = "idle", workspace
 
           {screenshotId !== undefined && workspaceId ? (
             <Card title="Screenshot" icon={CameraCardIcon}>
-              <Screenshot workspaceId={workspaceId} artifactId={screenshotId} />
+              <BrowserScreenshot workspaceId={workspaceId} artifactId={screenshotId} expandable />
             </Card>
           ) : null}
 

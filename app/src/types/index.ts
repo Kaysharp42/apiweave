@@ -239,6 +239,8 @@ export type { BrowserLocatorEditorProps } from "./BrowserLocatorEditorProps";
 export type { BrowserNodeData } from "./BrowserNodeData";
 export type { BrowserNodeProps } from "./BrowserNodeProps";
 export type { BrowserOutputPanelProps } from "./BrowserOutputPanelProps";
+export type { BrowserScreenshotProps } from "./BrowserScreenshotProps";
+export type { BrowserNodeBodyProps } from "./BrowserNodeBodyProps";
 export type { BrowserStepDraft } from "./BrowserStepDraft";
 export type { NodeModalBrowserTabKey } from "./NodeModalBrowserTabKey";
 export type { GrpcCallType } from "./GrpcCallType";

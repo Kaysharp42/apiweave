@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { Badge } from "../atoms/Badge";
+import { BrowserNodeBody } from "./BrowserNodeBody";
 import { secretNameOf } from "../node-modal/SecretNameField";
 import { useSecretNamesInScope } from "../../hooks/useSecretNamesInScope";
 import { formatDuration } from "../../utils/formatNodeMetrics";
@@ -61,7 +62,8 @@ function BrowserNode({ id, data, selected }: BrowserNodeProps) {
       presetNodeType="browser"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
-      collapsible={false}
+      collapsible={true}
+      defaultExpanded={false}
       typeChip={
         <>
           {needsSecret && (
@@ -78,7 +80,13 @@ function BrowserNode({ id, data, selected }: BrowserNodeProps) {
       metrics={[{ label: "duration", value: formatDuration(data.executionResult?.duration) }]}
       progress={status === "running" ? "indeterminate" : null}
       className="min-w-node-compact"
-    />
+    >
+      {({ isExpanded }) =>
+        isExpanded ? (
+          <BrowserNodeBody nodeId={id} status={status} summary={summary} result={data.executionResult} />
+        ) : null
+      }
+    </BaseNode>
   );
 }
 
