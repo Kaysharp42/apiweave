@@ -155,6 +155,7 @@
   --width-nav-expanded: 146px;
   --width-sidebar-default: 380px;
   --width-node-compact: 200px;
+  --width-node: 320px; /* an expanded node with a screenshot: the HTTP node's max width */
 
   --min-width-nav-collapsed: 44px;
   --min-width-node-compact: 200px;

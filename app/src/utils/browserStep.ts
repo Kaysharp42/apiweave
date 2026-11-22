@@ -2,6 +2,7 @@ import { describeLocator } from "@shared/browser/describe_locator";
 import { BrowserLocatorSchema } from "@shared/zod-schemas/BrowserLocatorSchema";
 import type { BrowserAction } from "@shared/types/BrowserAction";
 import type { BrowserLocator } from "@shared/types/BrowserLocator";
+import type { BrowserStepResult } from "@shared/types/BrowserStepResult";
 import type { BrowserStepDraft } from "../types/BrowserStepDraft";
 
 /** The actions in the order the panel offers them, with the words a user reads. */
@@ -220,4 +221,20 @@ export function browserStepSummary(config: Readonly<Record<string, unknown>> | u
     case "extract":
       return { operation: "save", argument: draft.variable ? `{{variables.${draft.variable}}}` : "a value" };
   }
+}
+
+/**
+ * What a run found on the page, as label/value rows: where it was, and for a
+ * check what it expected and found (for `extract`, the value read).
+ */
+export function browserStepFacts(step: BrowserStepResult | undefined): ReadonlyArray<readonly [string, string]> {
+  if (step === undefined) return [];
+  const facts: Array<readonly [string, string]> = [];
+  if (step.url !== undefined) facts.push(["address", step.url]);
+  if (step.expected !== undefined) {
+    facts.push(["expected", step.expected], ["found", step.actual ?? "nothing: the element was not found"]);
+  } else if (step.actual !== undefined) {
+    facts.push(["value", step.actual]);
+  }
+  return facts;
 }

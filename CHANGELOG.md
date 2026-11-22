@@ -9,6 +9,20 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Expand a browser step on the canvas to see its result.** A browser node
+  now has the expand chevron the HTTP node has. Expanded, it shows the page
+  the last run left behind: the screenshot, the page address, the error, and
+  for a check what it expected and found. Expand several steps to compare
+  their pages side by side; click the screenshot or **Full result** to open
+  the node editor's result pane.
+- **See a browser step's screenshot full size.** In the node editor's result
+  pane, click the screenshot to open it in a dialog fitted to the window.
+  Escape closes it and leaves you in the editor.
+
 ## [1.1.1] — 2026-11-20
 
 ### Added
