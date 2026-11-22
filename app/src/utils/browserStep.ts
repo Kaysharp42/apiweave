@@ -1,25 +1,13 @@
 import { describeLocator } from "@shared/browser/describe_locator";
+import { BROWSER_ACTIONS } from "@shared/browser/browser_action_labels";
 import { BrowserLocatorSchema } from "@shared/zod-schemas/BrowserLocatorSchema";
 import type { BrowserAction } from "@shared/types/BrowserAction";
 import type { BrowserLocator } from "@shared/types/BrowserLocator";
 import type { BrowserStepDraft } from "../types/BrowserStepDraft";
 
-/** The actions in the order the panel offers them, with the words a user reads. */
-export const BROWSER_ACTIONS: readonly { readonly value: BrowserAction; readonly label: string }[] = [
-  { value: "navigate", label: "Open a page" },
-  { value: "click", label: "Click" },
-  { value: "fill", label: "Type into a field" },
-  { value: "press", label: "Press a key" },
-  { value: "select", label: "Choose an option" },
-  { value: "check", label: "Tick a checkbox" },
-  { value: "uncheck", label: "Untick a checkbox" },
-  { value: "hover", label: "Hover" },
-  { value: "expect-visible", label: "Check it is visible" },
-  { value: "expect-text", label: "Check text" },
-  { value: "expect-value", label: "Check a field's value" },
-  { value: "expect-url", label: "Check the page address" },
-  { value: "extract", label: "Save a value" },
-];
+// The panel's action table lives in shared/browser: the write path names an
+// unlabelled browser node from it, so an authored step reads like a recorded one.
+export { BROWSER_ACTIONS };
 
 const MODIFIERS: readonly BrowserStepDraft["modifiers"][number][] = ["Alt", "Control", "ControlOrMeta", "Meta", "Shift"];
 

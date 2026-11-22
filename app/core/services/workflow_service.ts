@@ -30,6 +30,7 @@ import { ZodError } from "zod"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
+import { browserActionLabel } from "@shared/browser/browser_action_labels"
 import { canonicalizeNodeConfig } from "../repositories/helpers"
 import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
@@ -154,6 +155,22 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
 }
 
 /**
+ * A browser node written without a label is named after its action — the same
+ * name the recorder gives a placed step — so an agent-authored step is never
+ * anonymous on the canvas, in a read, or in a run report. Applied to NEW
+ * nodes only: an existing node keeps the label its author chose, including a
+ * cleared one.
+ *
+ * `undefined` means "keep the label as sent"; a string replaces it.
+ */
+function browserStepDefaultLabel(type: unknown, label: unknown, config: unknown): string | undefined {
+  if (type !== "browser") return undefined
+  if (typeof label === "string" && label !== "") return undefined
+  const action = isPlainRecord(config) && typeof config["action"] === "string" ? config["action"] : ""
+  return browserActionLabel(action)
+}
+
+/**
  * Merge node updates field-by-field. Existing nodes retain every omitted field,
  * including nested request configuration and canvas position; adding a node still
  * requires a complete schema-valid definition.
@@ -170,7 +187,9 @@ export function mergeWorkflowNodePatches(
   for (const [upsertIndex, patch] of (upserts ?? []).entries()) {
     const index = indexById.get(patch.nodeId)
     if (index === undefined) {
-      const node = parseUpsertedNode(canonicalizeNodeConfig(patch), upsertIndex, patch.nodeId)
+      const defaulted = browserStepDefaultLabel(patch.type, patch.label, patch.config)
+      const authored = defaulted === undefined ? patch : { ...patch, label: defaulted }
+      const node = parseUpsertedNode(canonicalizeNodeConfig(authored), upsertIndex, patch.nodeId)
       indexById.set(node.nodeId, nodes.length)
       nodes.push(node)
       continue
@@ -264,9 +283,15 @@ export class WorkflowService {
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
     this.assertCallWorkflowTargetsInWorkspace(input.nodes, workspaceId, undefined)
-    const nodes = options?.layout === true && input.nodes !== undefined
-      ? layoutWorkflowNodes(input.nodes, input.edges ?? [])
-      : input.nodes
+    // Every node in a create is new, so an unlabelled browser step is named
+    // after its action here too — the same default a patch upsert gets.
+    const authored = input.nodes?.map((node) => {
+      const defaulted = browserStepDefaultLabel(node.type, node.label, node.config)
+      return defaulted === undefined ? node : { ...node, label: defaulted }
+    })
+    const nodes = options?.layout === true && authored !== undefined
+      ? layoutWorkflowNodes(authored, input.edges ?? [])
+      : authored
     return this.workflows.create({ ...input, workspaceId, ...(nodes !== undefined ? { nodes } : {}) })
   }
 
