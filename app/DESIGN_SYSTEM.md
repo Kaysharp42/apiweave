@@ -249,6 +249,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | `PromptDialog`        | `molecules/PromptDialog.tsx`        | Text input prompt dialog with `title`, `message`, `placeholder`, `submitLabel`.                                             |
 | `EmptyState`          | `molecules/EmptyState.tsx`          | Reusable empty state with `icon`, `title`, `description`, `action`.                                                         |
 | `WorkspaceEmptyState` | `molecules/WorkspaceEmptyState.tsx` | Workspace launch screen: logo, recent workflows, and one primary CTA plus equal-width secondary actions.                    |
+| `BrowserScreenshot`   | `molecules/BrowserScreenshot.tsx`   | A browser step's screenshot, loaded from the run's artifacts; used by the result pane (`expandable`: opens full size) and the expanded canvas node. |
 | `SearchInput`         | `molecules/SearchInput.tsx`         | Search input with icon and clear button.                                                                                    |
 | `KeyValueEditor`      | `molecules/KeyValueEditor.tsx`      | Key-value pair editor for headers, query params, etc.                                                                       |
 | `StatusBadge`         | `molecules/StatusBadge.tsx`         | Unified status indicator for runs, nodes, etc.                                                                              |

@@ -284,7 +284,11 @@ The `diagnosis` member of every graph write can see the called workflows, so it 
 
 ## When a Step Fails
 
-A failed step's error is one value-free sentence starting with `Browser step:` that names the action and the locator as Playwright code, for example `Browser step: the text of getByRole('heading', { name: 'Dashboard' }) did not contain the expected text within 10s`. Page content and resolved values are not in it. The step's result pane carries the evidence, kept for every step, pass or fail, so a passed step's pane shows the same page address, structure and screenshot:
+A failed step's error is one value-free sentence starting with `Browser step:` that names the action and the locator as Playwright code, for example `Browser step: the text of getByRole('heading', { name: 'Dashboard' }) did not contain the expected text within 10s`. Page content and resolved values are not in it.
+
+**On the canvas.** Expand a browser node with the chevron in its header (or **Expand** in its menu) to see the page the last run left behind without opening anything: the screenshot, the page address, the error, and for an `expect-*` step what it expected and what it found (for `extract`, the value read). Expand several steps to read a run's pages side by side. The node keeps showing the latest result while a run is in progress. Click the screenshot, or **Full result**, to open the node editor, whose result pane also has the page structure and Playwright's message.
+
+The step's result pane carries the evidence, kept for every step, pass or fail, so a passed step's pane shows the same page address, structure and screenshot:
 
 | Item | What it holds |
 | --- | --- |
@@ -292,7 +296,7 @@ A failed step's error is one value-free sentence starting with `Browser step:` t
 | Page address and title | Where the page was after the step. The address keeps its path; its query string and fragment are replaced with `<REDACTED>`, because they can carry tokens |
 | Playwright's message | Playwright's own account of the failure: which element matched, which action it waited on |
 | Page structure | The page's ARIA (accessibility) tree, capped at 64 KB — what the page offered to a locator, role by role |
-| Screenshot | A JPEG of the viewport, with password fields, every field a secret was typed into and every element showing a masked value painted over |
+| Screenshot | A JPEG of the viewport, with password fields, every field a secret was typed into and every element showing a masked value painted over. Click it to open it full size, fitted to the window; Escape closes it and returns to the editor |
 | Note | Present when part of the evidence could not be captured, for example when the page was gone before the screenshot |
 
 **Masking.** Secrets and every value typed into a password field are replaced with `<SECRET>` in the stored result, the ARIA snapshot included. The screenshot is taken with every password field painted over, every field a fill typed a secret into — an API key box, say — and every element that shows a masked value painted over too, because an image cannot be masked after it is taken.
