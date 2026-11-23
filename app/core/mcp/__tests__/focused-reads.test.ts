@@ -727,12 +727,12 @@ describe("workspace-wide node search (command palette and agents)", () => {
 })
 
 describe("Phase 2 — compact run history with continuations", () => {
-  async function seedRuns(count: number): Promise<{ workspaceId: string; workflowId: string; runIds: string[] }> {
+  async function seedRuns(count: number): Promise<{ workspaceId: string; workflowId: string; workflowRev: number; runIds: string[] }> {
     const workspaceId = await seedWorkspace()
-    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "history" })
+    const workflow = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", { workspaceId, name: "history" })
     const runIds: string[] = []
     for (let index = 0; index < count; index += 1) {
-      const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+      const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId, workflowRev: workflow.rev })
       runRepository.update(run.runId, {
         status: index % 2 === 0 ? "failed" : "completed",
         results: [{ nodeId: "n0", status: index % 2 === 0 ? "failed" : "passed", duration: index }],
@@ -740,13 +740,13 @@ describe("Phase 2 — compact run history with continuations", () => {
       })
       runIds.push(run.runId)
     }
-    return { workspaceId, workflowId: workflow.workflowId, runIds }
+    return { workspaceId, workflowId: workflow.workflowId, workflowRev: workflow.rev, runIds }
   }
 
   type HistoryPage = { items: Array<Record<string, unknown>>; nextCursor: string | null }
 
   it("returns constant-size rows without per-node results, newest first", async () => {
-    const { workspaceId, workflowId } = await seedRuns(3)
+    const { workspaceId, workflowId, workflowRev } = await seedRuns(3)
     const page = await dispatchOk<HistoryPage>("runs", "history", { workspaceId, workflowId })
 
     expect(page.nextCursor).toBeNull()
@@ -756,7 +756,7 @@ describe("Phase 2 — compact run history with continuations", () => {
       expect(item).not.toHaveProperty("nodeStatuses")
       expect(item).not.toHaveProperty("variables")
       expect(item).toMatchObject({ workspaceId, workflowId, failedNodeCount: expect.any(Number), nodeCount: 1 })
-      expect(typeof item["runRev"]).toBe("number")
+      expect(item["workflowRev"]).toBe(workflowRev)
     }
     const failed = page.items.filter((item) => item["status"] === "failed")
     expect(failed).toHaveLength(2)

@@ -37,9 +37,9 @@ export interface DebugContextRequest {
  * ONCE (explicit `runId`, otherwise the latest failed run) and threaded
  * through every section, so sub-reads cannot disagree about which run or
  * revision they describe. Current workflow `rev` is returned separately from
- * the run record's own `runRev`, and graph correlation compares the workflow
- * revision the run recorded at creation with the current one — a past run is
- * never assumed to describe the graph now on canvas.
+ * the `workflowRev` the run recorded when it was queued, and graph correlation
+ * compares that revision with the current one — a past run is never assumed to
+ * describe the graph now on canvas.
  *
  * Deterministic throughout: ordered failure ids, severity-ordered diagnosis,
  * sorted keys/secrets/placeholders, no LLM summarizer. Secret output is names
@@ -230,7 +230,7 @@ function describeRun(run: Run): NonNullable<WorkflowDebugContext["run"]> {
     runId: run.runId,
     workflowId: run.workflowId,
     status: run.status,
-    runRev: run.rev,
+    workflowRev: run.workflowRev ?? null,
     trigger: run.trigger,
     ...(run.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
     ...(run.completedAt !== undefined ? { completedAt: run.completedAt } : {}),

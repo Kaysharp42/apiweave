@@ -66,7 +66,8 @@ export interface RunSummaryRow {
   readonly iteration: RunIteration | null
   /** The run a rerun reused results from; null for an ordinary run. */
   readonly resumeFromRunId: string | null
-  readonly runRev: number
+  /** The workflow revision this run executed; null on a run recorded before it was tracked. */
+  readonly workflowRev: number | null
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -233,7 +234,7 @@ export class RunRepository {
   ): RunSummaryPage {
     const { rows, hasMore } = keysetRows<RunSummaryQueryRow>(this.store, {
       select:
-        "id, workspace_id, workflow_id, status, startedAt, completedAt, rev, createdAt, updatedAt, " +
+        "id, workspace_id, workflow_id, status, startedAt, completedAt, workflow_rev, createdAt, updatedAt, " +
         "json_extract(response_metadata_json, '$.trigger') AS trigger, " +
         "json_extract(response_metadata_json, '$.duration') AS duration, " +
         // `->` (not json_extract) so a legacy scalar comes back as JSON text
@@ -638,7 +639,7 @@ interface RunSummaryQueryRow extends SqliteRow {
   readonly status: string
   readonly startedAt: string | null
   readonly completedAt: string | null
-  readonly rev: number
+  readonly workflow_rev: number | null
   readonly createdAt: string
   readonly updatedAt: string
   /** The metadata leaves the summary needs, lifted in SQL; NULL when absent. */
@@ -701,7 +702,7 @@ function rowToRunSummary(row: RunSummaryQueryRow): RunSummaryRow {
     nodeCount: row.node_count ?? 0,
     iteration: normalizeIteration(row.iteration_json === null ? null : parseJson<unknown>(row.iteration_json)),
     resumeFromRunId: typeof row.resume_from_run_id === "string" ? row.resume_from_run_id : null,
-    runRev: row.rev,
+    workflowRev: row.workflow_rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }

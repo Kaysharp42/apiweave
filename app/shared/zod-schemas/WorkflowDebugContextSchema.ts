@@ -29,7 +29,7 @@ const DebugRunSchema = z
     runId: z.string().min(1),
     workflowId: z.string().min(1),
     status: z.enum(["pending", "running", "completed", "failed", "cancelled", "interrupted"]),
-    runRev: RevisionSchema,
+    workflowRev: RevisionSchema.nullable(),
     trigger: z.enum(["manual", "schedule"]),
     startedAt: TimestampSchema.nullable().optional(),
     completedAt: TimestampSchema.nullable().optional(),
@@ -178,10 +178,9 @@ const DebugNextReadSchema = z
  * Held to a 32 KiB aggregate inline budget. Over-budget detail moves to
  * `omittedNodeIds`/`nextReads` with explicit continuation arguments — counts
  * still describe every failure, and partial reads are never presented as
- * complete. `run.runRev` is the run record's own revision, never a workflow
- * revision; `graphCorrelation` compares the revision the run was created
- * against with the current one (unknown only for runs recorded before that
- * was tracked).
+ * complete. `run.workflowRev` is the workflow revision the run executed
+ * (null for runs recorded before it was tracked); `graphCorrelation` compares
+ * that revision with the current one.
  */
 export const WorkflowDebugContextSchema = z
   .object({

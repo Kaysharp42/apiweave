@@ -298,10 +298,17 @@ starts no new run and asks for no second approval. \`deniedByUser: true\` means
 they refused or did not answer — say so, do not retry. A timeout or disconnect
 never cancels the run (only \`runs_cancel\` does).
 
-**Repair.** A failed step's evidence is in \`workflows_debugContext\`, or in
+**Read a finished run's page.** Every executed browser step — passed or failed —
+stores its URL, title, masked ARIA snapshot and a screenshot, readable without a
+rerun: \`runs_getNodeResult\` with \`sections: ["browser"]\` (+ \`screenshot: true\`).
+For the page *before* step X, read the step before X. Prefer that stored
+evidence; use \`browser_inspect\` only when the page must be re-observed after
+the workflow changed, because it replays every earlier node for real.
+
+**Repair.** A browser step's evidence is in \`workflows_debugContext\`, or in
 \`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,
 Playwright's \`detail\`, the page URL and title, and the masked ARIA snapshot at
-the failure. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
+the step. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
 enough; the image arrives as image content. Patch only that node with
 \`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
 rerun that reaches a browser step restarts the chain from its first step.
@@ -822,7 +829,10 @@ masked ARIA snapshot. \`browser_inspect\` returns the page its run left open —
 URL, title and masked ARIA snapshot — and with \`screenshot: true\` the
 viewport JPEG, painted over the same way. All three run the same
 secret-redaction pass every other read gets, and bodies travel as previews,
-never whole. Everything else about runs stays metadata-only; to see other
+never whole. One exception in the run summaries themselves: a failed browser
+step in \`runs_create\`, \`runs_wait\` or \`runs_get\` carries its action, page URL
+and title and the runner's own failure message, plus a \`nextRead\` pointing at
+its evidence. Everything else about runs stays metadata-only; to see other
 payloads, open the run in the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response

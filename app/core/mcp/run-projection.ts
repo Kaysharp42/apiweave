@@ -2,7 +2,17 @@ import { RunSchema } from "@shared/zod-schemas"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
+import { BROWSER_STEP_PREFIX } from "../runner/browser/session"
 import { AGENT_RUN_DENIED_ERROR } from "../runner/scheduler"
+import { truncateUtf8Marked } from "../services/read_budgets"
+
+/**
+ * Bytes of a failed browser step's own error carried inline in a summary
+ * entry. The runner's step diagnoses are short; the cap keeps a pathological
+ * locator description from widening every summary row, with the marker saying
+ * the error was cut.
+ */
+const FAILED_BROWSER_ERROR_BYTES = 512
 
 /**
  * MCP run reads intentionally expose operational metadata only. The desktop UI
@@ -13,7 +23,9 @@ import { AGENT_RUN_DENIED_ERROR } from "../runner/scheduler"
  * pass; it does not go through this projection.
  *
  * Summaries aggregate: one row carries identity, status, timing, failure
- * counts and revision — never per-node results. A single read additionally
+ * counts and the workflow revision the run executed. It never carries the run
+ * record's own write counter, which says nothing about the graph that ran, nor
+ * any per-node results. A single read additionally
  * names every failed node with its expected status and unresolved
  * placeholders, so a matched negative test or a missing value is legible
  * without a second call. Per-node detail beyond that lives in the evidence
@@ -45,7 +57,7 @@ function projectRunSummary(run: Run): Record<string, JsonValue> {
     statusCounts: projectStatusCounts(run.results),
     failedNodeDetails: run.results
       .filter((result) => result.status === "failed")
-      .map((result) => projectFailedNode(result)),
+      .map((result) => projectFailedNode(result, run)),
   }
 }
 
@@ -70,7 +82,7 @@ function projectRunHistoryRow(run: Run): Record<string, JsonValue> {
     failedNodes,
     failedNodeCount: failedNodes.length,
     nodeCount: run.results.length,
-    runRev: run.rev,
+    workflowRev: run.workflowRev ?? null,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
     resolvedSecrets: (run.resolvedSecrets ?? []).map((secret) => ({
@@ -96,11 +108,17 @@ function projectStatusCounts(results: Run["results"]): Record<string, JsonValue>
  * out as literal text (a 401 with placeholders present is a missing value,
  * not bad credentials); `attemptCount` says a retrying request gave up after
  * that many tries; `failedScriptTests`/`scriptError` say a pre-request or
- * post-response script failed it. Bodies stay in the evidence tool.
+ * post-response script failed it. A failed browser step additionally says
+ * which page it was on (`url`/`title` as stored: query-stripped and
+ * secret-scrubbed at capture, the same masked values the debug context and
+ * evidence read expose), its own value-free diagnosis, and the one read that
+ * carries its full evidence. Bodies stay in the evidence tool.
  */
-function projectFailedNode(result: RunResult): JsonValue {
+function projectFailedNode(result: RunResult, run: Pick<Run, "runId" | "workspaceId">): JsonValue {
   const response = isRecord(result.response) ? result.response : null
   const statusCode = response?.["statusCode"]
+  const browser = result.browser
+  const stepError = browserStepError(result.error)
   return {
     nodeId: result.nodeId,
     status: result.status,
@@ -118,7 +136,40 @@ function projectFailedNode(result: RunResult): JsonValue {
           scriptError: result.scripts.some((script) => script.error !== undefined),
         }
       : {}),
+    ...(browser !== undefined
+      ? {
+          // Playwright's own account (`detail`), the compared values and the
+          // ARIA snapshot stay in the evidence tool: this is the summary.
+          browser: {
+            action: browser.action,
+            ...(browser.url !== undefined ? { url: browser.url } : {}),
+            ...(browser.title !== undefined ? { title: browser.title } : {}),
+            ...(stepError !== undefined ? { error: stepError } : {}),
+          },
+          nextRead: {
+            tool: "runs_getNodeResult",
+            args: {
+              workspaceId: run.workspaceId,
+              runId: run.runId,
+              nodeIds: [result.nodeId],
+              sections: ["browser"],
+            },
+          },
+        }
+      : {}),
   }
+}
+
+/**
+ * A failed browser step's stored error, when it is the runner's own
+ * browser-step diagnosis — the same prefix `safeErrorClass` trusts to keep a
+ * message verbatim in run history — capped to a summary's size. Any other
+ * stored error stays behind `hasError`: a message that is not the runner's
+ * diagnosis is not ours to republish.
+ */
+function browserStepError(error: string | null | undefined): string | undefined {
+  if (typeof error !== "string" || !error.startsWith(BROWSER_STEP_PREFIX)) return undefined
+  return truncateUtf8Marked(error, FAILED_BROWSER_ERROR_BYTES)
 }
 
 const TERMINAL_STATUSES: ReadonlySet<Run["status"]> = new Set([
