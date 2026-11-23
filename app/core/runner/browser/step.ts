@@ -417,19 +417,29 @@ async function extractValue(
   return value
 }
 
-/** Why a Playwright action timed out, from its call log, in words that carry no page content. */
-function timeoutReason(message: string): string {
+/**
+ * Why a Playwright action timed out, from its call log, in words that carry no
+ * page content. "Not found" is a claim the call log must support: Playwright
+ * logs `waiting for <locator>` before the first resolve attempt and
+ * `locator resolved to <element>` only once the selector matched, so a log
+ * that never got past waiting is the one case where the element truly was
+ * not there. Anything else — the element existed but never became actionable,
+ * or a message shape we do not recognise — stays neutral, and Playwright's
+ * own account rides on the result's `detail`.
+ */
+export function timeoutReason(message: string): string {
   if (message.includes("intercepts pointer events")) return "another element covers it"
   if (message.includes("element is not visible")) return "it is not visible"
   if (message.includes("element is not enabled")) return "it is disabled"
   if (message.includes("element is not editable")) return "it is not editable"
   if (message.includes("outside of the viewport")) return "it is outside the page"
   if (message.includes("element is not stable")) return "it kept moving"
-  return "it was not found"
+  if (message.includes("waiting for") && !message.includes("locator resolved to")) return "it was not found"
+  return "it did not become ready in time (see detail)"
 }
 
 /** A Playwright error as a value-free message about this step. */
-function diagnose(error: unknown, config: BrowserNodeData, timeout: number): string {
+export function diagnose(error: unknown, config: BrowserNodeData, timeout: number): string {
   if (error instanceof StepFailure) return error.message
   const message = error instanceof Error ? error.message : String(error)
   const target = "locator" in config && config.locator !== undefined ? describeLocator(config.locator) : "the page"
