@@ -324,7 +324,7 @@ its complete node, its edges kept:
 
 \`\`\`json
 { "removeNodeIds": ["fill-email"], "upsertNodes": [
-  { "nodeId": "fill-email", "type": "browser", "label": "Type into a field",
+  { "nodeId": "fill-email", "type": "browser", "label": "Fill Email address",
     "position": { "x": 220, "y": 0 },
     "config": { "action": "fill",
                 "locator": { "kind": "label", "value": "Email address" },

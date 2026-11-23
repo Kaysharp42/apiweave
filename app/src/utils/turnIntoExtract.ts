@@ -2,7 +2,7 @@ import { BrowserLocatorSchema } from "@shared/zod-schemas/BrowserLocatorSchema";
 import type { BrowserStepDraft } from "../types/BrowserStepDraft";
 import type { CanvasNode } from "../types/CanvasNode";
 import { configFromDraft, draftFromConfig } from "./browserStep";
-import { recordedStepLabel } from "./recordedSteps";
+import { hasGeneratedLabel, recordedStepLabel } from "./recordedSteps";
 
 /** Steps on a form field read its value; any other element is read for its text. */
 const READS_VALUE: ReadonlySet<string> = new Set(["fill", "select", "expect-value"]);
@@ -53,11 +53,10 @@ export function turnIntoExtract(node: CanvasNode, variable: string): CanvasNode 
   const draft = draftFromConfig(configOf(node));
   const from: BrowserStepDraft["from"] = READS_VALUE.has(draft.action) ? "value" : "text";
   const config = configFromDraft({ ...draft, action: "extract", from, variable, attribute: "" });
-  const label = node.data.label;
-  const renamed = typeof label === "string" && label !== "" && label !== recordedStepLabel(draft.action);
+  const generated = hasGeneratedLabel(node.data.label, node.data.config);
   return {
     ...node,
     // A new `data` object: auto-save tells edits apart by its identity.
-    data: { ...node.data, config, ...(renamed ? {} : { label: recordedStepLabel("extract") }) },
+    data: { ...node.data, config, ...(generated ? { label: recordedStepLabel(config) } : {}) },
   };
 }

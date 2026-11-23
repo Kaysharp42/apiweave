@@ -100,14 +100,37 @@ describe("removeStepsFrom", () => {
     ]);
   });
 
-  it("takes out a frame it leaves empty", () => {
+  it("returns the frame the step was in, for the new steps to go back into", () => {
+    expect(removeStepsFrom(workflow(), "a")?.frameId).toBe("frame");
+    expect(removeStepsFrom(workflow(), "c")?.frameId).toBeNull();
+  });
+
+  it("keeps the step's own frame even when it empties it, and takes out another frame it leaves empty", () => {
     const graph: CanvasGraph = {
-      nodes: [node("start", "start"), open("open"), node("frame", "group"), click("a", "frame"), click("b", "frame"), node("end", "end")],
-      edges: [edge("start", "open"), edge("open", "a"), edge("a", "b"), edge("b", "end")],
+      nodes: [
+        node("start", "start"),
+        open("open"),
+        node("frame", "group"),
+        node("later", "group"),
+        click("a", "frame"),
+        click("b", "frame"),
+        click("c", "later"),
+        node("end", "end"),
+      ],
+      edges: [edge("start", "open"), edge("open", "a"), edge("a", "b"), edge("b", "c"), edge("c", "end")],
     };
     const result = removeStepsFrom(graph, "a");
-    expect(result?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "end"]);
+    expect(result?.frameId).toBe("frame");
+    expect(result?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "frame", "end"]);
     expect(result?.graph.edges.map((e) => [e.source, e.target])).toEqual([["start", "open"], ["open", "end"]]);
+  });
+
+  it("returns no frame when the step's frame is not on the canvas", () => {
+    const graph: CanvasGraph = {
+      nodes: [node("start", "start"), open("open"), click("a", "gone"), node("end", "end")],
+      edges: [edge("start", "open"), edge("open", "a"), edge("a", "end")],
+    };
+    expect(removeStepsFrom(graph, "a")?.frameId).toBeNull();
   });
 
   it("stops before a step two paths lead into, and leaves a last step with nothing after it unjoined", () => {

@@ -31,15 +31,15 @@ beforeEach(() => {
 })
 
 describe("a browser node written without a label", () => {
-  it("is named after its action on create", async () => {
+  it("is named after its action and target on create", async () => {
     const created = await service.create(workspaceId, { name: "Login", nodes: [fill("email")] })
-    expect(created.nodes[0]?.label).toBe("Type into a field")
+    expect(created.nodes[0]?.label).toBe("Fill Email address")
   })
 
-  it("is named after its action when a patch adds it", async () => {
+  it("is named after its action and target when a patch adds it", async () => {
     const created = await service.create(workspaceId, { name: "Login" })
     const patched = await service.patch(workspaceId, created.workflowId, { upsertNodes: [fill("email")] })
-    expect(patched.nodes.find((node) => node.nodeId === "email")?.label).toBe("Type into a field")
+    expect(patched.nodes.find((node) => node.nodeId === "email")?.label).toBe("Fill Email address")
   })
 
   it("keeps the label the author sent", async () => {

@@ -79,6 +79,7 @@ describe("useBrowserRecording placement", () => {
       workflowId: "wf",
       recordingId,
       anchorId: "start-1",
+      frameId: null,
       frameLabel: "Recording",
       steps: [],
       placedSteps: [],
@@ -163,12 +164,48 @@ describe("useBrowserRecording placement", () => {
     mountRecording(canvas);
 
     expect(canvas.setNodes).toHaveBeenCalledTimes(1);
-    expect(canvas.nodes().map((node) => node.id).sort()).toEqual([frameId, "browser-recording-1-1", "end-1", "frame-old", "open", "start-1"].sort());
+    // Back into the frame the replaced steps were in: no second frame.
+    expect(canvas.nodes().map((node) => node.id).sort()).toEqual(["browser-recording-1-1", "end-1", "frame-old", "open", "start-1"].sort());
+    expect(canvas.nodes().find((node) => node.id === "browser-recording-1-1")?.parentId).toBe("frame-old");
+    expect(canvas.nodes().find((node) => node.id === "frame-old")?.data.label).toBe("Recording");
     expect(canvas.edges().map((e) => [e.source, e.target])).toEqual(
       expect.arrayContaining([["start-1", "open"], ["open", "browser-recording-1-1"], ["browser-recording-1-1", "end-1"]]),
     );
     expect(canvas.edges()).toHaveLength(3);
-    expect(useBrowserRecordingStore.getState().anchorId).toBe("open");
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ anchorId: "open", frameId: "frame-old" });
+  });
+
+  it("keeps a re-record's later steps in the same frame, next to the step before them", () => {
+    const frame: CanvasNode = { id: "frame-old", type: "group", position: { x: 0, y: 0 }, width: 1200, height: 300, data: { label: "Recording", config: {} } };
+    const at = (id: string, x: number, config: Record<string, unknown>): CanvasNode => ({
+      id,
+      type: "browser",
+      position: { x, y: 64 },
+      parentId: "frame-old",
+      extent: "parent",
+      data: { label: id, config },
+    });
+    const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target });
+    const canvas = createCanvas(
+      [frame, startNode, at("open", 28, { action: "navigate", url: "https://dev.test/" }), at("delete", 348, { action: "click", locator: { kind: "css", value: "#delete" } })],
+      [edge("start-1", "open"), edge("open", "delete")],
+    );
+    const first = { stepId: "browser-recording-1-1", config: { action: "click" as const, locator: { kind: "css" as const, value: "#remove" } } };
+    const second = { stepId: "browser-recording-1-2", config: { action: "click" as const, locator: { kind: "css" as const, value: "#confirm" } } };
+    useBrowserRecordingStore.setState({ operation: "rerecord", nodeId: "delete", anchorId: null, frameId: null, frameLabel: "Re-recorded today", steps: [first] });
+
+    mountRecording(canvas);
+    act(() => useBrowserRecordingStore.setState({ steps: [first, second] }));
+
+    const byId = new Map(canvas.nodes().map((node) => [node.id, node] as const));
+    expect(canvas.nodes().filter((node) => node.type === "group").map((node) => node.id)).toEqual(["frame-old"]);
+    expect(byId.get("frame-old")?.data.label).toBe("Recording");
+    // `open` keeps its cell; the new steps take the replaced step's cell, then the next one.
+    expect(byId.get("open")?.position).toEqual({ x: 28, y: 64 });
+    expect(byId.get(first.stepId)).toMatchObject({ parentId: "frame-old", position: { x: 348, y: 64 } });
+    expect(byId.get(second.stepId)).toMatchObject({ parentId: "frame-old", position: { x: 668, y: 64 } });
+    // The user's frame size is never shrunk to fit.
+    expect(byId.get("frame-old")?.width).toBe(1200);
   });
 
   it("leaves another workflow's canvas alone", () => {
