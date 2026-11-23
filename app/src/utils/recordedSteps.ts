@@ -80,17 +80,19 @@ function grownToHold(frame: CanvasNode, cells: number): CanvasNode {
   return { ...frame, width: Math.max(frame.width ?? 0, needed.width), height: Math.max(frame.height ?? 0, needed.height) };
 }
 
-/** A new config for a step already on the canvas; its title follows the config unless the user renamed it. */
+/** The step with a new config; its title follows the config unless the user renamed it. */
+export function withStepConfig(node: CanvasNode, config: Record<string, unknown>): CanvasNode {
+  const generated = hasGeneratedLabel(node.data.label, node.data.config);
+  return {
+    ...node,
+    // A new `data` object: auto-save tells edits apart by its identity.
+    data: { ...node.data, config, ...(generated ? { label: recordedStepLabel(config) } : {}) },
+  };
+}
+
+/** A new config for a step already on the canvas. */
 function updateStep(nodes: readonly CanvasNode[], step: RecordedBrowserStep): CanvasNode[] {
-  return nodes.map((node) => {
-    if (node.id !== step.stepId) return node;
-    const generated = hasGeneratedLabel(node.data.label, node.data.config);
-    return {
-      ...node,
-      // A new `data` object: auto-save tells edits apart by its identity.
-      data: { ...node.data, config: step.config, ...(generated ? { label: recordedStepLabel(step.config) } : {}) },
-    };
-  });
+  return nodes.map((node) => (node.id === step.stepId ? withStepConfig(node, step.config) : node));
 }
 
 /**

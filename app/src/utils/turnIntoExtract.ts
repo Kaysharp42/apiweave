@@ -3,7 +3,7 @@ import type { BrowserStepDraft } from "../types/BrowserStepDraft";
 import type { CanvasNode } from "../types/CanvasNode";
 import { configFromDraft, draftFromConfig } from "./browserStep";
 import { camelName } from "./makeStepVariable";
-import { hasGeneratedLabel, recordedStepLabel } from "./recordedSteps";
+import { withStepConfig } from "./recordedSteps";
 
 /** Steps on a form field read its value; any other element is read for its text. */
 const READS_VALUE: ReadonlySet<string> = new Set(["fill", "select", "expect-value"]);
@@ -47,11 +47,5 @@ export function suggestedVariableName(node: CanvasNode): string {
 export function turnIntoExtract(node: CanvasNode, variable: string): CanvasNode {
   const draft = draftFromConfig(configOf(node));
   const from: BrowserStepDraft["from"] = READS_VALUE.has(draft.action) ? "value" : "text";
-  const config = configFromDraft({ ...draft, action: "extract", from, variable, attribute: "" });
-  const generated = hasGeneratedLabel(node.data.label, node.data.config);
-  return {
-    ...node,
-    // A new `data` object: auto-save tells edits apart by its identity.
-    data: { ...node.data, config, ...(generated ? { label: recordedStepLabel(config) } : {}) },
-  };
+  return withStepConfig(node, configFromDraft({ ...draft, action: "extract", from, variable, attribute: "" }));
 }

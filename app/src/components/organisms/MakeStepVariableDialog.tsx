@@ -1,21 +1,11 @@
 import { useState } from "react";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
-import { Select } from "../atoms/Select";
 import { CheckboxOption } from "../molecules/CheckboxOption";
-import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
-import {
-  stepLiterals,
-  stepsSharingLiteral,
-  stepVariableNameError,
-  suggestedStepVariableName,
-} from "../../utils/makeStepVariable";
+import { StepLiteralPicker } from "../molecules/StepLiteralPicker";
+import { stepLiterals, stepVariableDraft, suggestedStepVariableName } from "../../utils/makeStepVariable";
 import type { MakeStepVariableDialogProps, StepLiteralField } from "../../types";
-
-function preview(value: string): string {
-  return value.length > 60 ? `${value.slice(0, 59)}…` : value;
-}
 
 /**
  * **Make value a variable**: pick one of the step's literals, name the
@@ -31,13 +21,8 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
   );
   const [everywhere, setEverywhere] = useState(true);
 
-  const literal = literals.find((candidate) => candidate.field === field);
-  const trimmed = name.trim();
-  const error = literal === undefined ? undefined : stepVariableNameError(trimmed, literal.value, variables);
-  const others = node === undefined || literal === undefined ? 0 : stepsSharingLiteral(nodes, node.id, literal.field, literal.value);
-  const reused = literal !== undefined && error === undefined && variables[trimmed] === literal.value;
-  // "Everywhere" reaches the same family only: the value a step uses, or the text that finds its element.
-  const family = literal !== undefined && literal.field.startsWith("locator.") ? "element text" : "value";
+  const draft = stepVariableDraft(nodes, node, field, name, variables);
+  const { literal, error, others } = draft;
 
   const choose = (next: StepLiteralField): void => {
     setField(next);
@@ -46,7 +31,7 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
 
   const submit = (): void => {
     if (literal === undefined || error !== undefined) return;
-    onSubmit({ field: literal.field, name: trimmed, everywhere: everywhere && others > 0 });
+    onSubmit({ field: literal.field, name: draft.name, everywhere: everywhere && others > 0 });
   };
 
   return (
@@ -70,30 +55,7 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
           The value moves into a workflow variable and the step reads it as {"{{variables.NAME}}"}. Change the variable to try other data.
         </p>
-        {literals.length > 1 ? (
-          <FormField label="Value">
-            <Select
-              aria-label="Value"
-              value={field}
-              onChange={(event) => {
-                const picked = literals.find((candidate) => candidate.field === event.target.value);
-                if (picked !== undefined) choose(picked.field);
-              }}
-            >
-              {literals.map((candidate) => (
-                <option key={candidate.field} value={candidate.field}>
-                  {`${candidate.description}: ${preview(candidate.value)}`}
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        ) : (
-          literal !== undefined && (
-            <FormField label={literal.description}>
-              <p className="truncate font-mono text-sm text-text-primary dark:text-text-primary-dark">{preview(literal.value)}</p>
-            </FormField>
-          )
-        )}
+        <StepLiteralPicker literals={literals} literal={literal} onChoose={choose} />
         <Input
           label="Variable name"
           aria-label="Variable name"
@@ -107,11 +69,11 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
           }}
           autoFocus
           {...(error !== undefined ? { error } : {})}
-          {...(reused ? { helperText: `Reuses ${trimmed}, which already holds this value.` } : {})}
+          {...(draft.reused ? { helperText: `Reuses ${draft.name}, which already holds this value.` } : {})}
         />
         {others > 0 && (
           <CheckboxOption
-            label={`Also replace the same ${family} in ${others} other ${others === 1 ? "step" : "steps"}`}
+            label={`Also replace the same ${draft.family} in ${others} other ${others === 1 ? "step" : "steps"}`}
             checked={everywhere}
             onChange={setEverywhere}
           />

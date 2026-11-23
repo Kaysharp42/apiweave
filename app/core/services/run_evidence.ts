@@ -97,13 +97,8 @@ export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): N
       missingNodeIds.push(nodeId)
       continue
     }
-    items.push(buildNodeEvidence(result, wanted, {
-      maxBytes,
-      ...(selection.path !== undefined ? { path: selection.path } : {}),
-      ...(selection.scope !== undefined ? { scope: selection.scope } : {}),
-      ...(selection.start !== undefined ? { start: selection.start } : {}),
-      ...(selection.end !== undefined ? { end: selection.end } : {}),
-    }))
+    // The selection's path, scope and window are already exact optionals; only maxBytes gets its default.
+    items.push(buildNodeEvidence(result, wanted, { ...selection, maxBytes }))
   }
   const omittedSections = ALL_SECTIONS.filter((section) => !wanted.has(section))
   const withOmissions: NodeEvidence[] = items.map((item) => ({ ...item, omittedSections: [...item.omittedSections, ...omittedSections] }))
@@ -212,7 +207,7 @@ function buildRequestEvidence(
   return {
     method,
     url,
-    ...previewFields(preview),
+    ...preview,
   }
 }
 
@@ -239,7 +234,7 @@ function buildResponseEvidence(
         statusCode,
         storedTruncated,
         pathStatus: "resolved" as const,
-        ...previewFields(preview),
+        ...preview,
       }
     }
     return { statusCode, storedTruncated, pathStatus: selected.reason }
@@ -248,7 +243,7 @@ function buildResponseEvidence(
   return {
     statusCode,
     storedTruncated,
-    ...previewFields(preview),
+    ...preview,
   }
 }
 
@@ -358,7 +353,7 @@ function previewSelected(
   bounds: EvidenceBounds,
 ): { preview?: string; previewTruncated?: boolean; totalBytes?: number } {
   const text = JSON.stringify(value) ?? "null"
-  return previewText(text, bounds)
+  return previewFields(previewText(text, bounds))
 }
 
 /** Serialize a body to a bounded text preview with explicit cut accounting. */
@@ -368,7 +363,7 @@ function previewValue(
 ): { preview?: string; previewTruncated?: boolean; totalBytes?: number } {
   const text = typeof body === "string" ? body : JSON.stringify(body)
   if (text === undefined) return {}
-  return previewText(text, bounds)
+  return previewFields(previewText(text, bounds))
 }
 
 /**
@@ -401,17 +396,13 @@ export function previewText(
   return { preview, previewTruncated: windowed || maxBytesCut, maxBytesCut, totalBytes }
 }
 
-/** The optional fields of a text preview, ready to spread into an evidence section. */
-function previewFields(preview: { preview?: string; previewTruncated?: boolean; totalBytes?: number }): {
-  preview?: string
-  previewTruncated?: boolean
-  totalBytes?: number
+/** The fields of a text preview an evidence section carries: `maxBytesCut` is the inspection read's alone. */
+function previewFields({ preview, previewTruncated, totalBytes }: ReturnType<typeof previewText>): {
+  preview: string
+  previewTruncated: boolean
+  totalBytes: number
 } {
-  return {
-    ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
-    ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
-    ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
-  }
+  return { preview, previewTruncated, totalBytes }
 }
 
 interface BudgetInput {

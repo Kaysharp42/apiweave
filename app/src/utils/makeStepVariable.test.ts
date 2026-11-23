@@ -5,6 +5,7 @@ import {
   makeStepVariable,
   stepLiterals,
   stepsSharingLiteral,
+  stepVariableDraft,
   stepVariableNameError,
   suggestedStepVariableName,
 } from "./makeStepVariable";
@@ -135,6 +136,34 @@ describe("stepVariableNameError", () => {
     expect(stepVariableNameError("", "x", {})).toBe("Give the variable a name.");
     expect(stepVariableNameError("2fa", "x", {})).toBe("Use letters, digits and underscores, starting with a letter.");
     expect(stepVariableNameError("constructor", "x", {})).toBeUndefined();
+  });
+});
+
+describe("stepVariableDraft", () => {
+  const pick = node("b1", { action: "click", locator: elroy });
+  const alsoPick = node("b2", { action: "click", locator: elroy });
+  const typed = node("f1", { action: "fill", locator: search, value: "Elroy" });
+
+  it("reports the chosen literal, the trimmed name, its error and the other steps in the same family", () => {
+    expect(stepVariableDraft([pick, alsoPick, typed], pick, "locator.name", "  optionName ", {})).toEqual({
+      literal: { field: "locator.name", description: "Element name (option)", value: "Elroy" },
+      name: "optionName",
+      error: undefined,
+      others: 1,
+      reused: false,
+      family: "element text",
+    });
+    expect(stepVariableDraft([pick, typed], typed, "value", "", {})).toMatchObject({ error: "Give the variable a name.", others: 0, family: "value" });
+  });
+
+  it("marks a name already holding the value as reused", () => {
+    expect(stepVariableDraft([typed], typed, "value", "searchClient", { searchClient: "Elroy" })).toMatchObject({ reused: true, error: undefined });
+  });
+
+  it("holds no literal when there is no step or the field is not one of its literals", () => {
+    const empty = { literal: undefined, name: "x", error: undefined, others: 0, reused: false, family: "value" };
+    expect(stepVariableDraft([pick], undefined, undefined, "x", {})).toEqual(empty);
+    expect(stepVariableDraft([pick], pick, "value", "x", {})).toEqual(empty);
   });
 });
 

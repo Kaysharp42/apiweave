@@ -12,9 +12,9 @@ type InspectedSnapshot = NonNullable<NonNullable<BrowserInspection["page"]>["ari
 interface InspectionRequest {
   readonly beforeNodeId?: string
   readonly maxBytes: number
-  readonly scope?: AriaScope
-  readonly start?: number
-  readonly end?: number
+  readonly scope?: AriaScope | undefined
+  readonly start?: number | undefined
+  readonly end?: number | undefined
 }
 
 const TERMINAL_STATUSES: ReadonlySet<Run["status"]> = new Set([

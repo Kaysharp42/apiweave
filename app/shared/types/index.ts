@@ -15,8 +15,6 @@ export type {
   AgentPathResolution,
   AgentRosterEntry,
 } from "./AgentsBridge"
-export type { AppliedAriaScope } from "./AppliedAriaScope"
-export type { AriaScope } from "./AriaScope"
 export type { AssertionEvaluation } from "./AssertionEvaluation"
 export type { SchemaViolation } from "./SchemaViolation"
 export type { OpenApiNodeMeta } from "./OpenApiNodeMeta"

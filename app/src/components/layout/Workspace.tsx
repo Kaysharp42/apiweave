@@ -1,4 +1,3 @@
-import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import { useCallback, useEffect, useState } from "react";
 import {
   TabBar,
@@ -17,6 +16,7 @@ import { useOpenTutorials } from "../../hooks/useOpenTutorials";
 import { WorkspaceCanvasPane } from "./WorkspaceCanvasPane";
 import { WorkspaceDialogs } from "./WorkspaceDialogs";
 import { apiweave } from "../../utils/apiweaveClient";
+import { createBlankWorkflow } from "../../utils/createBlankWorkflow";
 import { getLogger } from "../../utils/logger";
 import { toast } from "sonner";
 import type { RecentWorkflow, WorkspaceProps } from "../../types";
@@ -81,13 +81,7 @@ export function Workspace({ active = true }: WorkspaceProps) {
       }
 
       try {
-        const workflow = await apiweave.workflows.create({
-          workspaceId,
-          name,
-          description: "",
-          ...initialWorkflowGraph(),
-          variables: {},
-        });
+        const workflow = await createBlankWorkflow(workspaceId, name);
         openTab(workflow);
         useSidebarStore.getState().signalWorkflowsRefresh();
       } catch (error) {

@@ -1652,6 +1652,14 @@ function WorkflowCanvas({
     saveWorkflowRef,
   });
 
+  /** The step menu's browser-step actions, each offered only on the steps it can act on. */
+  const browserStepActions = [
+    { key: "repick-element", icon: Crosshair, label: "Re-pick element", offered: stepReplay.canRepick, run: stepReplay.repick },
+    { key: "rerecord-from-here", icon: Circle, label: "Re-record from here", offered: stepReplay.canRerecord, run: stepReplay.rerecord },
+    { key: "turn-into-extract", icon: Download, label: "Turn into extract", offered: turnIntoExtract.canTurn, run: turnIntoExtract.start },
+    { key: "make-variable", icon: Variable, label: "Make value a variable", offered: makeStepVariable.canMake, run: makeStepVariable.start },
+  ];
+
   const canvasTipContext = useMemo(() => {
     const selection = selectedIds(nodes);
     const selected = nodes.filter((node) => selection.has(node.id));
@@ -2244,46 +2252,9 @@ function WorkflowCanvas({
               label: "Run from here",
               onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
             },
-            ...(stepReplay.canRepick(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "repick-element",
-                    icon: Crosshair,
-                    label: "Re-pick element",
-                    onSelect: () => stepReplay.repick(stepMenu.nodeId),
-                  },
-                ]
-              : []),
-            ...(stepReplay.canRerecord(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "rerecord-from-here",
-                    icon: Circle,
-                    label: "Re-record from here",
-                    onSelect: () => stepReplay.rerecord(stepMenu.nodeId),
-                  },
-                ]
-              : []),
-            ...(turnIntoExtract.canTurn(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "turn-into-extract",
-                    icon: Download,
-                    label: "Turn into extract",
-                    onSelect: () => turnIntoExtract.start(stepMenu.nodeId),
-                  },
-                ]
-              : []),
-            ...(makeStepVariable.canMake(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "make-variable",
-                    icon: Variable,
-                    label: "Make value a variable",
-                    onSelect: () => makeStepVariable.start(stepMenu.nodeId),
-                  },
-                ]
-              : []),
+            ...browserStepActions
+              .filter((action) => action.offered(stepMenu.nodeId))
+              .map(({ key, icon, label, run }) => ({ key, icon, label, onSelect: () => run(stepMenu.nodeId) })),
             {
               key: "duplicate",
               icon: Files,

@@ -1,11 +1,13 @@
+import { locatorTargetText } from "@shared/browser/browser_action_labels";
 import type { CanvasNode } from "../types/CanvasNode";
 import type { MakeStepVariableChoice } from "../types/MakeStepVariableChoice";
 import type { StepConfig } from "../types/StepConfig";
 import type { StepLiteral } from "../types/StepLiteral";
 import type { StepLiteralField } from "../types/StepLiteralField";
+import type { StepVariableDraft } from "../types/StepVariableDraft";
 import type { StepVariables } from "../types/StepVariables";
 import { INVALID_VARIABLE_NAME_MESSAGE, isValidVariableName } from "./extractorVariableName";
-import { hasGeneratedLabel, recordedStepLabel } from "./recordedSteps";
+import { withStepConfig } from "./recordedSteps";
 
 /** A field holding any placeholder is already templated, wholly or in part: it is left alone. */
 const PLACEHOLDER_RE = /\{\{[^{}]*\}\}/;
@@ -54,17 +56,12 @@ export function camelName(text: string): string {
 }
 
 /**
- * What the locator names its element by, a placeholder read as the name it
- * stands for. A role with no name falls back to its `hasText`, as the step
- * title does: an alert is known by its message.
+ * What the locator names its element by — the text the step title names it
+ * by — any placeholder read as the name it stands for.
  */
 function targetName(locator: StepConfig | undefined): string {
-  if (locator === undefined) return "";
-  const kind = locator["kind"];
-  const field =
-    kind === "role" ? (locator["name"] === undefined ? "hasText" : "name") : kind === "css" || kind === "selector" ? "hasText" : "value";
-  const name = locator[field];
-  return typeof name === "string" ? name.replace(/\{\{\s*(?:[A-Za-z_]\w*\.)?([A-Za-z_]\w*)\s*\}\}/g, "$1") : "";
+  const name = locatorTargetText(locator);
+  return name === undefined ? "" : name.replace(/\{\{\s*(?:[A-Za-z_]\w*\.)?([A-Za-z_]\w*)\s*\}\}/g, "$1");
 }
 
 /** Every piece of text a locator holds, to tell what kind of field it finds. */
@@ -143,6 +140,11 @@ export function stepLiterals(node: CanvasNode): StepLiteral[] {
   });
 }
 
+/** A literal shortened to fit one line of the dialog. */
+export function previewStepLiteral(value: string): string {
+  return value.length > 60 ? `${value.slice(0, 59)}…` : value;
+}
+
 /** Whether the step menu offers **Make value a variable** for this node. */
 export function canMakeStepVariable(node: CanvasNode): boolean {
   return stepLiterals(node).length > 0;
@@ -215,6 +217,30 @@ export function stepsSharingLiteral(nodes: readonly CanvasNode[], nodeId: string
   return nodes.filter((node) => node.id !== nodeId && sameFamilyFields(node, field, value).length > 0).length;
 }
 
+/** What **Make value a variable** shows for `node`'s literal in `field` and the name typed so far. */
+export function stepVariableDraft(
+  nodes: readonly CanvasNode[],
+  node: CanvasNode | undefined,
+  field: StepLiteralField | undefined,
+  typed: string,
+  variables: StepVariables,
+): StepVariableDraft {
+  const name = typed.trim();
+  const literal = node === undefined ? undefined : stepLiterals(node).find((candidate) => candidate.field === field);
+  if (node === undefined || literal === undefined) {
+    return { literal: undefined, name, error: undefined, others: 0, reused: false, family: "value" };
+  }
+  const error = stepVariableNameError(name, literal.value, variables);
+  return {
+    literal,
+    name,
+    error,
+    others: stepsSharingLiteral(nodes, node.id, literal.field, literal.value),
+    reused: error === undefined && variables[name] === literal.value,
+    family: isLocatorField(literal.field) ? "element text" : "value",
+  };
+}
+
 /**
  * The canvas with the chosen literal replaced by `{{variables.<name>}}`: in
  * that field only, or — `everywhere` — in every eligible field of the same
@@ -244,10 +270,10 @@ export function makeStepVariable(
         : [];
     if (fields.length === 0) return node;
     steps++;
-    const config = fields.reduce<Record<string, unknown>>((current, field) => writeField(current, field, placeholder), { ...configOf(node) });
-    const generated = hasGeneratedLabel(node.data.label, node.data.config);
-    // A new `data` object: auto-save tells edits apart by its identity.
-    return { ...node, data: { ...node.data, config, ...(generated ? { label: recordedStepLabel(config) } : {}) } };
+    return withStepConfig(
+      node,
+      fields.reduce<Record<string, unknown>>((current, field) => writeField(current, field, placeholder), { ...configOf(node) }),
+    );
   });
   return { nodes: next, value, steps };
 }

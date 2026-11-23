@@ -46,19 +46,28 @@ function shortened(text: string): string {
 }
 
 /**
- * What a locator names the element by: a role's accessible name, the text of a
- * label/placeholder/text/alt/title/test-id locator, or the `hasText` filter of
- * a CSS selector or of a nameless role — an alert is known by its message.
- * "" when the locator names nothing a reader would recognise. A placeholder
- * reads as the name it stands for, `{{variables.client}}` as `client`: the
- * title names the variable, never its value.
+ * The text a locator names the element by, as stored: a role's accessible
+ * name, the text of a label/placeholder/text/alt/title/test-id locator, or the
+ * `hasText` filter of a CSS selector or of a nameless role — an alert is known
+ * by its message. Undefined when the locator holds no such text.
  */
-function targetName(locator: unknown): string {
-  if (!isRecord(locator)) return ""
+export function locatorTargetText(locator: unknown): string | undefined {
+  if (!isRecord(locator)) return undefined
   const kind = locator["kind"]
   const field = kind === "role" ? (locator["name"] === undefined ? "hasText" : "name") : kind === "css" || kind === "selector" ? "hasText" : "value"
   const name = locator[field]
-  return typeof name === "string" ? shortened(name.replace(PLACEHOLDER_NAME_RE, "$1")) : ""
+  return typeof name === "string" ? name : undefined
+}
+
+/**
+ * What a locator names the element by, shortened for a title. "" when the
+ * locator names nothing a reader would recognise. A placeholder reads as the
+ * name it stands for, `{{variables.client}}` as `client`: the title names the
+ * variable, never its value.
+ */
+function targetName(locator: unknown): string {
+  const name = locatorTargetText(locator)
+  return name === undefined ? "" : shortened(name.replace(PLACEHOLDER_NAME_RE, "$1"))
 }
 
 /**

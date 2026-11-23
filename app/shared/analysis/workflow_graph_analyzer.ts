@@ -1078,9 +1078,21 @@ function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workfl
     ))
   }
 
-  // The chain's last steps: those that reach no other browser step. One is
-  // proved by a check after it — an assertion, or a called workflow that
-  // carries the chain on — and an `expect-*` or `extract` is a check itself.
+  addUncheckedChainEndDiagnostics(steps, downstream, nodesById, drivesBrowser, diagnostics)
+}
+
+/**
+ * The chain's last steps: those that reach no other browser step. One is
+ * proved by a check after it — an assertion, or a called workflow that
+ * carries the chain on — and an `expect-*` or `extract` is a check itself.
+ */
+function addUncheckedChainEndDiagnostics(
+  steps: readonly Extract<WorkflowNode, { type: "browser" }>[],
+  downstream: ReadonlyMap<string, ReadonlySet<string>>,
+  nodesById: ReadonlyMap<string, WorkflowNode>,
+  drivesBrowser: (node: WorkflowNode) => boolean,
+  diagnostics: WorkflowDiagnostic[],
+): void {
   const lasts = steps.filter((step) => !steps.some((other) => other !== step && downstream.get(step.nodeId)!.has(other.nodeId)))
   for (const last of lasts) {
     const action = last.config?.action

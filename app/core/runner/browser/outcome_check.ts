@@ -2,6 +2,7 @@ import { parse as parseYaml } from "yaml"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import { MIN_MASKED_SECRET_LENGTH } from "../secret_masker"
+import { readRecorderText } from "./recorded"
 import { templateCheck, templateUrl, type RecordingValues } from "./recording_values"
 
 /** The roles whose appearance says a click or key press did something: a message, a modal, a new step's title. */
@@ -128,9 +129,8 @@ export function readLandmarks(snapshot: string): Landmark[] | null {
 
 /** The landmarks in the snapshot Playwright's recorder took of the page as the user acted, the rest of a raw recorder action dropped unread. */
 export function readActionLandmarks(raw: unknown): Landmark[] | null {
-  if (typeof raw !== "object" || raw === null) return null
-  const snapshot = (raw as Record<string, unknown>)["ariaSnapshot"]
-  return typeof snapshot === "string" ? readLandmarks(snapshot) : null
+  const snapshot = readRecorderText(raw, "ariaSnapshot")
+  return snapshot === null ? null : readLandmarks(snapshot)
 }
 
 /** Lower is a better proof of an outcome: a message, then a modal, then a heading by level. */

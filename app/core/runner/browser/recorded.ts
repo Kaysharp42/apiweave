@@ -83,11 +83,16 @@ export function readRecorderAction(raw: unknown): RecorderAction | null {
   return action
 }
 
+/** One string field of a raw recorder event, the rest of it left unread; null when the field is not a string. */
+export function readRecorderText(raw: unknown, field: string): string | null {
+  if (typeof raw !== "object" || raw === null) return null
+  const value = (raw as Record<string, unknown>)[field]
+  return typeof value === "string" ? value : null
+}
+
 /** The name of a recorder signal (`dialog`, `popup`, `download`…), and nothing else from it. */
 export function readRecorderSignal(raw: unknown): string | null {
-  if (typeof raw !== "object" || raw === null) return null
-  const name = (raw as Record<string, unknown>)["name"]
-  return typeof name === "string" ? name : null
+  return readRecorderText(raw, "name")
 }
 
 /** Playwright's modifier bitmask, the way its own code generator reads it: Control and Meta are both `ControlOrMeta`. */

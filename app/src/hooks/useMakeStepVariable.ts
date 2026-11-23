@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { useStepMenuTarget } from "./useStepMenuTarget";
 import type { MakeStepVariableChoice } from "../types/MakeStepVariableChoice";
 import type { UseMakeStepVariableParams } from "../types/UseMakeStepVariableParams";
 import type { UseMakeStepVariableResult } from "../types/UseMakeStepVariableResult";
@@ -13,21 +14,12 @@ import { canMakeStepVariable, makeStepVariable, stepVariableNameError } from "..
  * canvas history records them as one undo step.
  */
 export function useMakeStepVariable({ nodesRef, setNodes, variables, setVariable }: UseMakeStepVariableParams): UseMakeStepVariableResult {
-  const [nodeId, setNodeId] = useState<string | null>(null);
-  const node = nodeId === null ? undefined : nodesRef.current.find((candidate) => candidate.id === nodeId);
-
-  const canMake = useCallback(
-    (id: string) => {
-      const candidate = nodesRef.current.find((each) => each.id === id);
-      return candidate !== undefined && canMakeStepVariable(candidate);
-    },
-    [nodesRef],
-  );
+  const target = useStepMenuTarget(nodesRef, canMakeStepVariable);
+  const { take } = target;
 
   const onSubmit = useCallback(
     (choice: MakeStepVariableChoice) => {
-      const id = nodeId;
-      setNodeId(null);
+      const id = take();
       if (id === null) return;
       const made = makeStepVariable(nodesRef.current, id, choice);
       if (made === null) {
@@ -50,19 +42,19 @@ export function useMakeStepVariable({ nodesRef, setNodes, variables, setVariable
           : `The step now uses {{variables.${choice.name}}}`,
       );
     },
-    [nodeId, nodesRef, setNodes, variables, setVariable],
+    [take, nodesRef, setNodes, variables, setVariable],
   );
 
   return {
-    canMake,
-    start: setNodeId,
+    canMake: target.can,
+    start: target.start,
     dialog: {
-      nodeId,
-      open: node !== undefined,
-      node,
+      nodeId: target.nodeId,
+      open: target.node !== undefined,
+      node: target.node,
       nodes: nodesRef.current,
       variables,
-      onClose: () => setNodeId(null),
+      onClose: target.close,
       onSubmit,
     },
   };

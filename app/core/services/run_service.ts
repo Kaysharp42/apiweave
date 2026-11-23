@@ -85,17 +85,20 @@ interface BrowserInspectInput {
   readonly waitMs?: number
 }
 
-/** The read-shaping half of an inspection request: how the kept page's ARIA snapshot is cut. */
-type SnapshotRead = Pick<BrowserInspectInput, "maxBytes" | "scope" | "start" | "end">
+/**
+ * The read-shaping half of an inspection request: how the kept page's ARIA
+ * snapshot is cut. An unset field reads as undefined: scope "auto", no byte
+ * window.
+ */
+interface SnapshotRead {
+  readonly maxBytes: number
+  readonly scope: AriaScope | undefined
+  readonly start: number | undefined
+  readonly end: number | undefined
+}
 
-/** Defaults applied where the handler does not: scope "auto", no byte window. */
 function snapshotReadOf(input: BrowserInspectInput): SnapshotRead {
-  return {
-    maxBytes: input.maxBytes,
-    ...(input.scope !== undefined ? { scope: input.scope } : {}),
-    ...(input.start !== undefined ? { start: input.start } : {}),
-    ...(input.end !== undefined ? { end: input.end } : {}),
-  }
+  return { maxBytes: input.maxBytes, scope: input.scope, start: input.start, end: input.end }
 }
 
 /**
