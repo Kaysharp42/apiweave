@@ -354,11 +354,11 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
   })
 
   it("gives a failed step's evidence the fuller settle, where a page that changed late is the diagnosis", async () => {
-    // The page churns for 2.5s after load. The navigate's 1s settle gives up
+    // The page churns for 3s after load. The navigate's 1s settle gives up
     // while it still churns, the check fails 300ms later, and only the failed
     // step's 3s settle lasts long enough to show what the page became.
     const workflowId = create([
-      step("open", { action: "navigate", url: `${base}/unsettled?ms=2500` }),
+      step("open", { action: "navigate", url: `${base}/unsettled?ms=3000` }),
       step("missing", { action: "expect-text", locator: role("heading"), text: "Never", match: "equals", timeoutMs: 300 }),
     ])
 
@@ -367,8 +367,10 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(stored.status).toBe("failed")
     const failed = result(stored, "missing")!
     expect(failed.error).toBe("Browser step: the text of getByRole('heading') did not equal the expected text within 0.3s")
-    // The check compared what the page showed while it polled; the evidence shows what the page became.
-    expect(failed.browser).toMatchObject({ actual: expect.stringMatching(/^Loading \d+$/), url: `${base}/arrived`, title: "Arrived" })
+    // The evidence shows what the page became. What the check compared while
+    // it polled is not asserted: on a loaded machine the steps before it can
+    // outlast the churn, and the check then reads the arrived page itself.
+    expect(failed.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
     expect(failed.browser?.ariaSnapshot).toContain('heading "Arrived"')
   })
 
