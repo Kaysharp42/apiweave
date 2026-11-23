@@ -68,6 +68,13 @@ export const browserStepsChapter: TutorialChapter = {
             "A page load becomes Open a page, a click becomes Click, typing becomes Type into a field (one step per field), and ticks, options, hover and key presses get their own steps. Clicking into a field before typing is not a step of its own.",
         },
         {
+          title: "Let the recording add checks",
+          instruction:
+            "After a click or key press that changes the page, the recording adds one check after it: Check the page address when the path changed, otherwise Check it is visible on the message, dialog or heading that appeared, such as Expect Step 2 visible.",
+          detail:
+            "A run then waits for that change before the next step acts, so a page that swaps its content without changing the address does not race ahead. Nothing is added when nothing changed, or when the only new text holds a secret or a value you typed. If the steps still end on a click, the graph check notes browser_chain_without_check: add a check that proves the outcome.",
+        },
+        {
           title: "Record checks from the recorder toolbar",
           instruction:
             "Use the toolbar inside the page: Assert visibility records Check it is visible, Assert text records Check text, and Assert value on a form field records Check a field's value.",
@@ -99,7 +106,7 @@ export const browserStepsChapter: TutorialChapter = {
       example: {
         caption: "What a recorded sign-in holds: one config per browser step",
         language: "json",
-        code: '[\n  { "action": "navigate", "url": "{{env.BASE_URL}}/login" },\n  { "action": "fill", "locator": { "kind": "role", "role": "textbox", "name": "Email" }, "value": "{{env.TEST_EMAIL}}" },\n  { "action": "fill", "locator": { "kind": "role", "role": "textbox", "name": "Password" }, "value": "{{secrets.TEST_PASSWORD}}" },\n  { "action": "click", "locator": { "kind": "role", "role": "button", "name": "Sign in" } },\n  { "action": "expect-text", "locator": { "kind": "role", "role": "heading", "name": "Dashboard" }, "text": "Dashboard", "match": "contains" }\n]',
+        code: '[\n  { "action": "navigate", "url": "{{env.BASE_URL}}/login" },\n  { "action": "fill", "locator": { "kind": "role", "role": "textbox", "name": "Email" }, "value": "{{env.TEST_EMAIL}}" },\n  { "action": "fill", "locator": { "kind": "role", "role": "textbox", "name": "Password" }, "value": "{{secrets.TEST_PASSWORD}}" },\n  { "action": "click", "locator": { "kind": "role", "role": "button", "name": "Sign in" } },\n  { "action": "expect-url", "url": "/dashboard", "match": "contains" },\n  { "action": "expect-text", "locator": { "kind": "role", "role": "heading", "name": "Dashboard" }, "text": "Dashboard", "match": "contains" }\n]',
       },
       expectedResult:
         "A Recording frame holds one browser step per action, chained into the workflow, with environment values and the password stored as placeholders rather than as typed text.",

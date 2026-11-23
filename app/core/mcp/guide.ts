@@ -748,6 +748,7 @@ Clear every \`error\` before running.
 | \`browser_parallel_branches\` | browser steps share one page, so page-driving nodes (a \`browser\` step, or a \`workflow\` call into a workflow with browser steps) on branches neither of which reaches the other would act on it in the same run — an error; wire them into one chain |
 | \`browser_chain_starts_without_navigate\` | the first step of the chain is not a \`navigate\`, so it runs on an empty page (warning) |
 | \`browser_selector_fallback\` | the locator is a raw recorder \`selector\` or \`css\` picked by \`nth\`, which works but breaks easily (notice) — prefer a role, label or test id |
+| \`browser_chain_without_check\` | the last browser step is an action, not an \`expect-*\` or \`extract\`, and no assertion follows it, so the run passes as long as that action does not error (notice) — add an expect step that proves the outcome, such as the confirmation message or the next page's address |
 
 ## Run-correlated (pass a \`runId\`)
 

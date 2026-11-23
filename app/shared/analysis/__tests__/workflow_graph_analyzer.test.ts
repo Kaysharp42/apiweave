@@ -1223,10 +1223,16 @@ describe("browser steps", () => {
   const diagnoseWithCalls = (workflow: Workflow, browserStepWorkflowIds: readonly string[]) =>
     analyzeWorkflowGraph({ ...workflow, browserStepWorkflowIds }).diagnostics
 
-  it("accepts one ordered chain that opens a page first", () => {
+  const saved = { action: "expect-visible", locator: { kind: "role", role: "status", hasText: "Saved" } }
+
+  it("accepts one ordered chain that opens a page first and ends on a check", () => {
     const workflow = browserWorkflow(
-      [{ nodeId: "open", type: "browser", config: nav }, { nodeId: "save", type: "browser", config: click("Save") }],
-      [["start", "open"], ["open", "save"], ["save", "end"]],
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "save", type: "browser", config: click("Save") },
+        { nodeId: "saved", type: "browser", config: saved },
+      ],
+      [["start", "open"], ["open", "save"], ["save", "saved"], ["saved", "end"]],
     )
     expect(diagnose(workflow).map((item) => item.code).filter((code) => code.startsWith("browser_"))).toEqual([])
   })
@@ -1350,6 +1356,76 @@ describe("browser steps", () => {
     const notes = diagnose(workflow).filter((item) => item.code === "browser_selector_fallback")
     expect(notes.flatMap((item) => item.nodeIds).sort()).toEqual(["inner", "nth"])
     expect(notes.find((item) => item.nodeIds[0] === "nth")).toMatchObject({ severity: "notice", remediation: { kind: "replace_locator", nodeId: "nth" } })
+  })
+
+  it("notes a chain that ends on an action, on each branch's last step", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "send", type: "browser", config: click("Envoyer au Client") },
+      ],
+      [["start", "open"], ["open", "send"], ["send", "end"]],
+    )
+    expect(diagnose(workflow).filter((item) => item.code === "browser_chain_without_check")).toEqual([
+      expect.objectContaining({
+        severity: "notice",
+        category: "execution",
+        nodeIds: ["send"],
+        evidence: { action: "click" },
+        remediation: { kind: "add_check_step", nodeId: "send" },
+      }),
+    ])
+
+    const branched = browserWorkflow(
+      [
+        { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/flag" } },
+        { nodeId: "check", type: "assertion", config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] } },
+        { nodeId: "on", type: "browser", config: nav },
+        { nodeId: "off", type: "browser", config: saved },
+      ],
+      [["start", "api"], ["api", "check"], ["check", "on", "pass"], ["check", "off", "fail"], ["on", "end"], ["off", "end"]],
+    )
+    expect(diagnose(branched).filter((item) => item.code === "browser_chain_without_check").flatMap((item) => item.nodeIds)).toEqual(["on"])
+  })
+
+  it("does not note a chain that ends on a check, an extract, or before an assertion or a called browser workflow", () => {
+    const endsOn = (config: Record<string, unknown>) =>
+      browserWorkflow(
+        [{ nodeId: "open", type: "browser", config: nav }, { nodeId: "last", type: "browser", config }],
+        [["start", "open"], ["open", "last"], ["last", "end"]],
+      )
+    const quiet = (workflow: Workflow, calls: readonly string[] = []) =>
+      diagnoseWithCalls(workflow, calls).map((item) => item.code).filter((code) => code === "browser_chain_without_check")
+    expect(quiet(endsOn(saved))).toEqual([])
+    expect(quiet(endsOn({ action: "expect-url", url: "/sent", match: "contains" }))).toEqual([])
+    expect(quiet(endsOn({ action: "extract", from: "url", variable: "address" }))).toEqual([])
+
+    const asserted = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "send", type: "browser", config: click("Send") },
+        { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/offers" } },
+        { nodeId: "check", type: "assertion", config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] } },
+      ],
+      [["start", "open"], ["open", "send"], ["send", "api"], ["api", "check"], ["check", "end", "pass"]],
+    )
+    expect(quiet(asserted)).toEqual([])
+
+    const handedOn = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "send", type: "browser", config: click("Send") },
+        { nodeId: "verify", type: "workflow", config: { targetWorkflowId: "verify-flow" } },
+      ],
+      [["start", "open"], ["open", "send"], ["send", "verify"], ["verify", "end"]],
+    )
+    expect(quiet(handedOn, ["verify-flow"])).toEqual([])
+
+    const noBrowser = browserWorkflow(
+      [{ nodeId: "api", type: "http-request", config: { method: "GET", url: "https://api.example.test/flag" } }],
+      [["start", "api"], ["api", "end"]],
+    )
+    expect(quiet(noBrowser)).toEqual([])
   })
 
   it("counts an extract step as the producer of its variable", () => {

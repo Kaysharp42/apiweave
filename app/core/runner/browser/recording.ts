@@ -10,9 +10,12 @@ import {
   type RecorderAction,
 } from "./recorded"
 import { ariaRoleAndName, betterSelector } from "./better_selector"
+import { buildLocator } from "./locator"
+import { outcomeCheck, pathOf, readActionLandmarks, readLandmarks, type PageState } from "./outcome_check"
 import { roleSelectorWithName } from "./selector_parse"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, contextOptions, launchBrowser, type BrowserLaunchSettings } from "./session"
+import { settle } from "./settle"
 import { disarmDialog } from "./step"
 
 /**
@@ -75,6 +78,24 @@ const RECORDER_BUFFER_MS = 600
 const DIALOG_WINDOW_MS = 5_000
 /** The longest a step waits for its selector to be made sturdier before keeping the recorder's. */
 const IMPROVE_TIMEOUT_MS = 1_500
+/**
+ * How long a click or key press waits for the page to stop changing before
+ * its outcome is read. Playwright already held a left click for 500 ms, so a
+ * transition of a second or so has mostly happened; the interval is tight
+ * because a page that did not change costs one interval.
+ */
+const OUTCOME_SETTLE_MS = 1_500
+const OUTCOME_SETTLE_INTERVAL_MS = 150
+/** The most one read of the page's landmarks, or one count of a check's elements, may take. */
+const OBSERVE_TIMEOUT_MS = 1_000
+const OBSERVE_MAX_MS = 1_500
+/** How many of the page's last paths are kept, which is far more than a user visits in the half second one is looked up for. */
+const PATHS_KEPT = 50
+/** A new click or key press: what earns a check of its outcome. A click Playwright reports after a key press with no count is noise. */
+function changesPage(kind: "added" | "updated", action: RecorderAction): boolean {
+  return kind === "added" && (action.name === "press" || (action.name === "click" && action.clickCount !== 0))
+}
+
 /** What an abandoned recording tells its owner: nothing at all. */
 const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () => undefined, ended: () => undefined }
 
@@ -84,20 +105,33 @@ const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () 
  *
  * Recorder events arrive synchronously and are handled one at a time, in
  * order, because a fill needs one question to the page (is this a password
- * field?) before it can be converted. Typing sends one update per keystroke;
+ * field?) before it can be converted. The question is asked as the event
+ * arrives and its answer awaited in the queue. Typing sends one update per keystroke;
  * those are sent at most once per {@link DEFAULT_THROTTLE_MS}, and a new step
  * first flushes the updates before it, so the order never changes.
+ *
+ * A click or key press is followed, in the same turn of the queue, by the
+ * check that proves what it did (see {@link outcomeCheck}): the page is let
+ * settle, read, and compared with the page as the user acted — the snapshot
+ * Playwright's recorder took in the page at that moment, and the path the
+ * page was on then. The next event waits in the queue meanwhile, so the check
+ * always lands right after its action, and every wait is bounded, so a slow
+ * page delays steps but never drops one.
  */
 export class BrowserRecording {
   private queue: Promise<void> = Promise.resolve()
+  /** Clicks and key presses received and not yet handled: each may change the page, so a page read while one waits shows more than one action. */
+  private waitingOutcomes = 0
+  /** The main page's paths, newest last, and when it reached each: what the page was on when the user acted. */
+  private readonly paths: Array<{ readonly at: number; readonly path: string | null }> = []
   private mainPage: Page | null = null
   private accepting = true
   private stopping: Promise<void> | null = null
   /** When the last recorder action arrived, to tell a dialog it opened from one the page raised later. */
   private lastActionAt: number | null = null
-  private readonly passwordFields = new Map<string, boolean>()
+  private readonly passwordFields = new Map<string, Promise<boolean>>()
   /** A recorded selector after it was made sturdier, by the selector Playwright wrote. */
-  private readonly improvedSelectors = new Map<string, string>()
+  private readonly improvedSelectors = new Map<string, Promise<string>>()
   private readonly sentStepIds = new Set<string>()
   private readonly pending = new Map<string, RecordedBrowserStep>()
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -187,6 +221,13 @@ export class BrowserRecording {
   /** The page the run will drive: closing it, or the browser, ends the recording. */
   private watch(page: Page): void {
     this.mainPage ??= page
+    this.paths.push({ at: Date.now(), path: pathOf(page.url()) })
+    // Same-document navigations (a single-page app's pushState) count too.
+    page.on("framenavigated", (frame) => {
+      if (frame !== page.mainFrame()) return
+      this.paths.push({ at: Date.now(), path: pathOf(frame.url()) })
+      if (this.paths.length > PATHS_KEPT) this.paths.shift()
+    })
     page.on("close", () => void this.stop())
     this.browser.on("disconnected", () => void this.stop())
   }
@@ -244,7 +285,30 @@ export class BrowserRecording {
     // after the action Playwright sent it, and the queue may lag behind that.
     this.lastActionAt = Date.now()
     const onMainPage = page === this.mainPage
-    this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage)).catch(() => undefined)
+    // Asked of the page now, not when the queue reaches the event: a click's
+    // outcome check holds the queue for a moment, and by then the field may
+    // be gone — a password field read too late would count as one not found.
+    const isPassword = readsField(action) && onMainPage && action.selector !== undefined ? this.isPasswordField(page, action.selector) : undefined
+    const selector = action.selector === undefined || !onMainPage ? undefined : this.improvedSelector(page, action.selector, action.name === "click")
+    const before = changesPage(kind, action) && onMainPage ? this.pageAsActed(raw) : null
+    if (changesPage(kind, action)) this.waitingOutcomes++
+    this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage, isPassword, selector, before)).catch(() => undefined)
+  }
+
+  /**
+   * The page as the user clicked or pressed: the landmarks in the snapshot
+   * Playwright's recorder took in the page at that moment, and the path it
+   * was on. The action may reach here up to half a second after it happened
+   * (Playwright holds a left click that long), so the path is the one the
+   * page had that long ago: a navigation since then is counted as this
+   * action's.
+   */
+  private pageAsActed(raw: unknown): PageState | null {
+    const landmarks = readActionLandmarks(raw)
+    if (landmarks === null) return null
+    const actedBy = Date.now() - RECORDER_BUFFER_MS
+    const path = [...this.paths].reverse().find((entry) => entry.at <= actedBy)?.path ?? null
+    return { path, landmarks }
   }
 
   /** A signal (`dialog`…) goes through the same queue, so it follows the action Playwright sent it after. */
@@ -257,19 +321,62 @@ export class BrowserRecording {
     this.queue = this.queue.then(() => this.report(this.converter.signal(name, onMainPage, isRecent))).catch(() => undefined)
   }
 
-  private async handle(kind: "added" | "updated", page: Page, action: RecorderAction, onMainPage: boolean): Promise<void> {
-    const isPassword =
-      readsField(action) && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
-    const selector =
-      action.selector === undefined || !onMainPage ? action.selector : await this.improvedSelector(page, action.selector, action.name === "click")
-    this.report(
-      this.converter.apply({
-        kind,
-        action: selector === undefined || selector === action.selector ? action : { ...action, selector },
-        onMainPage,
-        ...(isPassword === undefined ? {} : { isPassword }),
-      }),
-    )
+  private async handle(
+    kind: "added" | "updated",
+    page: Page,
+    action: RecorderAction,
+    onMainPage: boolean,
+    passwordAnswer: Promise<boolean> | undefined,
+    improved: Promise<string> | undefined,
+    before: PageState | null,
+  ): Promise<void> {
+    if (changesPage(kind, action)) this.waitingOutcomes--
+    const isPassword = await passwordAnswer
+    const selector = improved === undefined ? action.selector : await improved
+    const output = this.converter.apply({
+      kind,
+      action: selector === undefined || selector === action.selector ? action : { ...action, selector },
+      onMainPage,
+      ...(isPassword === undefined ? {} : { isPassword }),
+    })
+    this.report(output)
+    if (before !== null && output.steps.length > 0) await this.checkOutcome(page, before)
+  }
+
+  /**
+   * Add the check that proves what the click or key press just recorded did:
+   * wait for the page to settle, then compare it with the page as the user acted.
+   */
+  private async checkOutcome(page: Page, before: PageState): Promise<void> {
+    await settle(page, OUTCOME_SETTLE_MS, OUTCOME_SETTLE_INTERVAL_MS)
+    const after = await this.observe(page)
+    // Playwright reports a left click up to half a second after it happened,
+    // so a click it reports in that time may have changed the page before
+    // this read. Once the recording is stopping, nothing more arrives.
+    if (this.accepting) await new Promise<void>((resolve) => setTimeout(resolve, RECORDER_BUFFER_MS))
+    // The user clicked again: the page may show what that click did, so no
+    // check here, rather than one pinned on the wrong step.
+    if (after === null || this.waitingOutcomes > 0) return
+    const check = outcomeCheck(before, after, this.converter.typedValues(), this.options.values)
+    if (check === null) return
+    if (check.probe !== null) {
+      const count = await within(buildLocator(page, check.probe, (text) => text).count(), OBSERVE_MAX_MS, 0)
+      if (count !== 1) return
+    }
+    this.report(this.converter.addCheck(check.config))
+  }
+
+  /**
+   * The page's path and landmarks, read in one bounded call: null when the
+   * page cannot answer. The snapshot is taken the way Playwright's recorder
+   * takes the one it compares with (`mode: "ai"`, the body), and only its
+   * landmarks are kept.
+   */
+  private async observe(page: Page): Promise<PageState | null> {
+    if (page.isClosed()) return null
+    const snapshot = await within(page.locator("body").ariaSnapshot({ mode: "ai", timeout: OBSERVE_TIMEOUT_MS }), OBSERVE_MAX_MS, "")
+    const landmarks = snapshot === "" ? null : readLandmarks(snapshot)
+    return landmarks === null ? null : { path: pathOf(page.url()), landmarks }
   }
 
   private report(output: ConverterOutput): void {
@@ -283,14 +390,14 @@ export class BrowserRecording {
    * secret for a field that was not a password is a nuisance, a password sent
    * as text is a leak.
    */
-  private async isPasswordField(page: Page, selector: string): Promise<boolean> {
+  private isPasswordField(page: Page, selector: string): Promise<boolean> {
     const known = this.passwordFields.get(selector)
     if (known !== undefined) return known
     const answer = page
       .locator(selector)
       .first()
       .evaluate((element) => element instanceof HTMLInputElement && element.type === "password", undefined, { timeout: 1_000 })
-    const isPassword = await within(answer, 1_500, true)
+    const isPassword = within(answer, 1_500, true)
     this.passwordFields.set(selector, isPassword)
     return isPassword
   }
@@ -303,12 +410,12 @@ export class BrowserRecording {
    * swapped for a role, label or exact text that finds the same one element
    * (see {@link betterSelector}).
    */
-  private async improvedSelector(page: Page, selector: string, isClick: boolean): Promise<string> {
+  private improvedSelector(page: Page, selector: string, isClick: boolean): Promise<string> {
     const known = this.improvedSelectors.get(selector)
     if (known !== undefined) return known
     const improved = selector.startsWith("internal:role=")
-      ? (roleSelectorWithName(selector, await within(this.accessibleName(page, selector), IMPROVE_TIMEOUT_MS, "")) ?? selector)
-      : await within(betterSelector(page, selector, isClick), IMPROVE_TIMEOUT_MS, selector)
+      ? within(this.accessibleName(page, selector), IMPROVE_TIMEOUT_MS, "").then((name) => roleSelectorWithName(selector, name) ?? selector)
+      : within(betterSelector(page, selector, isClick), IMPROVE_TIMEOUT_MS, selector)
     this.improvedSelectors.set(selector, improved)
     return improved
   }

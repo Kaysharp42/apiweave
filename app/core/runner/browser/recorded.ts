@@ -9,7 +9,8 @@ import { containsSecret, showsSecret, templateCheck, templateFill, templateUrl, 
  * The fields of a Playwright recorder action this converter reads. Playwright
  * sends more — `ariaSnapshot` holds the whole page with every typed value, the
  * password included — and {@link readRecorderAction} drops all of it at the
- * boundary.
+ * boundary. The recording reads the page's landmarks out of that snapshot on
+ * its own (`readActionLandmarks`) and keeps nothing else of it.
  */
 export interface RecorderAction {
   readonly name: string
@@ -331,6 +332,30 @@ export class RecordingConverter {
       steps.push({ stepId: state.stepId, config: converted.config })
     }
     return { steps, warnings }
+  }
+
+  /**
+   * A check the recording made itself, after the click or key press it proves
+   * (see `outcomeCheck`): a new step right after it, checked like any other and
+   * dropped without a word when it would show a secret, since the user never
+   * asked for it. The step it follows stays the one an update or a dialog
+   * applies to, and a fill that comes next no longer takes over that click.
+   */
+  public addCheck(config: BrowserNodeData): ConverterOutput {
+    const action: RecorderAction = { name: config.action }
+    const converted = this.checked(config, action)
+    if (converted.kind === "skip") return { steps: [], warnings: [] }
+    const state: StepState = { stepId: this.newStepId(), action, isPassword: false, withheld: false, sent: JSON.stringify(converted.config) }
+    this.steps.push(state)
+    return { steps: [{ stepId: state.stepId, config: converted.config }], warnings: [] }
+  }
+
+  /** Every value typed into a field or chosen in a select so far, passwords included: test data a recorded check must not hold. */
+  public typedValues(): string[] {
+    return this.steps.flatMap(({ action }) => {
+      if (action.name === "fill") return action.text === undefined ? [] : [action.text]
+      return action.name === "select" ? [...(action.options ?? [])] : []
+    })
   }
 
   /** The step a newly added action becomes, or null when it becomes none. */

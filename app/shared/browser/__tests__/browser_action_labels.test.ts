@@ -25,6 +25,8 @@ describe("browserStepLabel", () => {
     ["extract", { action: "extract", from: "text", variable: "n", locator: { kind: "role", role: "heading", name: "Order number" } }, "Save Order number"],
     ["css with hasText", { action: "click", locator: { kind: "css", value: "div", hasText: "Kilométrage/an", nth: 4 } }, "Click Kilométrage/an"],
     ["raw selector with hasText", { action: "click", locator: { kind: "selector", value: "div >> nth=0", hasText: "Plan" } }, "Click Plan"],
+    ["a name held in a variable", { action: "click", locator: { kind: "role", role: "option", name: "{{variables.client}}" } }, "Click client"],
+    ["a label held in an env variable", { action: "fill", locator: { kind: "label", value: "{{ env.FIELD }}" }, value: "x" }, "Fill FIELD"],
   ])("%s → %s", (_what, config, expected) => {
     expect(browserStepLabel(config)).toBe(expected)
   })

@@ -93,6 +93,14 @@ The canvas toolbar has a **Record** button beside the Run controls, marked with 
 
 Clicking into a field before typing into it is not a step of its own.
 
+**Checks the recording adds.** After every click and key press, the recording waits for the page to stop changing (at most 1.5 s) and compares it with the page before that action. A step that changed something visible is followed by one check that proves it, so a run waits for the change before the next step acts — a single-page app that swaps the form for its next step without changing the address no longer races ahead:
+
+- **The address's path changed**: **Check the page address**, `match: "contains"` the new path, such as `/offers/new`. The query and fragment are left out, and so is the root path `/`, which every address contains.
+- **Otherwise, a landmark appeared**: **Check it is visible** on the best one — an alert or status message first, then a dialog, then the highest-level heading — as a role and exact name, or a message's text when it has no name: `Expect Step 2 visible`, `Expect Offre envoyée visible`.
+- **Nothing changed**: no check.
+
+A check is added only when its locator finds exactly one element, and never when its text is a secret or holds a value typed or chosen during the recording, since that is test data. The page is read only for these landmarks; nothing else of it is kept. The last click of a recording gets its check the same way, so a flow that ends on a confirmation message ends on a check of it. Delete a check you do not want like any other step.
+
 **Checks.** The toolbar's assert buttons record a check on the element they name:
 
 - **Assert visibility** records **Check it is visible**.
@@ -268,13 +276,14 @@ Placeholders work in every text field of a step: the URL, a fill's value, expect
 
 Browser steps share one page, so they must form **one ordered chain**: any two browser steps in a workflow are connected by a path. HTTP, assertion, delay and merge nodes may branch around them freely; the browser steps themselves cannot. A **Call Workflow** node whose target has browser steps, directly or through further calls, drives the same page, so it is part of the chain too: two such calls on parallel branches, or one beside a browser step, are the same error.
 
-The graph check reports three things. An agent sees them from `workflow_diagnose`, and from the `diagnosis` member of every graph write.
+The graph check reports four things. An agent sees them from `workflow_diagnose`, and from the `diagnosis` member of every graph write.
 
 | Code | Severity | Meaning |
 | --- | --- | --- |
 | `browser_parallel_branches` | error | Two page-driving nodes are on parallel branches, so neither reaches the other. Connect them into one chain. Counts `browser` steps and Call Workflow nodes whose target has browser steps |
 | `browser_chain_starts_without_navigate` | warning | The first browser step is not **Open a page**, so it runs on a blank page. Add a navigate step, or ignore it when a Call Workflow before it opens the page |
 | `browser_selector_fallback` | notice | A step finds its element with a raw recorder `selector`, which breaks easily. Replace it with a role, label or test id locator |
+| `browser_chain_without_check` | notice | The last browser step is an action rather than a check (`expect-*` or `extract`), and no assertion follows it, so the run passes as long as that action does not error. Add an expect step that proves the outcome |
 
 Steps on the **pass** and **fail** sides of one assertion are allowed. A run takes one side of the assertion, so those steps never run together; the check knows the difference between that and a genuine parallel branch.
 
@@ -381,6 +390,7 @@ The [Known Limitations](../reference/known-limitations.md#browser-steps) page ke
 - **If `browser_parallel_branches` appears**, two things that act on the page — browser steps, or calls into workflows with browser steps — are on branches that never meet. Join them into one chain.
 - **If a run is refused with `Browser step: these nodes drive the run's page but are on parallel branches`**, the graph check found the same thing at run time: chain the named nodes one after another.
 - **If `browser_chain_starts_without_navigate` appears**, the first browser step acts on a blank page. Add **Open a page** at the start of the chain.
+- **If `browser_chain_without_check` appears**, the flow ends on a click or a typed value, so a run passes even if the page did not do what it should. Add **Check it is visible** on the confirmation the page shows, or **Check the page address** of the page it lands on.
 - **If a load run is refused with `A load run cannot run a workflow with browser steps`**, run the workflow normally or from the CLI; load runs are for HTTP timing.
 - **If a For each node fails with `a for-each with concurrency above 1 cannot call a workflow with browser steps`**, set its concurrency to 1, or move the browser steps out of the target.
 - **If a step passed on your machine and fails in CI**, the page content differs, not the browser: run with `--headed` locally to watch the same steps, and check the environment the CI run selects.

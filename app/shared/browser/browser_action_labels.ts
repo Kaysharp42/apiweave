@@ -34,6 +34,8 @@ export function browserActionLabel(action: string): string {
 /** The longest target name a generated label carries before it is cut with an ellipsis. */
 const NAME_MAX = 32
 
+const PLACEHOLDER_NAME_RE = /\{\{\s*(?:variables|env)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -45,14 +47,18 @@ function shortened(text: string): string {
 
 /**
  * What a locator names the element by: a role's accessible name, the text of a
- * label/placeholder/text/alt/title/test-id locator, or a CSS selector's
- * `hasText` filter. "" when the locator names nothing a reader would recognise.
+ * label/placeholder/text/alt/title/test-id locator, or the `hasText` filter of
+ * a CSS selector or of a nameless role — an alert is known by its message.
+ * "" when the locator names nothing a reader would recognise. A placeholder
+ * reads as the name it stands for, `{{variables.client}}` as `client`: the
+ * title names the variable, never its value.
  */
 function targetName(locator: unknown): string {
   if (!isRecord(locator)) return ""
-  const field = locator["kind"] === "role" ? "name" : locator["kind"] === "css" || locator["kind"] === "selector" ? "hasText" : "value"
+  const kind = locator["kind"]
+  const field = kind === "role" ? (locator["name"] === undefined ? "hasText" : "name") : kind === "css" || kind === "selector" ? "hasText" : "value"
   const name = locator[field]
-  return typeof name === "string" ? shortened(name) : ""
+  return typeof name === "string" ? shortened(name.replace(PLACEHOLDER_NAME_RE, "$1")) : ""
 }
 
 /**
