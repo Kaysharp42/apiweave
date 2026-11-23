@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AppliedAriaScopeSchema } from "./AriaScopeSchema"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { McpWorkflowDiagnosisSchema } from "./McpWorkflowDiagnosisSchema"
 import { EvidenceCallSchema } from "./NodeEvidenceSchema"
@@ -81,9 +82,12 @@ const DebugEvidenceSelectorSchema = z
 /**
  * A failed browser step, compacted for the one-call debug read: what ran, what
  * it compared, which page it was on, and the start of its ARIA snapshot with
- * byte accounting. Screenshots are presence only. Budget pressure removes the
- * page text (see `dropBrowserSummaries`), never the identity fields, so the
- * `moreDetail` selector that asks for the `browser` section stays meaningful.
+ * byte accounting — scoped to the open dialog or main landmark when the page
+ * has one (`ariaSnapshotScope`; `ariaSnapshotScopeNote` says why a scope fell
+ * back to the whole page). Screenshots are presence only. Budget pressure
+ * removes the page text (see `dropBrowserSummaries`), never the identity
+ * fields, so the `moreDetail` selector that asks for the `browser` section
+ * stays meaningful.
  */
 const DebugBrowserSummarySchema = z
   .object({
@@ -94,6 +98,9 @@ const DebugBrowserSummarySchema = z
     actual: z.string().optional(),
     hasScreenshot: z.boolean(),
     ariaSnapshotPreview: z.string().optional(),
+    /** Present only when a snapshot was stored: the part of the page the preview windows. */
+    ariaSnapshotScope: AppliedAriaScopeSchema.optional(),
+    ariaSnapshotScopeNote: z.string().optional(),
     ariaSnapshotTruncated: z.boolean(),
     ariaSnapshotBytes: z.number().int().nonnegative(),
   })

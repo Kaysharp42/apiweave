@@ -986,7 +986,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId,
-      nodeId: "login",
+      nodeIds: ["login"],
       sections: ["error", "response"],
     })
 
@@ -1043,7 +1043,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId: run.runId,
-      nodeId: "call1",
+      nodeIds: ["call1"],
     })
     const call = page.items[0]?.call
     expect(call).toMatchObject({
@@ -1067,7 +1067,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const selected = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId: run.runId,
-      nodeId: "call1",
+      nodeIds: ["call1"],
       sections: ["call"],
     })
     expect(selected.items[0]?.call?.workflowId).toBe(child.workflowId)
@@ -1077,7 +1077,7 @@ describe("Phase 2 — targeted node evidence", () => {
 
   it("has no call section for an ordinary node", async () => {
     const { workspaceId, runId } = await seedFailedRun()
-    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", { workspaceId, runId, nodeId: "login" })
+    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", { workspaceId, runId, nodeIds: ["login"] })
     expect(page.items[0]).not.toHaveProperty("call")
   })
 
@@ -1087,7 +1087,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const hit = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId,
-      nodeId: "login",
+      nodeIds: ["login"],
       sections: ["response"],
       path: "response.body.error.code",
     })
@@ -1097,7 +1097,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const miss = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId,
-      nodeId: "login",
+      nodeIds: ["login"],
       sections: ["response"],
       path: "response.body.token",
     })
@@ -1133,7 +1133,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const fault = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId: run.runId,
-      nodeId: "soap",
+      nodeIds: ["soap"],
       sections: ["response"],
       path: "response.fault.code",
     })
@@ -1146,7 +1146,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId,
-      nodeId: "login",
+      nodeIds: ["login"],
       sections: ["request"],
       maxBytes: 8,
     })
@@ -1157,7 +1157,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const window = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId,
-      nodeId: "login",
+      nodeIds: ["login"],
       sections: ["request"],
       start: 1,
       end: 8,
@@ -1181,7 +1181,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId: run.runId,
-      nodeId: "emoji",
+      nodeIds: ["emoji"],
       sections: ["response"],
       maxBytes: 8192,
     })
@@ -1197,7 +1197,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const window = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
       workspaceId,
       runId: run.runId,
-      nodeId: "emoji",
+      nodeIds: ["emoji"],
       sections: ["response"],
       start: 5,
       end: 41,
@@ -1222,7 +1222,7 @@ describe("Phase 2 — targeted node evidence", () => {
       }],
     })
 
-    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", { workspaceId, runId: run.runId, nodeId: "big" })
+    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", { workspaceId, runId: run.runId, nodeIds: ["big"] })
     expect(page.items[0]?.response?.storedTruncated).toBe(true)
     expect(page.items[0]?.budgetOmitted).toBe(false)
   })
@@ -1274,8 +1274,49 @@ describe("Phase 2 — targeted node evidence", () => {
     const missing = await dispatchErr("runs", "getNodeResult", { workspaceId, runId })
     expect(missing.code).toBe("validation")
 
-    const range = await dispatchErr("runs", "getNodeResult", { workspaceId, runId, nodeId: "ok", start: 5, end: 5 })
+    const range = await dispatchErr("runs", "getNodeResult", { workspaceId, runId, nodeIds: ["ok"], start: 5, end: 5 })
     expect(range.code).toBe("validation")
+  })
+
+  /**
+   * The node-naming keys agents reach for, answered: `runs_getNodeResult`
+   * takes `nodeIds` (a screenshot read passes exactly one), and `browser_inspect`
+   * names a boundary, `beforeNodeId`. Both validations fail in the SDK's own
+   * parse of the advertised schema — the same error an agent's client sees —
+   * so these calls start no run and need no browser.
+   */
+  it("tells an agent which node-naming key to use when the one sent is unknown", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "naming" })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    const client = await connectClient()
+
+    const evidence = await client.callTool({
+      name: "runs_getNodeResult",
+      arguments: { workspaceId, runId: run.runId, nodeId: "login" },
+    })
+    expect((evidence as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(evidence as { content: Array<{ type: string; text?: string }> })).toMatch(
+      /Unrecognized key "nodeId"\. .*nodeIds/,
+    )
+
+    const screenshot = await client.callTool({
+      name: "runs_getNodeResult",
+      arguments: { workspaceId, runId: run.runId, nodeIds: ["a", "b"], screenshot: true },
+    })
+    expect((screenshot as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(screenshot as { content: Array<{ type: string; text?: string }> })).toMatch(/exactly one id in nodeIds/)
+
+    const inspect = await client.callTool({
+      name: "browser_inspect",
+      arguments: { workspaceId, workflowId: workflow.workflowId, nodeId: "submit" },
+    })
+    expect((inspect as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(inspect as { content: Array<{ type: string; text?: string }> })).toMatch(
+      /Unrecognized key "nodeId"\. .*beforeNodeId/,
+    )
+
+    await client.close()
   })
 
   it("redacts secret leaves in previews while keeping structure", async () => {
@@ -1294,7 +1335,7 @@ describe("Phase 2 — targeted node evidence", () => {
     const client = await connectClient()
     const result = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId, runId: run.runId, nodeId: "login", sections: ["response"] },
+      arguments: { workspaceId, runId: run.runId, nodeIds: ["login"], sections: ["response"] },
     })
     const text = textOf(result as { content: Array<{ type: string; text?: string }> })
     expect(text).not.toContain("evidence-guard-secret")
@@ -1419,7 +1460,7 @@ describe("Phase 2 — evidence path and empty-read edge cases", () => {
     }>("runs", "getNodeResult", {
       workspaceId,
       runId,
-      nodeId: "n0",
+      nodeIds: ["n0"],
       sections: ["response"],
       path: "response.body.count.id",
     })
@@ -1469,7 +1510,7 @@ describe("Phase 2 — browser step evidence", () => {
       detail?: string
       evidenceNote?: string
       hasScreenshot: boolean
-      ariaSnapshot?: { preview?: string; previewTruncated?: boolean; totalBytes?: number }
+      ariaSnapshot?: { preview?: string; previewTruncated?: boolean; totalBytes?: number; scope?: string; scopeNote?: string }
     }
     omittedSections: string[]
     budgetOmitted: boolean
@@ -1538,7 +1579,7 @@ describe("Phase 2 — browser step evidence", () => {
       failedNodes: ["signin"],
     })
 
-    const page = await evidence(workspaceId, run.runId, { nodeId: "signin" })
+    const page = await evidence(workspaceId, run.runId, { nodeIds: ["signin"] })
     const browser = page.items[0]?.browser
     expect(browser).toEqual({
       action: "expect-text",
@@ -1553,6 +1594,8 @@ describe("Phase 2 — browser step evidence", () => {
         preview: SNAPSHOT,
         previewTruncated: false,
         totalBytes: Buffer.byteLength(SNAPSHOT, "utf8"),
+        scope: "page",
+        scopeNote: "No dialog or main landmark in this ARIA snapshot; returned the whole page.",
       },
     })
     expect(page.items[0]?.omittedSections).toEqual([])
@@ -1574,7 +1617,7 @@ describe("Phase 2 — browser step evidence", () => {
       }],
     })
 
-    const page = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"] })
+    const page = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"] })
     expect(page.items[0]?.browser?.hasScreenshot).toBe(false)
     expect(page.items[0]?.browser?.action).toBe("click")
     expect(JSON.stringify(page)).not.toContain("screenshotArtifactId")
@@ -1589,13 +1632,13 @@ describe("Phase 2 — browser step evidence", () => {
       results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "click", ariaSnapshot: snapshot } }],
     })
 
-    const capped = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"], maxBytes: 100 })
+    const capped = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"], maxBytes: 100 })
     const preview = capped.items[0]?.browser?.ariaSnapshot
     expect(Buffer.byteLength(preview?.preview ?? "", "utf8")).toBeLessThanOrEqual(100)
     expect(capped.items[0]).toMatchObject({ budgetOmitted: false, browser: { ariaSnapshot: { previewTruncated: true, totalBytes: 4_000 } } })
 
     const windowed = await evidence(workspaceId, run.runId, {
-      nodeId: "signin",
+      nodeIds: ["signin"],
       sections: ["browser"],
       start: 10,
       end: 25,
@@ -1607,6 +1650,73 @@ describe("Phase 2 — browser step evidence", () => {
     })
   })
 
+  it("scopes the ARIA snapshot to the open dialog by default, and windows the scoped text", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    const snapshot = [
+      "- banner [ref=e1]:",
+      '  - heading "App" [level=1]',
+      "- main [ref=e2]:",
+      '  - textbox "Email": ann@example.test',
+      '  - button "Sign in"',
+      '- dialog "Confirm" [ref=e9]:',
+      '  - heading "Sure?" [level=2]',
+      '  - button "OK" [ref=e10]',
+    ].join("\n")
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "click", ariaSnapshot: snapshot } }],
+    })
+
+    // "auto" prefers the open dialog — the part a locator is being picked
+    // from — over the main landmark, and the preview is the dedented subtree.
+    const dialog = '- dialog "Confirm" [ref=e9]:\n  - heading "Sure?" [level=2]\n  - button "OK" [ref=e10]'
+    const auto = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"] })
+    expect(auto.items[0]?.browser?.ariaSnapshot).toEqual({
+      preview: dialog,
+      previewTruncated: false,
+      totalBytes: Buffer.byteLength(dialog, "utf8"),
+      scope: "dialog",
+    })
+
+    // A named scope is honoured: "main" extracts the first main landmark.
+    const main = '- main [ref=e2]:\n  - textbox "Email": ann@example.test\n  - button "Sign in"'
+    const scoped = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"], scope: "main" })
+    expect(scoped.items[0]?.browser?.ariaSnapshot).toMatchObject({ preview: main, scope: "main" })
+
+    // Byte windows address the SCOPED text, and its total is the scoped size.
+    const windowed = await evidence(workspaceId, run.runId, {
+      nodeIds: ["signin"],
+      sections: ["browser"],
+      scope: "dialog",
+      start: 10,
+      end: 25,
+      maxBytes: 100,
+    })
+    expect(windowed.items[0]?.browser?.ariaSnapshot).toMatchObject({
+      preview: dialog.slice(10, 25),
+      previewTruncated: true,
+      totalBytes: Buffer.byteLength(dialog, "utf8"),
+      scope: "dialog",
+    })
+  })
+
+  it("falls back to the whole page, with a note, when the named scope is absent", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "click", ariaSnapshot: SNAPSHOT } }],
+    })
+
+    const dialog = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"], scope: "dialog" })
+    expect(dialog.items[0]?.browser?.ariaSnapshot).toMatchObject({ preview: SNAPSHOT, scope: "page" })
+    expect(dialog.items[0]?.browser?.ariaSnapshot?.scopeNote).toMatch(/No dialog/)
+
+    const main = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"], scope: "main" })
+    expect(main.items[0]?.browser?.ariaSnapshot?.scopeNote).toMatch(/No main landmark/)
+  })
+
   it("caps compared page text at the preview cap instead of echoing it whole", async () => {
     const { workspaceId, workflowId } = await seedBrowserWorkflow()
     const run = runRepository.create({ workspaceId, workflowId })
@@ -1616,7 +1726,7 @@ describe("Phase 2 — browser step evidence", () => {
       results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "expect-text", expected: "ok", actual: longText } }],
     })
 
-    const page = await evidence(workspaceId, run.runId, { nodeId: "signin", sections: ["browser"], maxBytes: 64 })
+    const page = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"], maxBytes: 64 })
     const actual = page.items[0]?.browser?.actual ?? ""
     expect(Buffer.byteLength(actual, "utf8")).toBeLessThanOrEqual(64)
     expect(actual.endsWith("…")).toBe(true)
@@ -1667,11 +1777,11 @@ describe("Phase 2 — browser step evidence", () => {
 
   it("has no browser section for an HTTP node, and can leave it out explicitly", async () => {
     const { workspaceId, runId } = await seedFailedRunWithResponse()
-    const page = await evidence(workspaceId, runId, { nodeId: "login" })
+    const page = await evidence(workspaceId, runId, { nodeIds: ["login"] })
     expect(page.items[0]).not.toHaveProperty("browser")
     expect(page.items[0]?.omittedSections).toEqual([])
 
-    const restricted = await evidence(workspaceId, runId, { nodeId: "login", sections: ["response"] })
+    const restricted = await evidence(workspaceId, runId, { nodeIds: ["login"], sections: ["response"] })
     expect(restricted.items[0]).not.toHaveProperty("browser")
     expect(restricted.items[0]?.omittedSections.sort()).toEqual(["assertions", "browser", "call", "error", "extractors", "request"])
   })
@@ -1723,7 +1833,7 @@ describe("Phase 2 — browser step evidence", () => {
     const client = await connectClient()
     const result = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId, runId: run.runId, nodeId: "signin", sections: ["browser"] },
+      arguments: { workspaceId, runId: run.runId, nodeIds: ["signin"], sections: ["browser"] },
     })
     const text = textOf(result as { content: Array<{ type: string; text?: string }> })
     const parsed = JSON.parse(text) as {

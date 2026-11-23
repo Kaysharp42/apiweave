@@ -1,8 +1,8 @@
 import { z } from "zod"
-import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema, RunArtifactSchema } from "@shared/zod-schemas"
+import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema, RunArtifactSchema, AriaScopeSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import { ifFound, listResult } from "./common"
+import { ifFound, listResult, unknownKeyError } from "./common"
 import { NotFoundError, ValidationError } from "../errors"
 import {
   EVIDENCE_PREVIEW_MAX_BYTES,
@@ -87,33 +87,45 @@ const evidenceSection = z.enum(["error", "assertions", "extractors", "request", 
 // with explicit truncation accounting — never whole — and sections the caller
 // skips are named in omittedSections. Unknown node ids are reported in
 // missingNodeIds, not silently dropped.
-const nodeResultInput = z.object({
-  workspaceId: ws,
-  runId: z.string().min(1),
-  nodeId: z.string().min(1).optional().describe("One node to inspect. Prefer nodeIds for up to 50 nodes in one call."),
-  nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes to inspect, in the order to return. Combined with nodeId at most 50."),
-  sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). `browser` carries a browser step's action, page URL and title, compared values, and its masked ARIA snapshot as a windowable preview, plus hasScreenshot — never the screenshot's bytes or its artifact id. `call` carries a Call Workflow node's child-run summary: the target workflowId, the child runId (per-iteration runIds and statuses for a for-each, capped with omittedIterationCount) and pass/fail counts — read the child runId with runs_getNodeResult to see which step inside the called workflow failed. Omitted sections are named, never silently absent."),
-  path: z.string().min(1).max(500).optional().describe("Extractor-grammar path resolved against the node's whole response record, not only its body: dot paths (response.body.items[0].id, response.fault.code, response.trailers.<name>), RFC 9535 JSONPath ($.response.body.items[?@.id==3].name), or XPath over an XML body (xpath://*[local-name()=\"Total\"]/text()). A miss reports path-missing, type-mismatch or invalid-path distinctly."),
-  maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per text payload in bytes (default 2048): request/response bodies, a browser step's ARIA snapshot, and its expected/actual text."),
-  start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
-  end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
-  screenshot: z.boolean().optional().describe("Also return a browser step's screenshot as image content (JPEG, at most 1 MB, password fields and secret values painted over), when its browser section says hasScreenshot. One node only: pass nodeId alone."),
-}).strict().superRefine((value, context) => {
-  if (value.nodeId === undefined && value.nodeIds === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "Name a node: nodeId for one, nodeIds for several." })
-  }
-  if (value.screenshot === true && (value.nodeId === undefined || value.nodeIds !== undefined)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["screenshot"], message: "A screenshot is read for one node: pass nodeId alone." })
-  }
-  if (value.start !== undefined && value.end !== undefined && value.end <= value.start) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: "end must be greater than start." })
-  }
-})
+//
+// Nodes are named with `nodeIds` only, like every list parameter on this
+// surface: a single node is a one-element list (`screenshot` requires one).
+const nodeResultInput = z
+  .strictObject(
+    {
+      workspaceId: ws,
+      runId: z.string().min(1),
+      nodeIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(NODE_DETAIL_MAX_LIMIT)
+        .describe("Nodes to inspect, in the order to return (at most 50; one node is a one-element list)."),
+      sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). `browser` carries a browser step's action, page URL and title, compared values, and its masked ARIA snapshot as a scoped, windowable preview, plus hasScreenshot — never the screenshot's bytes or its artifact id. `call` carries a Call Workflow node's child-run summary: the target workflowId, the child runId (per-iteration runIds and statuses for a for-each, capped with omittedIterationCount) and pass/fail counts — read the child runId with runs_getNodeResult to see which step inside the called workflow failed. Omitted sections are named, never silently absent."),
+      path: z.string().min(1).max(500).optional().describe("Extractor-grammar path resolved against the node's whole response record, not only its body: dot paths (response.body.items[0].id, response.fault.code, response.trailers.<name>), RFC 9535 JSONPath ($.response.body.items[?@.id==3].name), or XPath over an XML body (xpath://*[local-name()=\"Total\"]/text()). A miss reports path-missing, type-mismatch or invalid-path distinctly."),
+      maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per text payload in bytes (default 2048): request/response bodies, a browser step's ARIA snapshot, and its expected/actual text."),
+      scope: AriaScopeSchema.optional(),
+      start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary. For a browser step's ARIA snapshot the offset is into the SCOPED text the response names, not the whole snapshot."),
+      end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
+      screenshot: z.boolean().optional().describe("Also return a browser step's screenshot as image content (JPEG, at most 1 MB, password fields and secret values painted over), when its browser section says hasScreenshot. One node only: pass exactly one id in nodeIds."),
+    },
+    {
+      error: unknownKeyError({
+        nodeId: "This tool names nodes with nodeIds — a list of one or more node ids (screenshot reads pass exactly one).",
+      }),
+    },
+  )
+  .superRefine((value, context) => {
+    if (value.screenshot === true && value.nodeIds.length !== 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["screenshot"], message: "A screenshot is read for one node: pass exactly one id in nodeIds." })
+    }
+    if (value.start !== undefined && value.end !== undefined && value.end <= value.start) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: "end must be greater than start." })
+    }
+  })
 
 /** Distinct node ids for one evidence read, in request order, held to the call's node cap. */
-function evidenceNodeIds(nodeId: string | undefined, nodeIds: readonly string[] | undefined): string[] {
-  const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
-  const ordered = [...new Set(merged)]
+function evidenceNodeIds(nodeIds: readonly string[]): string[] {
+  const ordered = [...new Set(nodeIds)]
   if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
     throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
   }
@@ -234,16 +246,18 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   router.register("runs", "getNodeResult", {
     input: nodeResultInput,
     output: NodeEvidencePageSchema,
-    handle: async ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end, screenshot }) => {
+    handle: async ({ workspaceId, runId, nodeIds, sections, path, maxBytes, scope, start, end, screenshot }) => {
+      const evidenceIds = evidenceNodeIds(nodeIds)
       const page = await runs.getNodeEvidence(workspaceId, runId, {
-        nodeIds: evidenceNodeIds(nodeId, nodeIds),
+        nodeIds: evidenceIds,
         ...(sections !== undefined ? { sections: sections as readonly EvidenceSection[] } : {}),
         ...(path !== undefined ? { path } : {}),
         ...(maxBytes !== undefined ? { maxBytes } : {}),
+        ...(scope !== undefined ? { scope } : {}),
         ...(start !== undefined ? { start } : {}),
         ...(end !== undefined ? { end } : {}),
       })
-      const image = screenshot === true && nodeId !== undefined ? await stepScreenshot(deps, workspaceId, runId, nodeId) : undefined
+      const image = screenshot === true ? await stepScreenshot(deps, workspaceId, runId, evidenceIds[0]!) : undefined
       return image !== undefined ? { ...page, screenshot: image } : page
     },
   })

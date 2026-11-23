@@ -69,6 +69,23 @@ class FakeTrigger implements RunTrigger {
 
 const PAGE: InspectedPage = { url: "http://app.test/login", title: "Sign in", ariaSnapshot: '- heading "Sign in" [level=1]\n- button "Sign in"' }
 
+/** A snapshot whose open dialog is the part worth reading, under a main landmark. */
+const DIALOG_PAGE: InspectedPage = {
+  url: "http://app.test/checkout",
+  title: "Checkout",
+  ariaSnapshot: [
+    "- banner [ref=e1]:",
+    '  - heading "Shop" [level=1]',
+    "- main [ref=e2]:",
+    '  - textbox "Email": ann@example.test',
+    '- dialog "Confirm order" [ref=e9]:',
+    '  - button "Place order" [ref=e10]',
+  ].join("\n"),
+}
+
+/** What `scopeAriaSnapshot` extracts from DIALOG_PAGE under "auto" or "dialog". */
+const DIALOG_SCOPE = '- dialog "Confirm order" [ref=e9]:\n  - button "Place order" [ref=e10]'
+
 const request = (workflowId: string, waitMs?: number): { workflowId: string; screenshot: boolean; maxBytes: number; waitMs?: number } => ({
   workflowId,
   screenshot: false,
@@ -127,8 +144,64 @@ describe("RunService.inspectBrowser", () => {
       preview: PAGE.ariaSnapshot!.slice(0, 20),
       previewTruncated: true,
       totalBytes: Buffer.byteLength(PAGE.ariaSnapshot!),
+      scope: "page",
+      scopeNote: "No dialog or main landmark in this ARIA snapshot; returned the whole page.",
     })
     expect(inspection.note).toMatch(/larger maxBytes/)
+  })
+
+  it("scopes the snapshot to the open dialog by default, and windows the scoped text", async () => {
+    const trigger = new FakeTrigger(runs, { page: DIALOG_PAGE })
+    const inspection = await service(trigger).inspectBrowser(workspaceId, {
+      ...request(workflowId),
+      // maxBytes tight enough that only the scoped dialog fits: the point of
+      // scoping is that the banner and main landmark are not what the preview
+      // spends its bytes on.
+      maxBytes: Buffer.byteLength(DIALOG_SCOPE, "utf8"),
+    })
+    expect(inspection.page?.ariaSnapshot).toEqual({
+      preview: DIALOG_SCOPE,
+      previewTruncated: false,
+      totalBytes: Buffer.byteLength(DIALOG_SCOPE, "utf8"),
+      scope: "dialog",
+    })
+    expect(inspection.note).toBeUndefined()
+
+    const windowed = await service(new FakeTrigger(runs, { page: DIALOG_PAGE })).inspectBrowser(workspaceId, {
+      ...request(workflowId),
+      scope: "dialog",
+      start: 10,
+      end: 25,
+    })
+    expect(windowed.page?.ariaSnapshot).toMatchObject({
+      preview: DIALOG_SCOPE.slice(10, 25),
+      previewTruncated: true,
+      totalBytes: Buffer.byteLength(DIALOG_SCOPE, "utf8"),
+      scope: "dialog",
+    })
+
+    // A named scope that is absent falls back to the whole page, with a note.
+    const absent = await service(new FakeTrigger(runs, { page: DIALOG_PAGE })).inspectBrowser(workspaceId, {
+      ...request(workflowId),
+      scope: "main",
+    })
+    expect(absent.page?.ariaSnapshot).toMatchObject({ scope: "main", preview: '- main [ref=e2]:\n  - textbox "Email": ann@example.test' })
+  })
+
+  it("scopes a continued inspection the same way, by runId", async () => {
+    const trigger = new FakeTrigger(runs, { hold: true })
+    const runService = service(trigger)
+    const first = await runService.inspectBrowser(workspaceId, request(workflowId, 10))
+    expect(first.terminal).toBe(false)
+
+    trigger.finish(first.runId, "completed", DIALOG_PAGE)
+    const second = await runService.inspectBrowser(workspaceId, {
+      runId: first.runId,
+      screenshot: false,
+      maxBytes: 16_384,
+      scope: "dialog",
+    })
+    expect(second.page?.ariaSnapshot).toMatchObject({ preview: DIALOG_SCOPE, scope: "dialog" })
   })
 
   it("returns the screenshot as base64 JPEG, for the bridge to send as an image", async () => {

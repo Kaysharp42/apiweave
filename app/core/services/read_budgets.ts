@@ -72,19 +72,22 @@ export const DEBUG_CONTEXT_DEFAULT_ERROR_BYTES = 2048
 export const DEBUG_CONTEXT_MAX_ERROR_BYTES = 8192
 
 /**
- * Bytes of a browser step's ARIA snapshot carried inline per evidence
- * entry. A snapshot runs to 64 KiB, so the debug read carries its opening only —
- * enough to see the page's structure near the top — and states the full size;
- * the whole window is a `runs_getNodeResult` call away. The same cap applies to
- * the step's `expected`/`actual` page text.
+ * Bytes of a browser step's scoped ARIA snapshot carried inline per evidence
+ * entry. The debug read scopes first (dialog, else main, else page — the
+ * part a locator lives in), then carries the opening of the scoped text only,
+ * and states the scoped size; the whole window is a `runs_getNodeResult` call
+ * away. The same cap applies to the step's `expected`/`actual` page text.
  */
 export const DEBUG_CONTEXT_BROWSER_TEXT_BYTES = 2048
 
 /**
- * Default/maximum bytes of the ARIA snapshot `browser.inspect` returns. Larger
- * than a node-evidence preview because the snapshot is the whole point of the
- * call, and reading on past the cut would mean running the workflow again; the
- * maximum stays under the 32 KiB inline budget with room for the rest.
+ * Default/maximum bytes of the ARIA snapshot `browser.inspect` returns, counted
+ * on the scoped text (`scope`, default "auto": dialog, else main, else page).
+ * Larger than a node-evidence preview because the snapshot is the whole point
+ * of the call, and the kept page is consumed by its one read — windowing past
+ * the cut with `start`/`end` happens in the same call, or it means running the
+ * workflow again; the maximum stays under the 32 KiB inline budget with room
+ * for the rest.
  */
 export const BROWSER_INSPECT_SNAPSHOT_DEFAULT_BYTES = 16 * 1024
 export const BROWSER_INSPECT_SNAPSHOT_MAX_BYTES = 24 * 1024

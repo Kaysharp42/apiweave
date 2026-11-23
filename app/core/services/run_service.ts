@@ -1,4 +1,5 @@
 import type { Run } from "@shared/types/Run"
+import type { AriaScope } from "@shared/types/AriaScope"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
@@ -77,7 +78,24 @@ interface BrowserInspectInput {
   readonly variables?: Readonly<Record<string, JsonValue>>
   readonly screenshot: boolean
   readonly maxBytes: number
+  /** Which part of the page's ARIA snapshot to return; default "auto" (dialog, else main, else page). */
+  readonly scope?: AriaScope
+  readonly start?: number
+  readonly end?: number
   readonly waitMs?: number
+}
+
+/** The read-shaping half of an inspection request: how the kept page's ARIA snapshot is cut. */
+type SnapshotRead = Pick<BrowserInspectInput, "maxBytes" | "scope" | "start" | "end">
+
+/** Defaults applied where the handler does not: scope "auto", no byte window. */
+function snapshotReadOf(input: BrowserInspectInput): SnapshotRead {
+  return {
+    maxBytes: input.maxBytes,
+    ...(input.scope !== undefined ? { scope: input.scope } : {}),
+    ...(input.start !== undefined ? { start: input.start } : {}),
+    ...(input.end !== undefined ? { end: input.end } : {}),
+  }
 }
 
 /**
@@ -387,13 +405,16 @@ export class RunService {
   ): Promise<BrowserInspection> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const waitMs = normalizeWaitMs(input.waitMs)
+    // Scope/window/maxBytes shape the READ of the kept page, so they apply on
+    // both entry points — a new run and a continue-by-runId alike.
+    const read = snapshotReadOf(input)
     if (input.runId !== undefined) {
       if (input.workflowId !== undefined) throw new ValidationError("Pass workflowId or runId, not both.")
-      return this.continueInspection(workspaceId, input.runId, input.maxBytes, waitMs, options)
+      return this.continueInspection(workspaceId, input.runId, read, waitMs, options)
     }
     if (options.signal?.aborted === true) throw abortError("inspect cancelled")
     const { runId, kept } = this.startInspection(workspaceId, input, options)
-    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, input.maxBytes)
+    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, read)
   }
 
   /** Validate a new inspection and enqueue its run, recording the entry its page lands in. */
@@ -436,7 +457,7 @@ export class RunService {
   private async continueInspection(
     workspaceId: string,
     runId: string,
-    maxBytes: number,
+    read: SnapshotRead,
     waitMs: number,
     options: RunWaitOptions,
   ): Promise<BrowserInspection> {
@@ -447,7 +468,7 @@ export class RunService {
     }
     // The caller is using it: keep it alive for the next continuation.
     kept.storedAt = Date.now()
-    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, maxBytes)
+    return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, read)
   }
 
   /**
@@ -455,10 +476,10 @@ export class RunService {
    * a screenshot is held once, never handed back twice — while a run still
    * going keeps its entry for the next `runId` call.
    */
-  private finishInspection(run: Run, kept: KeptInspection, maxBytes: number): BrowserInspection {
+  private finishInspection(run: Run, kept: KeptInspection, read: SnapshotRead): BrowserInspection {
     const result = inspectionResult(run, kept.page, {
       ...(kept.beforeNodeId !== undefined ? { beforeNodeId: kept.beforeNodeId } : {}),
-      maxBytes,
+      ...read,
     })
     if (result.terminal) {
       // Two waits on the same inspection share this entry: the first to see it

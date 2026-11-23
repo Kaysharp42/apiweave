@@ -1,4 +1,5 @@
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
+import type { AriaScope } from "@shared/types/AriaScope"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeEvidence } from "@shared/types/NodeEvidence"
 import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
@@ -6,6 +7,7 @@ import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunHistoryCursor } from "../repositories/RunRepository"
 import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, CALL_EVIDENCE_MAX_ITERATIONS, truncateUtf8, truncateUtf8Marked } from "./read_budgets"
+import { scopeAriaSnapshot } from "./aria_scope"
 import { sanitizeAgentReadValue } from "./secret_utils"
 import { assertCursorSnapshot, cursorScope, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
@@ -62,6 +64,8 @@ export interface EvidenceSelection {
   readonly sections?: readonly EvidenceSection[]
   readonly path?: string
   readonly maxBytes?: number
+  /** Which part of a browser step's ARIA snapshot to return; default "auto" (dialog, else main, else page). */
+  readonly scope?: AriaScope
   readonly start?: number
   readonly end?: number
 }
@@ -96,6 +100,7 @@ export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): N
     items.push(buildNodeEvidence(result, wanted, {
       maxBytes,
       ...(selection.path !== undefined ? { path: selection.path } : {}),
+      ...(selection.scope !== undefined ? { scope: selection.scope } : {}),
       ...(selection.start !== undefined ? { start: selection.start } : {}),
       ...(selection.end !== undefined ? { end: selection.end } : {}),
     }))
@@ -116,7 +121,7 @@ export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): N
 function buildNodeEvidence(
   result: RunResult,
   wanted: ReadonlySet<EvidenceSection>,
-  bounds: EvidenceBounds & { path?: string },
+  bounds: EvidenceBounds & { path?: string; scope?: AriaScope },
 ): NodeEvidence {
   const base = {
     nodeId: result.nodeId,
@@ -275,15 +280,18 @@ export function browserEvidenceSummary(
  * One browser step's stored evidence, as an agent reads it. The ARIA snapshot
  * goes through the same bounded, windowable text preview a response body does
  * (a whole snapshot is up to 64 KiB, most of a page budget, and an agent
- * repairing a locator usually needs a slice, not the document). `expected` and
- * `actual` are page text too, so they are cut to the caller's preview cap with
- * a visible marker rather than arriving whole. The screenshot is reported as a
- * presence flag: its artifact id is a transport detail (the bytes are read
- * through a different, capped route), never part of this read.
+ * repairing a locator usually needs a slice, not the document) — scoped first,
+ * so the preview and its byte window address the dialog or main content the
+ * locator lives in rather than the navigation chrome that opens every
+ * snapshot. `expected` and `actual` are page text too, so they are cut to the
+ * caller's preview cap with a visible marker rather than arriving whole. The
+ * screenshot is reported as a presence flag: its artifact id is a transport
+ * detail (the bytes are read through a different, capped route), never part
+ * of this read.
  */
 function buildBrowserEvidence(
   browser: NonNullable<RunResult["browser"]>,
-  bounds: EvidenceBounds,
+  bounds: EvidenceBounds & { scope?: AriaScope },
 ): NonNullable<NodeEvidence["browser"]> {
   return {
     ...browserEvidenceSummary(browser, bounds.maxBytes),
@@ -296,13 +304,19 @@ function buildBrowserEvidence(
 
 function snapshotPreview(
   snapshot: string,
-  bounds: EvidenceBounds,
+  bounds: EvidenceBounds & { scope?: AriaScope },
 ): NonNullable<NonNullable<NodeEvidence["browser"]>["ariaSnapshot"]> {
-  const preview = previewText(snapshot, bounds)
+  // Scope the stored (already masked) text, then window the scoped text: the
+  // preview and its offsets address what was actually returned, and masking
+  // still ran on the full text before any of it reached here.
+  const scoped = scopeAriaSnapshot(snapshot, bounds.scope ?? "auto")
+  const preview = previewText(scoped.text, bounds)
   return {
     preview: preview.preview,
     previewTruncated: preview.previewTruncated,
     totalBytes: preview.totalBytes,
+    scope: scoped.applied,
+    ...(scoped.note !== undefined ? { scopeNote: scoped.note } : {}),
   }
 }
 
@@ -357,7 +371,12 @@ function previewValue(
   return previewText(text, bounds)
 }
 
-function previewText(
+/**
+ * Serialize a value to a bounded text preview with explicit cut accounting.
+ * Shared by the node-evidence read and the browser inspection read, so a
+ * snapshot window means the same bytes in both.
+ */
+export function previewText(
   text: string,
   bounds: EvidenceBounds,
 ): { preview: string; previewTruncated: boolean; totalBytes: number } {

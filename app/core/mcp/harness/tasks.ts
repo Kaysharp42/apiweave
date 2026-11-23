@@ -113,7 +113,7 @@ async function runDebugTask(client: Client, recorder: McpBenchmarkRecorder, seed
   const summary = asRecord(debug["failureSummary"])
   const failedNodeId = asArray(summary["failedNodeIds"])
     .map((nodeId) => asString(nodeId))[0] ?? seed.failedNodeId
-  await callSeeded(client, recorder, seed, "runs_getNodeResult", { runId: seed.failedRunId, nodeId: failedNodeId })
+  await callSeeded(client, recorder, seed, "runs_getNodeResult", { runId: seed.failedRunId, nodeIds: [failedNodeId] })
 }
 
 async function runAddAssertionTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {

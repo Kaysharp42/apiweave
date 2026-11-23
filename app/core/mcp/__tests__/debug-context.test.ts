@@ -909,6 +909,8 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
       title: "Sign in",
       hasScreenshot: true,
       ariaSnapshotPreview: SNAPSHOT,
+      ariaSnapshotScope: "page",
+      ariaSnapshotScopeNote: "No dialog or main landmark in this ARIA snapshot; returned the whole page.",
       ariaSnapshotTruncated: false,
       ariaSnapshotBytes: Buffer.byteLength(SNAPSHOT, "utf8"),
     })
@@ -916,6 +918,26 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
     expect(item?.moreDetail.args.sections).toContain("browser")
     // The screenshot is a presence flag; its id and bytes never travel here.
     expect(JSON.stringify(context)).not.toContain("shot-0")
+  })
+
+  it("scopes a failed step's snapshot to the open dialog for the overview", async () => {
+    const snapshot = [
+      "- banner [ref=e1]:",
+      '  - heading "App" [level=1]',
+      "- main [ref=e2]:",
+      '  - textbox "Email": ann@example.test',
+      '- dialog "Confirm" [ref=e9]:',
+      '  - button "OK" [ref=e10]',
+    ].join("\n")
+    const seed = await seedBrowserFailures(1, { snapshot })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    const browser = context.evidence[0]?.browser
+    const scoped = '- dialog "Confirm" [ref=e9]:\n  - button "OK" [ref=e10]'
+    expect(browser?.ariaSnapshotScope).toBe("dialog")
+    expect(browser?.ariaSnapshotScopeNote).toBeUndefined()
+    expect(browser?.ariaSnapshotPreview).toBe(scoped)
+    expect(browser?.ariaSnapshotBytes).toBe(Buffer.byteLength(scoped, "utf8"))
   })
 
   it("cuts a long snapshot and long compared text with byte accounting", async () => {

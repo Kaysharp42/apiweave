@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
+import { AppliedAriaScopeSchema } from "./AriaScopeSchema"
 import { ExtractorOutcomeSchema } from "./ExtractorOutcomeSchema"
 import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 import { TimestampSchema } from "./TimestampSchema"
@@ -28,15 +29,21 @@ const EvidenceResponseSchema = z
 /**
  * A page's ARIA (accessibility) snapshot is page content, routinely tens of
  * kilobytes long, so it travels as the same bounded, windowable preview a
- * response body does: `preview` is a byte window (`maxBytes`/`start`/`end`),
- * `previewTruncated` says the window is not the whole snapshot, and
- * `totalBytes` is the snapshot's full size so the caller can choose offsets.
+ * response body does — after scoping to one part of the page: `scope` says
+ * which part (the open dialog, the main landmark, or the whole page —
+ * `"auto"` resolved to one of the three, and `scopeNote` says why a
+ * requested scope fell back to the whole page). `preview` is a byte window
+ * (`maxBytes`/`start`/`end`) into the SCOPED text, `previewTruncated` says
+ * the window is not all of it, and `totalBytes` is the scoped text's size so
+ * the caller can choose offsets.
  */
 const EvidenceBrowserSnapshotSchema = z
   .object({
     preview: z.string().optional(),
     previewTruncated: z.boolean().optional(),
     totalBytes: z.number().int().nonnegative().optional(),
+    scope: AppliedAriaScopeSchema,
+    scopeNote: z.string().optional(),
   })
   .strict()
 

@@ -17,6 +17,7 @@ import {
   truncateUtf8,
 } from "./read_budgets"
 import { browserEvidenceSummary, callEvidenceSummary } from "./run_evidence"
+import { scopeAriaSnapshot } from "./aria_scope"
 import type { EnvironmentService } from "./environment_service"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
@@ -430,22 +431,30 @@ const EVIDENCE_SECTIONS_WITH_BROWSER: DebugEvidenceSections = [...EVIDENCE_SECTI
 /**
  * A failed browser step, compacted: what ran, what it compared, which page it
  * was on, whether a screenshot exists, and the opening of the masked ARIA
- * snapshot with its full size stated. The artifact id never travels — bytes are
- * read through their own capped route — and the snapshot is cut in bytes so a
- * multi-byte page cannot overrun the aggregate budget.
+ * snapshot with its full size stated. The snapshot is scoped with `"auto"` —
+ * no new request parameter: this read is the bounded one-call overview, and
+ * its `moreDetail` selector already points at `runs_getNodeResult`, where a
+ * `scope` can be named; the applied scope is still reported so the overview
+ * and the follow-up read agree. The artifact id never travels — bytes are
+ * read through their own capped route — and the scoped text is cut in bytes
+ * so a multi-byte page cannot overrun the aggregate budget.
  */
 function summarizeBrowser(
   browser: NonNullable<RunResult["browser"]>,
 ): NonNullable<WorkflowDebugContext["evidence"][number]["browser"]> {
-  const snapshot = browser.ariaSnapshot
-  const snapshotBytes = snapshot === undefined ? 0 : Buffer.byteLength(snapshot, "utf8")
-  const snapshotTruncated = snapshotBytes > DEBUG_CONTEXT_BROWSER_TEXT_BYTES
+  const scoped = browser.ariaSnapshot === undefined ? undefined : scopeAriaSnapshot(browser.ariaSnapshot, "auto")
+  const scopedBytes = scoped === undefined ? 0 : Buffer.byteLength(scoped.text, "utf8")
+  const snapshotTruncated = scopedBytes > DEBUG_CONTEXT_BROWSER_TEXT_BYTES
   return {
     ...browserEvidenceSummary(browser, DEBUG_CONTEXT_BROWSER_TEXT_BYTES),
     hasScreenshot: browser.screenshotArtifactId !== undefined,
-    ...(snapshot === undefined ? {} : { ariaSnapshotPreview: snapshotTruncated ? truncateUtf8(snapshot, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) : snapshot }),
+    ...(scoped === undefined ? {} : {
+      ariaSnapshotPreview: snapshotTruncated ? truncateUtf8(scoped.text, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) : scoped.text,
+      ariaSnapshotScope: scoped.applied,
+      ...(scoped.note !== undefined ? { ariaSnapshotScopeNote: scoped.note } : {}),
+    }),
     ariaSnapshotTruncated: snapshotTruncated,
-    ariaSnapshotBytes: snapshotBytes,
+    ariaSnapshotBytes: scopedBytes,
   }
 }
 

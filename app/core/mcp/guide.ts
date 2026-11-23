@@ -283,35 +283,43 @@ account. An unresolved placeholder fails the step.
 **Write from the page, not from source.** Write the \`navigate\` step and any
 login steps, then call \`browser_inspect\` without \`beforeNodeId\`: it runs the
 workflow headless and returns the page it ends on — URL, title and the masked
-ARIA snapshot — which is where the next step starts. Take that step's locator
+ARIA snapshot — which is where the next step starts. The snapshot is scoped
+(\`scope\`, default \`"auto"\`): the open dialog when the page has one, else the
+main landmark, else the whole page — the part a locator lives in, not the
+banner and navigation that open every snapshot. \`maxBytes\`/\`start\`/\`end\`
+window the scoped text; the response's \`scope\` and \`totalBytes\` say what was
+extracted and how big it is, so you can window it. Take that step's locator
 from the snapshot, the tree Playwright's own recorder picks locators from:
 \`button "Sign in"\` is \`{"kind": "role", "role": "button", "name": "Sign in"}\`,
 and \`textbox "Email"\` is role \`textbox\` name \`Email\`, or a \`label\` locator.
 Add the step with \`workflows_patch\`, inspect again, and \`runs_create\` once the
 flow is written. \`beforeNodeId\` stops the run before an existing step instead,
-showing the page that step acts on: the way to check a locator you are
-repairing. \`page: null\` means no browser step had run: add a \`navigate\`
-first (there is no \`url\` mode). \`browser_inspect\` sends real traffic and
-records a run, like \`runs_create\`. Its wait is bounded (\`waitMs\`, default
-10000, max 30000): \`terminal: false\` means the run has not finished, possibly
-waiting for the user's approval — pass that \`runId\` back to keep waiting, which
-starts no new run and asks for no second approval. \`deniedByUser: true\` means
-they refused or did not answer — say so, do not retry. A timeout or disconnect
-never cancels the run (only \`runs_cancel\` does).
+returning the page as it is just before this node runs — the page that step
+acts on: the way to check a locator you are repairing. \`page: null\` means no
+browser step had run: add a \`navigate\` first (there is no \`url\` mode).
+\`browser_inspect\` sends real traffic and records a run, like \`runs_create\`.
+Its wait is bounded (\`waitMs\`, default 10000, max 30000): \`terminal: false\`
+means the run has not finished, possibly waiting for the user's approval —
+pass that \`runId\` back to keep waiting, which starts no new run and asks for
+no second approval. \`deniedByUser: true\` means they refused or did not answer
+— say so, do not retry. A timeout or disconnect never cancels the run (only
+\`runs_cancel\` does).
 
 **Read a finished run's page.** Every executed browser step — passed or failed —
 stores its URL, title, masked ARIA snapshot and a screenshot, readable without a
-rerun: \`runs_getNodeResult\` with \`sections: ["browser"]\` (+ \`screenshot: true\`).
-For the page *before* step X, read the step before X. Prefer that stored
-evidence; use \`browser_inspect\` only when the page must be re-observed after
-the workflow changed, because it replays every earlier node for real.
+rerun: \`runs_getNodeResult\` with \`nodeIds: [<step>]\` and \`sections: ["browser"]\`
+(+ \`screenshot: true\`). The snapshot there carries the same \`scope\` default
+and the same \`maxBytes\`/\`start\`/\`end\` windowing over the scoped text. For the
+page *before* step X, read the step before X. Prefer that stored evidence; use
+\`browser_inspect\` only when the page must be re-observed after the workflow
+changed, because it replays every earlier node for real.
 
 **Repair.** A browser step's evidence is in \`workflows_debugContext\`, or in
 \`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,
-Playwright's \`detail\`, the page URL and title, and the masked ARIA snapshot at
-the step. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
-enough; the image arrives as image content. Patch only that node with
-\`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
+Playwright's \`detail\`, the page URL and title, and the scoped masked ARIA
+snapshot at the step. Add \`screenshot: true\` with one id in \`nodeIds\` when the
+tree is not enough; the image arrives as image content. Patch only that node
+with \`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
 rerun that reaches a browser step restarts the chain from its first step.
 
 The desktop's **Re-pick element** is yours too: \`browser_inspect\` with

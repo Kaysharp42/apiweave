@@ -726,7 +726,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const client = await connectClient()
     const toolResult = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "mc-create" },
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeIds: ["mc-create"] },
     })
     const text = textOf(toolResult as { content: Array<{ type: string; text?: string }> })
     const parsed = JSON.parse(text) as {
@@ -775,7 +775,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const client = await connectClient()
     const result = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "nope" },
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeIds: ["nope"] },
     })
     expect((result as { isError?: boolean }).isError).toBeFalsy()
     const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
@@ -798,7 +798,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const client = await connectClient()
     const result = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId: "ws-not-mine", runId: run.runId, nodeId: "nope" },
+      arguments: { workspaceId: "ws-not-mine", runId: run.runId, nodeIds: ["nope"] },
     })
     expect((result as { isError?: boolean }).isError).toBe(true)
     expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain("not_found")

@@ -3,13 +3,18 @@ import type { Run } from "@shared/types/Run"
 import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { InspectedPage } from "../runner/browser/inspect"
 import { AGENT_RUN_DENIED_ERROR } from "../runner/scheduler"
-import { truncateUtf8 } from "./read_budgets"
+import type { AriaScope } from "@shared/types/AriaScope"
+import { scopeAriaSnapshot } from "./aria_scope"
+import { previewText, type EvidenceBounds } from "./run_evidence"
 
 type InspectedSnapshot = NonNullable<NonNullable<BrowserInspection["page"]>["ariaSnapshot"]>
 
 interface InspectionRequest {
   readonly beforeNodeId?: string
   readonly maxBytes: number
+  readonly scope?: AriaScope
+  readonly start?: number
+  readonly end?: number
 }
 
 const TERMINAL_STATUSES: ReadonlySet<Run["status"]> = new Set([
@@ -43,11 +48,11 @@ export function inspectionResult(
     }
   }
   const deniedByUser = run.error === AGENT_RUN_DENIED_ERROR
-  const snapshot = page?.ariaSnapshot !== undefined ? cut(page.ariaSnapshot, request.maxBytes) : undefined
+  const snapshot = page?.ariaSnapshot !== undefined ? cut(page.ariaSnapshot, request) : undefined
   const notes = [
     missingPageNote(run.status, page, request, deniedByUser),
     snapshot?.previewTruncated === true
-      ? `The ARIA snapshot was cut at ${request.maxBytes} bytes: pass a larger maxBytes, or inspect at a step closer to the part of the page you need.`
+      ? `The ARIA snapshot's ${snapshot.scope} scope was cut at ${request.maxBytes} bytes: pass a larger maxBytes, window it with start/end, or scope to another part with scope.`
       : undefined,
     page?.note,
   ].filter((note) => note !== undefined)
@@ -88,9 +93,25 @@ function missingPageNote(
   return undefined
 }
 
-/** The snapshot's first `maxBytes`, cut on a character boundary, with its full size. */
-function cut(snapshot: string, maxBytes: number): InspectedSnapshot {
-  const totalBytes = Buffer.byteLength(snapshot, "utf8")
-  const preview = truncateUtf8(snapshot, maxBytes)
-  return { preview, previewTruncated: Buffer.byteLength(preview, "utf8") < totalBytes, totalBytes }
+/**
+ * The snapshot's scoped text, windowed to the request's bytes — the same
+ * `previewText` semantics `runs_getNodeResult` uses, so `start`/`end`/`maxBytes`
+ * mean the same offsets in both reads. `totalBytes` is the SCOPED text's size;
+ * `scope` says which part was extracted, and `scopeNote` why a requested scope
+ * fell back to the whole page.
+ */
+function cut(snapshot: string, request: InspectionRequest): InspectedSnapshot {
+  const scoped = scopeAriaSnapshot(snapshot, request.scope ?? "auto")
+  const preview = previewText(scoped.text, {
+    maxBytes: request.maxBytes,
+    ...(request.start !== undefined ? { start: request.start } : {}),
+    ...(request.end !== undefined ? { end: request.end } : {}),
+  } satisfies EvidenceBounds)
+  return {
+    preview: preview.preview,
+    previewTruncated: preview.previewTruncated,
+    totalBytes: preview.totalBytes,
+    scope: scoped.applied,
+    ...(scoped.note !== undefined ? { scopeNote: scoped.note } : {}),
+  }
 }
