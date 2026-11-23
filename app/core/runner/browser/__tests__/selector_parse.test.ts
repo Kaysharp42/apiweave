@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
-import { parseRecordedSelector, roleSelectorWithName } from "../selector_parse"
+import {
+  exactHasText,
+  exactTextSelector,
+  isFragileSelector,
+  labelSelector,
+  parseRecordedSelector,
+  placeholderSelector,
+  roleSelector,
+  roleSelectorWithName,
+} from "../selector_parse"
 import events from "./fixtures/recorder-events.json"
 
 describe("parseRecordedSelector", () => {
@@ -113,5 +122,54 @@ describe("roleSelectorWithName", () => {
     ["a name longer than a locator should hold", "internal:role=heading", "x".repeat(201)],
   ])("keeps %s as it is", (_case, selector, name) => {
     expect(roleSelectorWithName(selector, name)).toBeNull()
+  })
+})
+
+describe("exactHasText", () => {
+  it.each([
+    ["div >> internal:has-text=/^Kilométrage\\/an$/ >> nth=0", "Kilométrage/an"],
+    ['div >> internal:has-text=/^Say \\"hi\\" \\(now\\)$/', 'Say "hi" (now)'],
+    ["div >> internal:has-text=/^a \\>\\> b$/", "a >> b"],
+  ])("reads the literal text of %s", (selector, expected) => {
+    expect(exactHasText(selector)).toBe(expected)
+  })
+
+  it.each([
+    ["a substring has-text", 'div >> internal:has-text="Plan"i'],
+    ["a pattern that is not anchored", "div >> internal:has-text=/Plan/"],
+    ["a pattern with flags", "div >> internal:has-text=/^Plan$/i"],
+    ["a pattern with regex syntax", "div >> internal:has-text=/^Plan.*$/"],
+    ["a character class", "div >> internal:has-text=/^\\d+$/"],
+    ["no has-text at all", "div >> nth=2"],
+  ])("is null for %s", (_case, selector) => {
+    expect(exactHasText(selector)).toBeNull()
+  })
+})
+
+describe("isFragileSelector", () => {
+  it.each([
+    ["a selector kept whole", "div >> internal:has-text=/^Kilométrage\\/an$/ >> nth=0", true],
+    ["CSS with a position", "div >> nth=4", true],
+    ["CSS with a text filter", 'div >> internal:has-text="Total"i', true],
+    ["plain CSS", "#email", false],
+    ["a role with a name", 'internal:role=button[name="Save"i]', false],
+    ["a role with a position", "internal:role=button >> nth=1", false],
+    ["anything inside an iframe", "iframe >> internal:control=enter-frame >> div >> nth=2", false],
+  ])("%s → %s", (_case, selector, expected) => {
+    expect(isFragileSelector(selector)).toBe(expected)
+  })
+})
+
+describe("selector writers", () => {
+  it("write selectors that parse back into the locator they name", () => {
+    expect(parseRecordedSelector(roleSelector("button", 'Say "hi"', true) ?? "")).toEqual({ kind: "role", role: "button", name: 'Say "hi"', exact: true })
+    expect(parseRecordedSelector(labelSelector("Plan", false) ?? "")).toEqual({ kind: "label", value: "Plan" })
+    expect(parseRecordedSelector(placeholderSelector("Search", true) ?? "")).toEqual({ kind: "placeholder", value: "Search", exact: true })
+    expect(parseRecordedSelector(exactTextSelector("Kilométrage/an") ?? "")).toEqual({ kind: "text", value: "Kilométrage/an", exact: true })
+  })
+
+  it("write nothing for an empty or page-sized text", () => {
+    expect(labelSelector("  ", false)).toBeNull()
+    expect(exactTextSelector("x".repeat(201))).toBeNull()
   })
 })

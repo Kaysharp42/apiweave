@@ -9,6 +9,7 @@ import {
   type ConverterOutput,
   type RecorderAction,
 } from "./recorded"
+import { ariaRoleAndName, betterSelector } from "./better_selector"
 import { roleSelectorWithName } from "./selector_parse"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, contextOptions, launchBrowser, type BrowserLaunchSettings } from "./session"
@@ -72,6 +73,8 @@ const RECORDER_BUFFER_MS = 600
  * previous action, and leaves room for a slow page.
  */
 const DIALOG_WINDOW_MS = 5_000
+/** The longest a step waits for its selector to be made sturdier before keeping the recorder's. */
+const IMPROVE_TIMEOUT_MS = 1_500
 /** What an abandoned recording tells its owner: nothing at all. */
 const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () => undefined, ended: () => undefined }
 
@@ -93,8 +96,8 @@ export class BrowserRecording {
   /** When the last recorder action arrived, to tell a dialog it opened from one the page raised later. */
   private lastActionAt: number | null = null
   private readonly passwordFields = new Map<string, boolean>()
-  /** A recorded selector after its role's accessible name was added, by the selector Playwright wrote. */
-  private readonly namedSelectors = new Map<string, string>()
+  /** A recorded selector after it was made sturdier, by the selector Playwright wrote. */
+  private readonly improvedSelectors = new Map<string, string>()
   private readonly sentStepIds = new Set<string>()
   private readonly pending = new Map<string, RecordedBrowserStep>()
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -258,7 +261,7 @@ export class BrowserRecording {
     const isPassword =
       readsField(action) && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
     const selector =
-      action.selector === undefined || !onMainPage ? action.selector : await this.namedSelector(page, action.selector)
+      action.selector === undefined || !onMainPage ? action.selector : await this.improvedSelector(page, action.selector, action.name === "click")
     this.report(
       this.converter.apply({
         kind,
@@ -293,33 +296,27 @@ export class BrowserRecording {
   }
 
   /**
-   * The selector with its role's accessible name, when Playwright wrote a bare
-   * role. Asked once per selector, and never blocks a step for long: a page that
-   * cannot answer leaves the selector as the recorder wrote it.
+   * The selector made sturdier, asked once per selector, and never blocking a
+   * step for long: a page that cannot answer leaves the selector as the
+   * recorder wrote it. A bare role gets its accessible name; a fragile
+   * selector — kept whole, or CSS leaning on a position or a text filter — is
+   * swapped for a role, label or exact text that finds the same one element
+   * (see {@link betterSelector}).
    */
-  private async namedSelector(page: Page, selector: string): Promise<string> {
-    if (!selector.startsWith("internal:role=")) return selector
-    const known = this.namedSelectors.get(selector)
+  private async improvedSelector(page: Page, selector: string, isClick: boolean): Promise<string> {
+    const known = this.improvedSelectors.get(selector)
     if (known !== undefined) return known
-    const name = await within(this.accessibleName(page, selector), 1_500, "")
-    const named = roleSelectorWithName(selector, name) ?? selector
-    this.namedSelectors.set(selector, named)
-    return named
+    const improved = selector.startsWith("internal:role=")
+      ? (roleSelectorWithName(selector, await within(this.accessibleName(page, selector), IMPROVE_TIMEOUT_MS, "")) ?? selector)
+      : await within(betterSelector(page, selector, isClick), IMPROVE_TIMEOUT_MS, selector)
+    this.improvedSelectors.set(selector, improved)
+    return improved
   }
 
-  /** The accessible name in an ARIA snapshot's first line: `- heading "Orders" [level=1]`. */
+  /** The accessible name in the element's ARIA snapshot. */
   private async accessibleName(page: Page, selector: string): Promise<string> {
     const snapshot = await page.locator(selector).first().ariaSnapshot({ timeout: 1_000 })
-    const first = snapshot.split("\n", 1)[0] ?? ""
-    const quoted = /^-\s+[a-z]+\s+"((?:[^"\\]|\\.)*)"/.exec(first)
-    if (quoted === null) return ""
-    try {
-      const name: unknown = JSON.parse(`"${quoted[1] ?? ""}"`)
-      return typeof name === "string" ? name : ""
-    } catch {
-      // An escape JSON does not know: not a name this can reproduce exactly.
-      return ""
-    }
+    return ariaRoleAndName(snapshot)?.name ?? ""
   }
 
   private send(step: RecordedBrowserStep): void {

@@ -218,10 +218,90 @@ const ROLE_NAME_MAX_CHARS = 200
  */
 export function roleSelectorWithName(selector: string, name: string): string | null {
   const match = /^internal:role=([a-z]+)$/.exec(selector)
-  const trimmed = name.trim()
-  if (match === null || trimmed === "" || trimmed.length > ROLE_NAME_MAX_CHARS) return null
-  const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-  return `internal:role=${match[1]}[name="${escaped}"i]`
+  if (match === null) return null
+  return roleSelector(match[1] ?? "", name, false)
+}
+
+/** `"…"i` or `"…"s` the way Playwright's `escapeForAttributeSelector` writes it. */
+function attributeQuoted(value: string, exact: boolean): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"${exact ? "s" : "i"}`
+}
+
+/** A usable name or text for a selector: trimmed, and short enough to be a name rather than a page's text. */
+function usable(text: string): string | null {
+  const trimmed = text.trim()
+  return trimmed === "" || trimmed.length > ROLE_NAME_MAX_CHARS ? null : trimmed
+}
+
+/** `page.getByRole(role, { name, exact })` as a selector, or null for a name that cannot be one. */
+export function roleSelector(role: string, name: string, exact: boolean): string | null {
+  const value = usable(name)
+  return value === null ? null : `internal:role=${role}[name=${attributeQuoted(value, exact)}]`
+}
+
+/** `page.getByLabel(value, { exact })` as a selector. */
+export function labelSelector(text: string, exact: boolean): string | null {
+  const value = usable(text)
+  return value === null ? null : `internal:label=${JSON.stringify(value)}${exact ? "s" : "i"}`
+}
+
+/** `page.getByPlaceholder(value, { exact })` as a selector. */
+export function placeholderSelector(text: string, exact: boolean): string | null {
+  const value = usable(text)
+  return value === null ? null : `internal:attr=[placeholder=${attributeQuoted(value, exact)}]`
+}
+
+/** `page.getByText(value, { exact: true })` as a selector. */
+export function exactTextSelector(text: string): string | null {
+  const value = usable(text)
+  return value === null ? null : `internal:text=${JSON.stringify(value)}s`
+}
+
+/** Regular-expression syntax: a regex using any of these unescaped matches more than one string. */
+const REGEX_SYNTAX = new Set([..."\\^$.*+?()[]{}|/"])
+
+/**
+ * The text X of a `internal:has-text=/^X$/` part: the whole-text match
+ * Playwright's recorder writes for an element whose text is not unique as a
+ * substring. Null for any other pattern — flags, or regex syntax that is not
+ * an escaped literal character — because only a literal is an exact text.
+ */
+export function exactHasText(selector: string): string | null {
+  // Not through `splitChain`: a regex escapes a quote as `\"` outside any string,
+  // which the chain splitter would read as a string left open.
+  const match = /(?:^|>>\s*)internal:has-text=\/\^((?:[^\\]|\\.)*?)\$\/\s*(?:>>|$)/s.exec(selector)
+  if (match === null) return null
+  let text = ""
+  const body = match[1] ?? ""
+  for (let index = 0; index < body.length; index++) {
+    const char = body[index] ?? ""
+    if (char === "\\") {
+      index++
+      // `\d`, `\s`… are classes, not the escaped letter.
+      const next = body[index]
+      if (next === undefined || /[A-Za-z0-9]/.test(next)) return null
+      text += next
+    } else if (REGEX_SYNTAX.has(char)) {
+      return null
+    } else {
+      text += char
+    }
+  }
+  return usable(text)
+}
+
+/**
+ * Whether a recorded selector is one a small change to the page breaks: one
+ * kept whole as `{ kind: "selector" }`, or CSS that relies on a position or a
+ * text filter (`div >> internal:has-text="Plan" >> nth=4`). Selectors inside
+ * an iframe are left alone: a replacement would be searched in the wrong
+ * document.
+ */
+export function isFragileSelector(selector: string): boolean {
+  if (selector.includes(ENTER_FRAME)) return false
+  const locator = parseRecordedSelector(selector)
+  if (locator === null) return false
+  return locator.kind === "selector" || (locator.kind === "css" && (locator.nth !== undefined || locator.hasText !== undefined))
 }
 
 /**

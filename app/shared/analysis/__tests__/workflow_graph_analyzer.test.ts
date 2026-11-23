@@ -1336,6 +1336,22 @@ describe("browser steps", () => {
     expect(diagnose(workflow).find((item) => item.code === "browser_selector_fallback")).toMatchObject({ severity: "notice", nodeIds: ["raw"] })
   })
 
+  it("notes CSS that picks its element by position, but not plain CSS or a positioned role", () => {
+    const workflow = browserWorkflow(
+      [
+        { nodeId: "open", type: "browser", config: nav },
+        { nodeId: "nth", type: "browser", config: { action: "click", locator: { kind: "css", value: "div", hasText: "Plan", nth: 4 } } },
+        { nodeId: "inner", type: "browser", config: { action: "click", locator: { kind: "role", role: "button", within: { kind: "css", value: "li", nth: 0 } } } },
+        { nodeId: "plain", type: "browser", config: { action: "click", locator: { kind: "css", value: "#save" } } },
+        { nodeId: "row", type: "browser", config: { action: "click", locator: { kind: "role", role: "row", nth: 1 } } },
+      ],
+      [["start", "open"], ["open", "nth"], ["nth", "inner"], ["inner", "plain"], ["plain", "row"], ["row", "end"]],
+    )
+    const notes = diagnose(workflow).filter((item) => item.code === "browser_selector_fallback")
+    expect(notes.flatMap((item) => item.nodeIds).sort()).toEqual(["inner", "nth"])
+    expect(notes.find((item) => item.nodeIds[0] === "nth")).toMatchObject({ severity: "notice", remediation: { kind: "replace_locator", nodeId: "nth" } })
+  })
+
   it("counts an extract step as the producer of its variable", () => {
     const workflow = browserWorkflow(
       [

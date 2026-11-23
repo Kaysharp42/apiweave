@@ -272,7 +272,8 @@ assertion are fine). A Call Workflow child shares the page.
 \`locator\` is structured, never a selector string:
 \`{"kind": "role", "role": "button", "name": "Sign in"}\` first, then \`label\`,
 then \`testId\`, then \`placeholder\`/\`text\`/\`alt\`/\`title\`; \`css\` last, and
-never \`kind: "selector"\` (recorder output; it raises an analyzer notice).
+never \`kind: "selector"\` (recorder output); either, or \`css\` picked by \`nth\`,
+raises an analyzer notice.
 Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`.
 
 \`{{secrets.NAME}}\` is allowed **only in a fill's value**, and a password is
@@ -746,7 +747,7 @@ Clear every \`error\` before running.
 | --- | --- |
 | \`browser_parallel_branches\` | browser steps share one page, so page-driving nodes (a \`browser\` step, or a \`workflow\` call into a workflow with browser steps) on branches neither of which reaches the other would act on it in the same run — an error; wire them into one chain |
 | \`browser_chain_starts_without_navigate\` | the first step of the chain is not a \`navigate\`, so it runs on an empty page (warning) |
-| \`browser_selector_fallback\` | the locator is a raw recorder \`selector\`, which works but breaks easily (notice) — prefer a role, label or test id |
+| \`browser_selector_fallback\` | the locator is a raw recorder \`selector\` or \`css\` picked by \`nth\`, which works but breaks easily (notice) — prefer a role, label or test id |
 
 ## Run-correlated (pass a \`runId\`)
 

@@ -302,7 +302,7 @@ export const browserStepsChapter: TutorialChapter = {
           instruction:
             "Double-click the step. On the Step tab, What this step does sets the action and the Element card sets the locator; on the Settings tab, set Wait up to (milliseconds) and Continue the run if this step fails.",
           detail:
-            "Prefer a role and a name for the element, then a label, then a test id. A raw selector from the recorder breaks easily and is flagged with a notice.",
+            "Prefer a role and a name for the element, then a label, then a test id. A raw selector from the recorder, or CSS that picks an element by its position, breaks easily and is flagged with a notice.",
         },
         {
           title: "Run the fix",

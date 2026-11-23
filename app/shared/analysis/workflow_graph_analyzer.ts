@@ -941,11 +941,15 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
 }
 
-/** Whether a locator, or a parent it is searched within, is a raw recorder selector. */
+/**
+ * Whether a locator, or a parent it is searched within, is a raw recorder
+ * selector or CSS that picks its element by position (`nth`): both find a
+ * different element, or none, after a small change to the page.
+ */
 function usesSelectorFallback(locator: unknown): boolean {
   if (locator === null || typeof locator !== "object") return false
   const record = locator as Readonly<Record<string, unknown>>
-  return record["kind"] === "selector" || usesSelectorFallback(record["within"])
+  return record["kind"] === "selector" || (record["kind"] === "css" && record["nth"] !== undefined) || usesSelectorFallback(record["within"])
 }
 
 /**
@@ -1065,7 +1069,7 @@ function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workfl
       "notice",
       "execution",
       [step.nodeId],
-      "This step finds its element with a raw recorded selector, which breaks easily; prefer a role, label or test id locator.",
+      "This step finds its element with a raw recorded selector or a CSS selector picked by position (nth), which breaks easily; prefer a role, label, text or test id locator.",
       { action: config.action },
       { kind: "replace_locator", nodeId: step.nodeId },
     ))
