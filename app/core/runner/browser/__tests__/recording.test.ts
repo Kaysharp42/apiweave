@@ -7,7 +7,7 @@ import type { BrowserChannel } from "@shared/types/BrowserChannel"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import { BROWSER_SEARCH_TIMEOUT_MS, BROWSER_TEST_TIMEOUT_MS, findTestBrowser } from "../../__tests__/browser_test_channel"
 import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep"
-import { BrowserRecording } from "../recording"
+import { BrowserRecording, selectorImprovementKey } from "../recording"
 import type { RecordingValues } from "../recording_values"
 import { BrowserSession } from "../session"
 import { runBrowserStep, type BrowserStepContext } from "../step"
@@ -64,6 +64,35 @@ const SENT_PAGE = `<!doctype html><title>Sent</title><h1>Offres envoyées</h1>`
 /** A heading with no accessible name, because its only content is an image without alt text. */
 const NAMELESS_PAGE = `<!doctype html><title>Nameless</title>
 <h2><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></h2>`
+/**
+ * A form a person fills before moving on, whose step swaps in place a moment
+ * later. Clicking a field only puts the cursor in it, so no click into one may
+ * hold the queue while the next step is typed and clicked.
+ */
+const CONTACT_PAGE = `<!doctype html><title>Details</title>
+<h1>Your details</h1>
+<label for="email">Email</label><input id="email" type="email">
+<label for="pw">Password</label><input id="pw" type="password">
+<label for="notes">Notes</label><textarea id="notes"></textarea>
+<section id="step">
+  <h2>Contact</h2>
+  <button onclick="setTimeout(() => { document.getElementById('step').innerHTML = '<h2>Payment</h2><button>Pay</button>' }, 300)">Continuer</button>
+</section>`
+/**
+ * A search that focuses its field when clicked and reports the query it found
+ * a moment later: the text is typed while the click's outcome check would run,
+ * so a check made then would hold it.
+ */
+const SEARCH_PAGE = `<!doctype html><title>Search</title>
+<h1>Search</h1>
+<label for="q">Query</label><input id="q">
+<button onclick="document.getElementById('q').focus(); setTimeout(() => { document.getElementById('note').textContent = '3 results for ' + document.getElementById('q').value }, 150)">Rechercher</button>
+<div id="note" role="status"></div>`
+/** A page whose only content to click is inside an iframe, so its snapshot is another document. */
+const FRAME_PAGE = `<!doctype html><title>Frame</title>
+<h1>Frame demo</h1>
+<iframe title="Inner" src="/frame-inner" style="width:320px;height:80px"></iframe>`
+const FRAME_INNER = `<!doctype html><title>Inner</title><button>Ping</button>`
 
 let channel: BrowserChannel | undefined
 let server: Server
@@ -83,6 +112,10 @@ beforeAll(async () => {
     else if (path === "/nameless") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(NAMELESS_PAGE)
     else if (path === "/wizard") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(WIZARD_PAGE)
     else if (path === "/sent") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(SENT_PAGE)
+    else if (path === "/contact") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(CONTACT_PAGE)
+    else if (path === "/search") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(SEARCH_PAGE)
+    else if (path === "/frame") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(FRAME_PAGE)
+    else if (path === "/frame-inner") response.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(FRAME_INNER)
     else response.writeHead(404).end()
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -315,6 +348,71 @@ describe("BrowserRecording", () => {
   )
 
   it(
+    "does not hold the queue for the clicks that only focus a field, so the check of the click that follows keeps its place",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const { steps, env } = await recordPage("/contact", async (page) => {
+        await page.getByLabel("Email").click()
+        await page.keyboard.type("ada@acme.test", { delay: 10 })
+        await page.getByLabel("Password").click()
+        await page.keyboard.type("fixture-pass-2468", { delay: 10 })
+        await page.getByLabel("Notes").click()
+        await page.keyboard.type("Please hurry", { delay: 10 })
+        await page.getByRole("button", { name: "Continuer" }).click()
+        await page.getByRole("heading", { name: "Payment" }).waitFor()
+        // A person reads the new step before acting on it: the click's check is
+        // done by then, unless the clicks into the fields held the queue.
+        await page.waitForTimeout(1_500)
+        await page.getByRole("button", { name: "Pay" }).click()
+      })
+      expect(steps).toEqual([
+        { action: "navigate", url: "{{env.BASE_URL}}/contact" },
+        { action: "fill", locator: { kind: "role", role: "textbox", name: "Email" }, value: "ada@acme.test" },
+        { action: "fill", locator: { kind: "role", role: "textbox", name: "Password" }, value: "{{secrets.UNSET_PASSWORD_1}}" },
+        { action: "fill", locator: { kind: "role", role: "textbox", name: "Notes" }, value: "Please hurry" },
+        { action: "click", locator: { kind: "role", role: "button", name: "Continuer" } },
+        { action: "expect-visible", locator: { kind: "role", role: "heading", name: "Payment", exact: true } },
+        { action: "click", locator: { kind: "role", role: "button", name: "Pay" } },
+      ])
+      expect(await replay(steps, replayContext(env, { UNSET_PASSWORD_1: "fixture-pass-2468" }))).toBeUndefined()
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    "adds no check while an action that may type the text it would hold is still queued",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const { steps } = await recordPage("/search", async (page) => {
+        await page.getByRole("button", { name: "Rechercher" }).click()
+        // The page put the cursor in the field: these fills arrive while the
+        // click's check would read the status the query appears in.
+        await page.keyboard.type("acmecorp", { delay: 10 })
+        await page.waitForTimeout(1_500)
+      })
+      expect(steps.map((step) => step.action)).toEqual(["navigate", "click", "fill"])
+      expect(JSON.stringify(steps)).not.toContain("3 results for acmecorp")
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    "adds no check for a click inside an iframe, whose before-snapshot is another document",
+    async (context) => {
+      if (channel === undefined) context.skip()
+      const { steps, env } = await recordPage("/frame", async (page) => {
+        await page.frameLocator("iframe").getByRole("button", { name: "Ping" }).click()
+      })
+      expect(steps).toEqual([
+        { action: "navigate", url: "{{env.BASE_URL}}/frame" },
+        { action: "click", locator: { kind: "role", role: "button", name: "Ping", frame: 'iframe[title="Inner"]' } },
+      ])
+      expect(await replay(steps, replayContext(env, {}))).toBeUndefined()
+    },
+    BROWSER_TEST_TIMEOUT_MS,
+  )
+
+  it(
     "keeps a name that is not ASCII",
     async (context) => {
       if (channel === undefined) context.skip()
@@ -500,4 +598,17 @@ describe("BrowserRecording", () => {
     },
     BROWSER_TEST_TIMEOUT_MS,
   )
+})
+
+describe("selectorImprovementKey", () => {
+  it("improves the same raw selector independently on another page and for another action kind", () => {
+    // A fragile selector such as this one repeats across pages, and the same
+    // selector also comes back for a fill after the click that focused the
+    // field: an answer computed for one must never be handed to another.
+    const selector = "button >> nth=1"
+    const onNewOfferAsClick = selectorImprovementKey("/offers/new", selector, true)
+    expect(selectorImprovementKey("/offers/new", selector, true)).toBe(onNewOfferAsClick)
+    expect(selectorImprovementKey("/offers/sent", selector, true)).not.toBe(onNewOfferAsClick)
+    expect(selectorImprovementKey("/offers/new", selector, false)).not.toBe(onNewOfferAsClick)
+  })
 })

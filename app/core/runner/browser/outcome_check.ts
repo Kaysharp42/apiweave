@@ -140,6 +140,31 @@ function rank(landmark: Landmark): number {
   return 2 + (landmark.level ?? 6)
 }
 
+/** `path` with its percent escapes undone, or `path` itself when an escape is malformed. */
+function decodePath(path: string): string {
+  try {
+    return decodeURIComponent(path)
+  } catch {
+    return path
+  }
+}
+
+/**
+ * Whether a path segment is made up for this run: an all-digit id, a UUID, or
+ * a long token with a digit in it. A check on such an address would pass only
+ * with the recording's data, so the landmark beside it is checked instead.
+ */
+function isGeneratedId(segment: string): boolean {
+  return (
+    /^\d{3,}$/.test(segment) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment) ||
+    (/^[A-Za-z0-9_-]{16,}$/.test(segment) && /\d/.test(segment))
+  )
+}
+
+/** A per-run id inside page text: four digits in a row, or a UUID. A step number such as `Step 2` is the page's own words. */
+const GENERATED_ID_TEXT = /\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
 function identity(landmark: Landmark): string {
   return `${landmark.role}\u0000${landmark.name}\u0000${landmark.text}`
 }
@@ -192,13 +217,13 @@ function locatorFor(role: LandmarkRole, match: Match, value: string): BrowserLoc
   return { kind: "role", role }
 }
 
-/** A visibility check on `landmark`, unless the page has others it cannot be told from or its text is a secret or test data. */
+/** A visibility check on `landmark`, unless the page has others it cannot be told from or its text is a secret, test data or an id made up for this run. */
 function visibleCheck(landmark: Landmark, after: readonly Landmark[], typed: readonly string[], values: RecordingValues): OutcomeCheck | null {
   const match = matchFor(landmark)
   if (match === null) return null
   if (after.filter((other) => matches(match, landmark.role, other)).length !== 1) return null
   if (match.by === "role") return { config: { action: "expect-visible", locator: { kind: "role", role: landmark.role } }, probe: { kind: "role", role: landmark.role } }
-  if (match.value.length > NAME_MAX_CHARS || isTypedValue(match.value, typed)) return null
+  if (match.value.length > NAME_MAX_CHARS || isTypedValue(match.value, typed) || GENERATED_ID_TEXT.test(match.value)) return null
   const templated = templateCheck(match.value, values)
   if (templated === null) return null
   return {
@@ -207,9 +232,15 @@ function visibleCheck(landmark: Landmark, after: readonly Landmark[], typed: rea
   }
 }
 
-/** An address check on the new path, unless it is the root, which every address contains, or carries test data or a secret. */
+/**
+ * An address check on the new path, unless it is the root, which every address
+ * contains, or carries test data or a secret, or ends in an id made up for this
+ * run. Compared with its escapes undone, since a typed value reaches an address
+ * encoded.
+ */
 function urlCheck(path: string, typed: readonly string[], values: RecordingValues): OutcomeCheck | null {
-  if (path === "/" || isTypedValue(path, typed)) return null
+  const decoded = decodePath(path)
+  if (path === "/" || isTypedValue(decoded, typed) || decoded.split("/").some(isGeneratedId)) return null
   const url = templateUrl(path, values)
   return url === null ? null : { config: { action: "expect-url", url, match: "contains" }, probe: null }
 }
@@ -222,8 +253,9 @@ function urlCheck(path: string, typed: readonly string[], values: RecordingValue
  * appeared is checked with `expect-visible` — an alert or status message
  * first, then a dialog, then the highest-level heading, the first in document
  * order on a tie — skipping one the page cannot tell apart from another of
- * its kind, and one whose text is a secret or a value typed in this
- * recording: such a check would hold test data, or pass only with it.
+ * its kind, and one whose text is a secret, a value typed in this recording,
+ * or an id this run made up: such a check would hold test data, or pass only
+ * with it.
  */
 export function outcomeCheck(before: PageState, after: PageState, typed: readonly string[], values: RecordingValues): OutcomeCheck | null {
   if (before.path !== null && after.path !== null && after.path !== before.path) {

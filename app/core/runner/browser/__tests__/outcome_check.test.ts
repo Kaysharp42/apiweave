@@ -101,4 +101,37 @@ describe("outcomeCheck", () => {
       probe: { kind: "role", role: "heading", name: "Acme Corp", exact: true },
     })
   })
+
+  it("skips an address that ends in an id this run made up, and checks the landmark instead", () => {
+    expect(outcomeCheck(page("/orders", []), page("/orders/123456", []), [], NO_VALUES)).toBeNull()
+    expect(outcomeCheck(page("/orders", []), page("/offers/3f2504e0-4f89-11d3-9a0c-0305e82c3301", []), [], NO_VALUES)).toBeNull()
+    expect(outcomeCheck(page("/share", []), page("/share/a1b2c3d4e5f6g7h8", []), [], NO_VALUES)).toBeNull()
+    // Two digits are a step or a year, not an id.
+    expect(outcomeCheck(page("/offers", []), page("/offers/12", []), [], NO_VALUES)?.config).toEqual({
+      action: "expect-url",
+      url: "/offers/12",
+      match: "contains",
+    })
+    // The address is skipped, so the heading beside it is what proves the click.
+    expect(outcomeCheck(page("/orders", []), page("/orders/123456", [heading("Order details")]), [], NO_VALUES)?.config).toEqual({
+      action: "expect-visible",
+      locator: { kind: "role", role: "heading", name: "Order details", exact: true },
+    })
+  })
+
+  it("compares an address with its escapes undone, and skips an id written encoded", () => {
+    expect(outcomeCheck(page("/search", []), page("/search/Jos%C3%A9", []), ["José"], NO_VALUES)).toBeNull()
+    expect(outcomeCheck(page("/orders", []), page("/orders/%31%32%33", []), [], NO_VALUES)).toBeNull()
+  })
+
+  it("skips a landmark whose name holds an id this run made up, and keeps a step number", () => {
+    expect(outcomeCheck(page("/invoice", []), page("/invoice", [heading("Invoice 1234")]), [], NO_VALUES)).toBeNull()
+    expect(
+      outcomeCheck(page("/invoice", []), page("/invoice", [heading("Paid 3f2504e0-4f89-11d3-9a0c-0305e82c3301")]), [], NO_VALUES),
+    ).toBeNull()
+    expect(outcomeCheck(page("/wizard", []), page("/wizard", [heading("Step 2")]), [], NO_VALUES)?.config).toEqual({
+      action: "expect-visible",
+      locator: { kind: "role", role: "heading", name: "Step 2", exact: true },
+    })
+  })
 })
