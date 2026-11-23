@@ -330,6 +330,16 @@ export class RunRepository {
   }
 
   /**
+   * Record the workflow revision this run executes. Written when the run starts,
+   * from the workflow the executor just read — not when it was queued: a run
+   * that waits behind the concurrency cap executes whatever the workflow has
+   * become by the time it starts.
+   */
+  public setWorkflowRev(runId: string, rev: number): void {
+    this.store.set("UPDATE runs SET workflow_rev = ? WHERE id = ?", [rev, runId])
+  }
+
+  /**
    * JSON-patch one node's status entry into `node_statuses_json` (decision #6b):
    * a targeted `json_set` on that single column, NOT a whole-row replace. The
    * executor (Task 14) calls this per node completion; concurrent status/variable

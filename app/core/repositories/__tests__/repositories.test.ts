@@ -303,6 +303,17 @@ describe("RunRepository", () => {
     expect(done?.duration).toBeGreaterThanOrEqual(0)
   })
 
+  it("records the workflow revision a run executes after it was created", () => {
+    const { workflowId, runId } = seedRun()
+    const rev = workflows.getById(workflowId)!.rev
+    expect(runs.getById(runId)?.workflowRev).toBeNull()
+
+    runs.setWorkflowRev(runId, rev + 1)
+
+    expect(runs.getById(runId)?.workflowRev).toBe(rev + 1)
+    expect(runs.listByWorkflow(workflowId, workflows.getById(workflowId)!.workspaceId).items[0]?.workflowRev).toBe(rev + 1)
+  })
+
   it("spills a large node body to the side table and cascades on delete (QA: side-table-cascade)", () => {
     const { runId } = seedRun()
     const body = Buffer.alloc(2 * 1024 * 1024, "x")

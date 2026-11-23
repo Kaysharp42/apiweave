@@ -282,7 +282,10 @@ export class RunScheduler {
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
       status: "pending",
-      workflowRev: workflow.rev,
+      // No `workflowRev` yet: it is recorded when the run starts, from the graph
+      // it executes. A run can wait in the queue while an agent patches its
+      // workflow, and it then executes the newer revision — reporting the one
+      // read at enqueue would call a run that ran the current graph stale.
       ...(variables ? { variables } : {}),
       selectedEnvironmentId: inheritedEnvironmentId,
       ...(request.iteration ? { iteration: request.iteration } : {}),
@@ -435,6 +438,9 @@ export class RunScheduler {
       // already checked), so a run row can never execute a graph outside its workspace.
       const workflow = this.deps.workflows.getByIdInWorkspace(run.workflowId, run.workspaceId)
       if (!workflow) throw new Error(`workflow ${run.workflowId} not found`)
+      // The run records the revision of the graph it executes — this read, not
+      // the one enqueue made before the run waited for its slot.
+      this.deps.runs.setWorkflowRev(runId, workflow.rev)
 
       const mergedVariables = { ...workflow.variables, ...(run.variables ?? {}) }
       const graph: WorkflowGraph = {
@@ -556,12 +562,14 @@ export class RunScheduler {
         // not wait behind the concurrency cap the caller is occupying.
         subRun: {
           begin: (workflowId) => {
-            const subWorkflowRev = this.deps.workflows.getByIdInWorkspace(workflowId, run.workspaceId)?.rev
             const child = this.deps.runs.create({
               workspaceId: run.workspaceId,
               workflowId,
               selectedEnvironmentId,
-              ...(subWorkflowRev !== undefined ? { workflowRev: subWorkflowRev } : {}),
+              // The sub-run executes the snapshot this run read when it started,
+              // so it records that revision — a child patched mid-run is not what
+              // ran, however new the stored workflow is by now.
+              workflowRev: reachable.revisions.get(workflowId) ?? null,
             })
             this.deps.runs.updateStatus(child.runId, "running")
             return {
@@ -814,20 +822,26 @@ export class RunScheduler {
    * The run's workflow and every workflow its Call Workflow nodes reach, read
    * once. A sub-execution shares this run's secret map, so the secrets scan
    * must see all of them — and the executor is then served these same
-   * snapshots rather than re-reading the database mid-run.
+   * snapshots rather than re-reading the database mid-run. Each snapshot's
+   * revision is kept too: a sub-run records the graph it executes, which is
+   * this one.
    */
   private reachableWorkflows(
     workflowId: string,
-    root: { readonly name: string; readonly nodes: readonly unknown[]; readonly edges: readonly unknown[]; readonly variables: Readonly<Record<string, unknown>> },
+    root: { readonly name: string; readonly nodes: readonly unknown[]; readonly edges: readonly unknown[]; readonly variables: Readonly<Record<string, unknown>>; readonly rev: number },
     workspaceId: string,
-  ): { nodes: WorkflowGraph["nodes"]; workflows: Map<string, ResolvedSubWorkflow> } {
-    const snapshot = (target: typeof root): ResolvedSubWorkflow => ({
-      name: target.name,
-      nodes: withoutCanvasOnlyNodes(target.nodes as WorkflowGraph["nodes"]) as unknown as WorkflowGraph["nodes"],
-      edges: target.edges as unknown as WorkflowGraph["edges"],
-      variables: target.variables as Record<string, unknown>,
-    })
-    const workflows = new Map<string, ResolvedSubWorkflow>([[workflowId, snapshot(root)]])
+  ): { nodes: WorkflowGraph["nodes"]; workflows: Map<string, ResolvedSubWorkflow>; revisions: Map<string, number> } {
+    const revisions = new Map<string, number>()
+    const snapshot = (targetId: string, target: typeof root): ResolvedSubWorkflow => {
+      revisions.set(targetId, target.rev)
+      return {
+        name: target.name,
+        nodes: withoutCanvasOnlyNodes(target.nodes as WorkflowGraph["nodes"]) as unknown as WorkflowGraph["nodes"],
+        edges: target.edges as unknown as WorkflowGraph["edges"],
+        variables: target.variables as Record<string, unknown>,
+      }
+    }
+    const workflows = new Map<string, ResolvedSubWorkflow>([[workflowId, snapshot(workflowId, root)]])
     const nodes: WorkflowGraph["nodes"][number][] = []
     const pending = [workflows.get(workflowId)!.nodes]
     for (let batch = pending.pop(); batch; batch = pending.pop()) {
@@ -839,12 +853,12 @@ export class RunScheduler {
         if (typeof target !== "string" || workflows.has(target)) continue
         const child = this.deps.workflows.getByIdInWorkspace(target, workspaceId)
         if (!child) continue
-        const resolved = snapshot(child)
+        const resolved = snapshot(target, child)
         workflows.set(target, resolved)
         pending.push(resolved.nodes)
       }
     }
-    return { nodes, workflows }
+    return { nodes, workflows, revisions }
   }
 
   /**
