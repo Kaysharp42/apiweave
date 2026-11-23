@@ -49,6 +49,27 @@ document.getElementById('del').onclick = () => {
 }
 </script>`
 
+/**
+ * A page that leaves its `load` event behind still moving: its heading
+ * changes every 40ms for `ms` after load, then it goes to `/arrived`, which
+ * changes the URL and title too. Settle sees two snapshots differ for as long
+ * as the page churns, whatever interval it checks at, so these tests depend
+ * on what settle promises rather than on when it happens to look.
+ */
+const unsettledPage = (ms: number): string => `<!doctype html><title>Before</title><h1>Before</h1>
+<script>addEventListener('load', () => {
+  const start = Date.now()
+  const tick = () => {
+    const elapsed = Date.now() - start
+    if (elapsed >= ${ms}) { location.href = '/arrived'; return }
+    document.querySelector('h1').textContent = 'Loading ' + elapsed
+    setTimeout(tick, 40)
+  }
+  tick()
+})</script>`
+
+const arrivedPage = (): string => `<!doctype html><title>Arrived</title><h1>Arrived</h1><p>The page settled here.</p>`
+
 let channel: BrowserChannel | undefined
 let server: Server
 let base: string
@@ -68,6 +89,11 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(loginPage())
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
+    } else if (path === "/unsettled") {
+      const ms = Number(new URLSearchParams((request.url ?? "").split("?")[1] ?? "").get("ms") ?? "300")
+      response.writeHead(200, { "content-type": "text/html" }).end(unsettledPage(ms))
+    } else if (path === "/arrived") {
+      response.writeHead(200, { "content-type": "text/html" }).end(arrivedPage())
     } else if (path === "/slow") {
       // Slower than any click: Playwright reports a new tab only once its first page has loaded.
       setTimeout(() => response.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Help</title>"), 1_500)
@@ -313,6 +339,37 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(artifacts).toHaveLength(3)
     expect(artifacts[2]).toMatchObject({ nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
     expect([...artifacts[2]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
+  })
+
+  it("keeps a passed step's evidence from the page it settled on, not the page its action finished on", async () => {
+    // The page churns for 400ms after load, then leaves: the navigate is done
+    // well before that, and a passed step's 1s settle outlasts it.
+    const workflowId = create([step("open", { action: "navigate", url: `${base}/unsettled?ms=400` })])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
+    expect(result(stored, "open")?.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
+    expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
+  })
+
+  it("gives a failed step's evidence the fuller settle, where a page that changed late is the diagnosis", async () => {
+    // The page churns for 2.5s after load. The navigate's 1s settle gives up
+    // while it still churns, the check fails 300ms later, and only the failed
+    // step's 3s settle lasts long enough to show what the page became.
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/unsettled?ms=2500` }),
+      step("missing", { action: "expect-text", locator: role("heading"), text: "Never", match: "equals", timeoutMs: 300 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status).toBe("failed")
+    const failed = result(stored, "missing")!
+    expect(failed.error).toBe("Browser step: the text of getByRole('heading') did not equal the expected text within 0.3s")
+    // The check compared what the page showed while it polled; the evidence shows what the page became.
+    expect(failed.browser).toMatchObject({ actual: expect.stringMatching(/^Loading \d+$/), url: `${base}/arrived`, title: "Arrived" })
+    expect(failed.browser?.ariaSnapshot).toContain('heading "Arrived"')
   })
 
   it("answers a confirm() only when the step says so", async () => {
