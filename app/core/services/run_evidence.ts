@@ -375,11 +375,17 @@ function previewValue(
  * Serialize a value to a bounded text preview with explicit cut accounting.
  * Shared by the node-evidence read and the browser inspection read, so a
  * snapshot window means the same bytes in both.
+ *
+ * `previewTruncated` means the returned window is not the whole text — either
+ * because the caller asked for `start`/`end` or because `maxBytes` cut it, which
+ * is what the field has always stated. `maxBytesCut` isolates the second case:
+ * a caller that says "cut at maxBytes" must key on it, or a window the caller
+ * chose is described as a cap that never acted.
  */
 export function previewText(
   text: string,
   bounds: EvidenceBounds,
-): { preview: string; previewTruncated: boolean; totalBytes: number } {
+): { preview: string; previewTruncated: boolean; maxBytesCut: boolean; totalBytes: number } {
   const totalBytes = Buffer.byteLength(text, "utf8")
   const start = bounds.start ?? 0
   // Every bound on this path is a byte count, so the window and the cap are
@@ -390,9 +396,9 @@ export function previewText(
   const head = bounds.end === undefined ? text : truncateUtf8(text, bounds.end)
   const window = head.slice(truncateUtf8(head, start).length)
   const preview = truncateUtf8(window, bounds.maxBytes)
-  const windowCut = start > 0 || (bounds.end !== undefined && bounds.end < totalBytes)
-  const cut = windowCut || Buffer.byteLength(preview, "utf8") < Buffer.byteLength(window, "utf8")
-  return { preview, previewTruncated: cut, totalBytes }
+  const maxBytesCut = Buffer.byteLength(preview, "utf8") < Buffer.byteLength(window, "utf8")
+  const windowed = start > 0 || (bounds.end !== undefined && bounds.end < totalBytes)
+  return { preview, previewTruncated: windowed || maxBytesCut, maxBytesCut, totalBytes }
 }
 
 /** The optional fields of a text preview, ready to spread into an evidence section. */
@@ -401,10 +407,10 @@ function previewFields(preview: { preview?: string; previewTruncated?: boolean; 
   previewTruncated?: boolean
   totalBytes?: number
 } {
-  return Object.fromEntries(Object.entries(preview).filter(([, value]) => value !== undefined)) as {
-    preview?: string
-    previewTruncated?: boolean
-    totalBytes?: number
+  return {
+    ...(preview.preview !== undefined ? { preview: preview.preview } : {}),
+    ...(preview.previewTruncated !== undefined ? { previewTruncated: preview.previewTruncated } : {}),
+    ...(preview.totalBytes !== undefined ? { totalBytes: preview.totalBytes } : {}),
   }
 }
 

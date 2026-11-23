@@ -51,8 +51,8 @@ export function inspectionResult(
   const snapshot = page?.ariaSnapshot !== undefined ? cut(page.ariaSnapshot, request) : undefined
   const notes = [
     missingPageNote(run.status, page, request, deniedByUser),
-    snapshot?.previewTruncated === true
-      ? `The ARIA snapshot's ${snapshot.scope} scope was cut at ${request.maxBytes} bytes: pass a larger maxBytes, window it with start/end, or scope to another part with scope.`
+    snapshot?.maxBytesCut === true
+      ? `The ARIA snapshot's ${snapshot.snapshot.scope} scope was cut at ${request.maxBytes} bytes: pass a larger maxBytes, window it with start/end, or scope to another part with scope.`
       : undefined,
     page?.note,
   ].filter((note) => note !== undefined)
@@ -64,7 +64,7 @@ export function inspectionResult(
     ...(request.beforeNodeId !== undefined ? { stoppedBeforeNodeId: request.beforeNodeId } : {}),
     failedNodeIds: [...(run.failedNodes ?? [])],
     ...(run.error ? { error: run.error } : {}),
-    page: page ? { url: page.url, title: page.title, ...(snapshot !== undefined ? { ariaSnapshot: snapshot } : {}) } : null,
+    page: page ? { url: page.url, title: page.title, ...(snapshot !== undefined ? { ariaSnapshot: snapshot.snapshot } : {}) } : null,
     ...(notes.length > 0 ? { note: notes.join(" ") } : {}),
     ...(page?.screenshot !== undefined ? { screenshot: { mime: "image/jpeg", base64: page.screenshot.toString("base64") } } : {}),
   }
@@ -98,9 +98,11 @@ function missingPageNote(
  * `previewText` semantics `runs_getNodeResult` uses, so `start`/`end`/`maxBytes`
  * mean the same offsets in both reads. `totalBytes` is the SCOPED text's size;
  * `scope` says which part was extracted, and `scopeNote` why a requested scope
- * fell back to the whole page.
+ * fell back to the whole page. `maxBytesCut` says whether the cap actually
+ * removed bytes — a window the caller asked for is not a cut, whatever
+ * `previewTruncated` states about the preview being partial.
  */
-function cut(snapshot: string, request: InspectionRequest): InspectedSnapshot {
+function cut(snapshot: string, request: InspectionRequest): { snapshot: InspectedSnapshot; maxBytesCut: boolean } {
   const scoped = scopeAriaSnapshot(snapshot, request.scope ?? "auto")
   const preview = previewText(scoped.text, {
     maxBytes: request.maxBytes,
@@ -108,10 +110,13 @@ function cut(snapshot: string, request: InspectionRequest): InspectedSnapshot {
     ...(request.end !== undefined ? { end: request.end } : {}),
   } satisfies EvidenceBounds)
   return {
-    preview: preview.preview,
-    previewTruncated: preview.previewTruncated,
-    totalBytes: preview.totalBytes,
-    scope: scoped.applied,
-    ...(scoped.note !== undefined ? { scopeNote: scoped.note } : {}),
+    maxBytesCut: preview.maxBytesCut,
+    snapshot: {
+      preview: preview.preview,
+      previewTruncated: preview.previewTruncated,
+      totalBytes: preview.totalBytes,
+      scope: scoped.applied,
+      ...(scoped.note !== undefined ? { scopeNote: scoped.note } : {}),
+    },
   }
 }

@@ -1670,6 +1670,7 @@ describe("Phase 2 — browser step evidence", () => {
 
     // "auto" prefers the open dialog — the part a locator is being picked
     // from — over the main landmark, and the preview is the dedented subtree.
+    // The note names the landmark that scoping left out.
     const dialog = '- dialog "Confirm" [ref=e9]:\n  - heading "Sure?" [level=2]\n  - button "OK" [ref=e10]'
     const auto = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"] })
     expect(auto.items[0]?.browser?.ariaSnapshot).toEqual({
@@ -1677,6 +1678,7 @@ describe("Phase 2 — browser step evidence", () => {
       previewTruncated: false,
       totalBytes: Buffer.byteLength(dialog, "utf8"),
       scope: "dialog",
+      scopeNote: 'A main landmark is also on the page; scope "main" or "page" shows it.',
     })
 
     // A named scope is honoured: "main" extracts the first main landmark.
@@ -1715,6 +1717,25 @@ describe("Phase 2 — browser step evidence", () => {
 
     const main = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"], scope: "main" })
     expect(main.items[0]?.browser?.ariaSnapshot?.scopeNote).toMatch(/No main landmark/)
+  })
+
+  it("says a stored snapshot was truncated when auto could not see a later dialog", async () => {
+    const { workspaceId, workflowId } = await seedBrowserWorkflow()
+    const run = runRepository.create({ workspaceId, workflowId })
+    // capturePage cuts at its cap and appends the marker at column 0: a dialog
+    // rendered after the cut leaves only `main`, which the note must not let
+    // read as the whole page.
+    const snapshot = ["- main [ref=e1]:", '  - button "Continue"', "… (truncated)"].join("\n")
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{ nodeId: "signin", status: "failed", duration: 5, browser: { action: "click", ariaSnapshot: snapshot } }],
+    })
+
+    const page = await evidence(workspaceId, run.runId, { nodeIds: ["signin"], sections: ["browser"] })
+    const scoped = page.items[0]?.browser?.ariaSnapshot
+    expect(scoped).toMatchObject({ scope: "main", preview: '- main [ref=e1]:\n  - button "Continue"' })
+    expect(scoped?.scopeNote).toMatch(/truncated/)
+    expect(scoped?.scopeNote).toMatch(/scope "page"/)
   })
 
   it("caps compared page text at the preview cap instead of echoing it whole", async () => {

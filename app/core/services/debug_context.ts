@@ -38,7 +38,7 @@ export interface DebugContextRequest {
  * ONCE (explicit `runId`, otherwise the latest failed run) and threaded
  * through every section, so sub-reads cannot disagree about which run or
  * revision they describe. Current workflow `rev` is returned separately from
- * the `workflowRev` the run recorded when it was queued, and graph correlation
+ * the `workflowRev` the run recorded when it started, and graph correlation
  * compares that revision with the current one — a past run is never assumed to
  * describe the graph now on canvas.
  *
@@ -210,12 +210,12 @@ export class DebugContextService {
   }
 }
 
-/** Whether the run executed the graph now stored, from the revision it recorded at creation. */
+/** Whether the run executed the graph now stored, from the revision it recorded when it started. */
 function correlateGraph(currentRev: number, run: Run | null): WorkflowDebugContext["graphCorrelation"] {
   if (run === null) return { status: "unknown", reason: "No run was selected." }
   const ran = run.workflowRev
   if (ran === null || ran === undefined) {
-    return { status: "unknown", reason: "This run was recorded before runs tracked the workflow revision." }
+    return { status: "unknown", reason: "This run has no recorded workflow revision: it never started, or it ran before runs recorded one." }
   }
   return ran === currentRev
     ? { status: "current", reason: `The run executed workflow revision ${ran}, which is the current revision.` }
@@ -607,12 +607,13 @@ function previewBytes(preview: string | undefined): number {
 
 /**
  * Second rung: a browser step's page text. Page values and the snapshot opening
- * go first, and only if that is not enough do its URL and title — the step's
- * identity (action, `hasScreenshot`) and the snapshot's full size always
- * survive, so the entry still says what ran and how much evidence exists.
- * `ariaSnapshotTruncated` then states that what is left is not the whole page,
- * and the `moreDetail` selector on the same entry asks `runs_getNodeResult` for
- * the `browser` section, whose preview the caller can window.
+ * go first — with the scope note that describes why the opening is what it is —
+ * and only if that is not enough do its URL and title. The step's identity
+ * (action, `hasScreenshot`) and the snapshot's full size always survive, so the
+ * entry still says what ran and how much evidence exists. `ariaSnapshotTruncated`
+ * then states that what is left is not the whole page, and the `moreDetail`
+ * selector on the same entry asks `runs_getNodeResult` for the `browser`
+ * section, whose preview the caller can window.
  */
 function dropBrowserSummaries(response: WorkflowDebugContext, bytes: () => number): void {
   while (overBudget(bytes)) {
@@ -628,6 +629,7 @@ function dropBrowserSummaries(response: WorkflowDebugContext, bytes: () => numbe
       delete victim.expected
       delete victim.actual
       delete victim.ariaSnapshotPreview
+      delete victim.ariaSnapshotScopeNote
       victim.ariaSnapshotTruncated = victim.ariaSnapshotBytes > 0
       continue
     }

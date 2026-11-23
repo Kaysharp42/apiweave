@@ -40,9 +40,80 @@ const LAST_DIALOG_SUBTREE = [
 ].join("\n")
 
 describe("scopeAriaSnapshot", () => {
-  it("auto prefers the last dialog over the main landmark", () => {
+  it("auto prefers the last dialog over the main landmark, and says what else it left out", () => {
     const scoped = scopeAriaSnapshot(PAGE, "auto")
-    expect(scoped).toEqual({ text: LAST_DIALOG_SUBTREE, applied: "dialog" })
+    expect(scoped).toEqual({
+      text: LAST_DIALOG_SUBTREE,
+      applied: "dialog",
+      note: '1 other dialog and a main landmark are also on the page; scope "page" shows them.',
+    })
+  })
+
+  it("names the other dialog or the main landmark an auto dialog skipped, short and only for auto", () => {
+    // A consent banner rendered as a dialog is the common trap: the page also
+    // has the real content, and the agent would otherwise never learn of it.
+    const banner = [
+      '- dialog "Cookies" [ref=e1]:',
+      '  - button "Accept"',
+      "- main [ref=e2]:",
+      '  - button "Sign in"',
+      '- dialog "Checkout" [ref=e3]:',
+      '  - button "Pay"',
+    ].join("\n")
+    expect(scopeAriaSnapshot(banner, "auto")).toEqual({
+      text: '- dialog "Checkout" [ref=e3]:\n  - button "Pay"',
+      applied: "dialog",
+      note: '1 other dialog and a main landmark are also on the page; scope "page" shows them.',
+    })
+    // Naming a scope is a choice: only auto explains what it chose against.
+    expect(scopeAriaSnapshot(banner, "dialog").note).toBeUndefined()
+
+    // Only another dialog.
+    const twoDialogs = [
+      '- dialog "Cookies" [ref=e1]:',
+      '  - button "Accept"',
+      '- dialog "Checkout" [ref=e2]:',
+      '  - button "Pay"',
+    ].join("\n")
+    expect(scopeAriaSnapshot(twoDialogs, "auto").note).toBe('1 other dialog is also on the page; scope "page" shows it.')
+
+    // Only a main landmark, and a main nested in the chosen dialog is part of
+    // the extracted text, so it is not "other" content.
+    const withMain = ['- main [ref=e1]:', '  - textbox "Search"', '- dialog "Pick" [ref=e2]:', '  - button "OK"'].join("\n")
+    expect(scopeAriaSnapshot(withMain, "auto").note).toBe('A main landmark is also on the page; scope "main" or "page" shows it.')
+    const nestedMain = ['- dialog "Pick" [ref=e1]:', "  - main [ref=e2]:", '    - button "OK"'].join("\n")
+    expect(scopeAriaSnapshot(nestedMain, "auto")).toEqual({
+      text: '- dialog "Pick" [ref=e1]:\n  - main [ref=e2]:\n    - button "OK"',
+      applied: "dialog",
+    })
+    // A lone dialog explains nothing extra.
+    expect(scopeAriaSnapshot('- dialog "Pick" [ref=e1]:\n  - button "OK"', "auto").note).toBeUndefined()
+  })
+
+  it("warns that a truncated stored snapshot may have lost the dialog or later content", () => {
+    // capturePage cuts a snapshot at its cap and appends the marker at column
+    // 0, so it always falls outside an extracted subtree: the dialog that was
+    // cut away can turn "auto" into a silent main, which is the bug the note
+    // names.
+    const mainOnly = ["- main [ref=e1]:", '  - button "Continue"', "… (truncated)"].join("\n")
+    expect(scopeAriaSnapshot(mainOnly, "auto")).toEqual({
+      text: '- main [ref=e1]:\n  - button "Continue"',
+      applied: "main",
+      note:
+        'The stored ARIA snapshot was truncated when it was captured, so a dialog or later content may be missing; scope "page" shows what was kept.',
+    })
+
+    // "page" already returns the marker, so it needs no duplicate note.
+    const whole = scopeAriaSnapshot(mainOnly, "page")
+    expect(whole.text).toBe(mainOnly)
+    expect(whole.note).toBeUndefined()
+
+    // A dialog before the cut still scopes, but the cut is still stated.
+    const dialogFirst = ['- dialog "Confirm" [ref=e1]:', '  - button "OK"', "… (truncated)"].join("\n")
+    const scoped = scopeAriaSnapshot(dialogFirst, "dialog")
+    expect(scoped.text).toBe('- dialog "Confirm" [ref=e1]:\n  - button "OK"')
+    expect(scoped.note).toMatch(/truncated/)
+    expect(scoped.note).toMatch(/scope "page"/)
   })
 
   it("dialog extracts the last dialog or alertdialog, dedented to column 0", () => {

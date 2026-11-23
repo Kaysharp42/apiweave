@@ -150,6 +150,31 @@ describe("RunService.inspectBrowser", () => {
     expect(inspection.note).toMatch(/larger maxBytes/)
   })
 
+  it("reports a requested byte window as a window, not as a cut at maxBytes", async () => {
+    const windowed = await service(new FakeTrigger(runs, { page: PAGE })).inspectBrowser(workspaceId, {
+      ...request(workflowId),
+      start: 10,
+      end: 25,
+      maxBytes: 1024,
+    })
+    expect(windowed.page?.ariaSnapshot).toMatchObject({
+      preview: PAGE.ariaSnapshot!.slice(10, 25),
+      previewTruncated: true,
+    })
+    // Nothing was removed beyond the window the caller asked for.
+    expect(windowed.note).toBeUndefined()
+
+    // The cap still speaks for itself when it removes bytes from that window.
+    const capped = await service(new FakeTrigger(runs, { page: PAGE })).inspectBrowser(workspaceId, {
+      ...request(workflowId),
+      start: 10,
+      end: 40,
+      maxBytes: 4,
+    })
+    expect(capped.page?.ariaSnapshot?.preview).toBe(PAGE.ariaSnapshot!.slice(10, 14))
+    expect(capped.note).toMatch(/cut at 4 bytes/)
+  })
+
   it("scopes the snapshot to the open dialog by default, and windows the scoped text", async () => {
     const trigger = new FakeTrigger(runs, { page: DIALOG_PAGE })
     const inspection = await service(trigger).inspectBrowser(workspaceId, {
@@ -164,6 +189,7 @@ describe("RunService.inspectBrowser", () => {
       previewTruncated: false,
       totalBytes: Buffer.byteLength(DIALOG_SCOPE, "utf8"),
       scope: "dialog",
+      scopeNote: 'A main landmark is also on the page; scope "main" or "page" shows it.',
     })
     expect(inspection.note).toBeUndefined()
 

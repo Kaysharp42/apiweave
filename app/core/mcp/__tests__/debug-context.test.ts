@@ -935,9 +935,22 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
     const browser = context.evidence[0]?.browser
     const scoped = '- dialog "Confirm" [ref=e9]:\n  - button "OK" [ref=e10]'
     expect(browser?.ariaSnapshotScope).toBe("dialog")
-    expect(browser?.ariaSnapshotScopeNote).toBeUndefined()
+    // The overview names the landmark the dialog scope left out, so the agent
+    // knows the main content is one `scope` away.
+    expect(browser?.ariaSnapshotScopeNote).toBe('A main landmark is also on the page; scope "main" or "page" shows it.')
     expect(browser?.ariaSnapshotPreview).toBe(scoped)
     expect(browser?.ariaSnapshotBytes).toBe(Buffer.byteLength(scoped, "utf8"))
+  })
+
+  it("says a captured snapshot was truncated when auto had to fall back past the cut", async () => {
+    const snapshot = ["- main [ref=e1]:", '  - button "Continue"', "… (truncated)"].join("\n")
+    const seed = await seedBrowserFailures(1, { snapshot })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    const browser = context.evidence[0]?.browser
+    expect(browser?.ariaSnapshotScope).toBe("main")
+    expect(browser?.ariaSnapshotScopeNote).toMatch(/truncated/)
+    expect(browser?.ariaSnapshotScopeNote).toMatch(/scope "page"/)
   })
 
   it("cuts a long snapshot and long compared text with byte accounting", async () => {
@@ -983,6 +996,9 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
       expect(entry.browser?.ariaSnapshotTruncated).toBe(true)
       expect(entry.browser?.expected).toBeUndefined()
       expect(entry.browser?.actual).toBeUndefined()
+      // The scope note described the dropped preview: it goes with it, so no
+      // "no dialog or main" explanation dangles beside an absent snapshot.
+      expect(entry.browser?.ariaSnapshotScopeNote).toBeUndefined()
     }
   })
 })
