@@ -392,6 +392,8 @@ export type { UseTurnIntoExtractParams } from "./UseTurnIntoExtractParams";
 export type { UseTurnIntoExtractResult } from "./UseTurnIntoExtractResult";
 export type { StepLiteralField } from "./StepLiteralField";
 export type { StepLiteral } from "./StepLiteral";
+export type { StepConfig } from "./StepConfig";
+export type { StepVariables } from "./StepVariables";
 export type { MakeStepVariableChoice } from "./MakeStepVariableChoice";
 export type { MakeStepVariableDialogProps } from "./MakeStepVariableDialogProps";
 export type { UseMakeStepVariableParams } from "./UseMakeStepVariableParams";

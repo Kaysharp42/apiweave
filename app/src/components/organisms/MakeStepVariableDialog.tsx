@@ -34,8 +34,10 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
   const literal = literals.find((candidate) => candidate.field === field);
   const trimmed = name.trim();
   const error = literal === undefined ? undefined : stepVariableNameError(trimmed, literal.value, variables);
-  const others = node === undefined || literal === undefined ? 0 : stepsSharingLiteral(nodes, node.id, literal.value);
+  const others = node === undefined || literal === undefined ? 0 : stepsSharingLiteral(nodes, node.id, literal.field, literal.value);
   const reused = literal !== undefined && error === undefined && variables[trimmed] === literal.value;
+  // "Everywhere" reaches the same family only: the value a step uses, or the text that finds its element.
+  const family = literal !== undefined && literal.field.startsWith("locator.") ? "element text" : "value";
 
   const choose = (next: StepLiteralField): void => {
     setField(next);
@@ -109,7 +111,7 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
         />
         {others > 0 && (
           <CheckboxOption
-            label={`Also replace in ${others} other ${others === 1 ? "step" : "steps"} with the same value`}
+            label={`Also replace the same ${family} in ${others} other ${others === 1 ? "step" : "steps"}`}
             checked={everywhere}
             onChange={setEverywhere}
           />

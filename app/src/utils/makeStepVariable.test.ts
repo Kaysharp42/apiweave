@@ -68,7 +68,30 @@ describe("stepLiterals", () => {
     expect(stepLiterals(node("b1", { action: "fill", locator: search, value: "" })).map((literal) => literal.field)).toEqual(["locator.value"]);
   });
 
-  it("never offers a fill into a field that takes a secret", () => {
+  it.each([
+    ["a label", { kind: "label", value: "Password" }],
+    ["a CSS id", { kind: "css", value: "#password" }],
+    ["a CSS type selector", { kind: "css", value: "input[type=password]" }],
+    ["a CSS name attribute", { kind: "css", value: "[name=pwd]" }],
+    ["a French label", { kind: "label", value: "Mot de passe" }],
+    ["a German label", { kind: "label", value: "Passwort" }],
+    ["a Spanish label", { kind: "label", value: "Contraseña" }],
+    ["a Spanish label without the tilde", { kind: "label", value: "Contrasena" }],
+    ["a Portuguese label", { kind: "label", value: "Senha" }],
+    ["a Dutch label", { kind: "label", value: "Wachtwoord" }],
+    ["a Swedish label", { kind: "label", value: "Lösenord" }],
+    ["a Swedish label without the umlaut", { kind: "label", value: "Losenord" }],
+    ["a Polish label", { kind: "label", value: "Hasło" }],
+    ["a Polish label without the stroke", { kind: "label", value: "Haslo" }],
+    ["an Italian label", { kind: "label", value: "Parola" }],
+    ["a Japanese label", { kind: "label", value: "パスワード" }],
+    ["a Chinese label", { kind: "label", value: "密码" }],
+    ["a role name", { kind: "role", role: "textbox", name: "Password" }],
+  ])("never offers a fill into a field that takes a secret: %s", (_what, locator) => {
+    expect(stepLiterals(node("b1", { action: "fill", locator, value: "hunter2" })).map((literal) => literal.field)).not.toContain("value");
+  });
+
+  it("still offers the locator's own text of a field that takes a secret", () => {
     const password = { action: "fill", locator: { kind: "label", value: "Password" }, value: "hunter2" };
     expect(stepLiterals(node("b1", password)).map((literal) => literal.field)).toEqual(["locator.value"]);
   });
@@ -86,6 +109,11 @@ describe("suggestedStepVariableName", () => {
     expect(suggestedStepVariableName(node("b1", { action: "fill", locator: search, value: "ahm" }), "value", {})).toBe("searchClient");
     expect(suggestedStepVariableName(node("b1", { action: "click", locator: elroy }), "locator.name", {})).toBe("optionName");
     expect(suggestedStepVariableName(node("b1", { action: "select", locator: { kind: "css", value: "#s" }, values: ["a"] }), "values.0", {})).toBe("option");
+  });
+
+  it("names a value field after a nameless role's text filter", () => {
+    const alert = node("b1", { action: "expect-text", locator: { kind: "role", role: "alert", hasText: "Payment failed" }, text: "Payment failed" });
+    expect(suggestedStepVariableName(alert, "text", {})).toBe("paymentFailed");
   });
 
   it("reuses a name holding the same value and numbers past one holding another", () => {
@@ -114,11 +142,15 @@ describe("makeStepVariable", () => {
   const pick = node("b1", { action: "click", locator: elroy }, recordedStepLabel({ action: "click", locator: elroy }));
   const check = node("b2", { action: "expect-text", locator: { kind: "css", value: "#who" }, text: "Elroy", match: "contains" }, "Who is it");
   const near = node("b3", { action: "expect-text", locator: { kind: "css", value: "#who" }, text: "Elroy Smith", match: "contains" });
-  const nodes = [pick, check, near];
+  const again = node("b4", { action: "expect-text", locator: { kind: "css", value: "#again" }, text: "Elroy", match: "contains" });
+  const nodes = [pick, check, near, again];
 
-  it("counts the other steps holding exactly the same text", () => {
-    expect(stepsSharingLiteral(nodes, "b1", "Elroy")).toBe(1);
-    expect(stepsSharingLiteral(nodes, "b1", "Nobody")).toBe(0);
+  it("counts the other steps holding exactly the same text in the same family", () => {
+    expect(stepsSharingLiteral(nodes, "b1", "locator.name", "Elroy")).toBe(0);
+    expect(stepsSharingLiteral(nodes, "b2", "text", "Elroy")).toBe(1);
+    // b1's role name is a locator field too, so it counts for another locator field.
+    expect(stepsSharingLiteral(nodes, "b2", "locator.hasText", "Elroy")).toBe(1);
+    expect(stepsSharingLiteral(nodes, "b2", "text", "Nobody")).toBe(0);
   });
 
   it("replaces the chosen field only, and retitles a step whose title was generated", () => {
@@ -134,13 +166,25 @@ describe("makeStepVariable", () => {
   });
 
   it("replaces the same whole-field text in the other steps, keeping a title the user wrote", () => {
-    const made = makeStepVariable(nodes, "b1", { field: "locator.name", name: "client", everywhere: true });
+    const made = makeStepVariable(nodes, "b2", { field: "text", name: "client", everywhere: true });
     expect(made?.steps).toBe(2);
     expect(made?.nodes[1]?.data).toEqual({
       label: "Who is it",
       config: { action: "expect-text", locator: { kind: "css", value: "#who" }, text: "{{variables.client}}", match: "contains" },
     });
     expect(made?.nodes[2]).toBe(near);
+    expect(made?.nodes[3]?.data.config).toEqual({ action: "expect-text", locator: { kind: "css", value: "#again" }, text: "{{variables.client}}", match: "contains" });
+  });
+
+  it("never replaces an element lookup because a value field holds the same text", () => {
+    const typed = node("f1", { action: "fill", locator: { kind: "css", value: "#q" }, value: "Search" });
+    const button = node("c1", { action: "click", locator: { kind: "role", role: "button", name: "Search" } });
+    const made = makeStepVariable([typed, button], "f1", { field: "value", name: "term", everywhere: true });
+    expect(made?.steps).toBe(1);
+    expect(made?.nodes[0]?.data.config).toEqual({ action: "fill", locator: { kind: "css", value: "#q" }, value: "{{variables.term}}" });
+    expect(made?.nodes[1]).toBe(button);
+    expect(stepsSharingLiteral([typed, button], "f1", "value", "Search")).toBe(0);
+    expect(stepsSharingLiteral([typed, button], "f1", "locator.name", "Search")).toBe(1);
   });
 
   it("replaces one option of a select and keeps the others", () => {

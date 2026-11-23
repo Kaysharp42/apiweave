@@ -4,6 +4,6 @@ import type { StepLiteralField } from "./StepLiteralField";
 export interface MakeStepVariableChoice {
   readonly field: StepLiteralField;
   readonly name: string;
-  /** Also replace the same literal in the workflow's other browser steps. */
+  /** Also replace the same literal in the workflow's other browser steps, in fields of the same family only. */
   readonly everywhere: boolean;
 }

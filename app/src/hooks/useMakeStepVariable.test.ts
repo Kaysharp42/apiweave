@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { toast } from "sonner";
 import type { JsonValue } from "@shared/types/JsonValue";
@@ -30,6 +30,10 @@ function setup(variables: Record<string, JsonValue> = {}) {
 }
 
 describe("useMakeStepVariable", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("is offered only for a step with a literal", () => {
     const { result } = setup();
     expect(result.current.canMake("b1")).toBe(true);
@@ -61,12 +65,23 @@ describe("useMakeStepVariable", () => {
     expect(nodesRef.current[1]).toBe(again);
   });
 
-  it("changes nothing for a name holding a different value", () => {
+  it("changes nothing, and says why, for a name that started holding a different value", () => {
     const { nodesRef, setNodes, setVariable, result } = setup({ client: "zed" });
     act(() => result.current.start("b1"));
     act(() => result.current.dialog.onSubmit({ field: "value", name: "client", everywhere: true }));
     expect(setVariable).not.toHaveBeenCalled();
     expect(setNodes).not.toHaveBeenCalled();
     expect(nodesRef.current[0]).toBe(fill);
+    expect(toast.error).toHaveBeenCalledWith("client already holds a different value. Pick another name.");
+  });
+
+  it("changes nothing, and says why, when the step no longer holds the value", () => {
+    const { nodesRef, setNodes, setVariable, result } = setup();
+    act(() => result.current.start("b1"));
+    act(() => result.current.dialog.onSubmit({ field: "locator.hasText", name: "filter", everywhere: false }));
+    expect(setVariable).not.toHaveBeenCalled();
+    expect(setNodes).not.toHaveBeenCalled();
+    expect(nodesRef.current[0]).toBe(fill);
+    expect(toast.error).toHaveBeenCalledWith("That value is no longer in the step, so nothing was replaced.");
   });
 });

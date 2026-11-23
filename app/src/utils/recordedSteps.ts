@@ -2,7 +2,7 @@ import type { RecordedBrowserStep } from "@shared/types/RecordedBrowserStep";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
 import type { RecordingPlacement } from "../types/RecordingPlacement";
-import { browserStepLabel } from "@shared/browser/browser_action_labels";
+import { browserActionLabel, browserStepLabel } from "@shared/browser/browser_action_labels";
 import { absoluteNodePosition, FRAME_NODE_TYPE, GROUP_PAD } from "./canvasGroups";
 
 /** Steps per row inside a recording's frame, so a long recording wraps instead of running off the canvas. */
@@ -21,13 +21,22 @@ export function recordedStepLabel(config: unknown): string {
   return browserStepLabel(config);
 }
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
- * Whether a step's title is still the one generated from `config` (or empty),
- * so it may follow a new config. A title the user typed is theirs and is
- * never overwritten.
+ * Whether a step's title is still one the recorder generated from `config` (or
+ * empty), so it may follow a new config: the title it writes now ("Fill
+ * Email"), or the action's own words an older recording saved before titles
+ * named their target ("Type into a field", "Click"). A title the user typed is
+ * theirs and is never overwritten.
  */
 export function hasGeneratedLabel(label: unknown, config: unknown): boolean {
-  return label === undefined || label === "" || label === recordedStepLabel(config);
+  if (label === undefined || label === "") return true;
+  if (label === recordedStepLabel(config)) return true;
+  const action = isRecord(config) && typeof config["action"] === "string" ? config["action"] : "";
+  return label === browserActionLabel(action);
 }
 
 function frameSize(count: number): { width: number; height: number } {

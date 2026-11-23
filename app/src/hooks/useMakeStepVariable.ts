@@ -30,7 +30,16 @@ export function useMakeStepVariable({ nodesRef, setNodes, variables, setVariable
       setNodeId(null);
       if (id === null) return;
       const made = makeStepVariable(nodesRef.current, id, choice);
-      if (made === null || stepVariableNameError(choice.name, made.value, variables) !== undefined) return;
+      if (made === null) {
+        toast.error("That value is no longer in the step, so nothing was replaced.");
+        return;
+      }
+      // The name was valid when the dialog opened; the variables may have changed since.
+      const nameError = stepVariableNameError(choice.name, made.value, variables);
+      if (nameError !== undefined) {
+        toast.error(nameError);
+        return;
+      }
       if (variables[choice.name] !== made.value) setVariable(choice.name, made.value);
       // A save reads the ref: set it first, so Ctrl+S right after keeps the change.
       nodesRef.current = made.nodes;

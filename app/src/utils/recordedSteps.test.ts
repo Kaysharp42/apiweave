@@ -4,7 +4,7 @@ import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
 import type { RecordingPlacement } from "../types/RecordingPlacement";
-import { placeRecordedStep } from "./recordedSteps";
+import { hasGeneratedLabel, placeRecordedStep } from "./recordedSteps";
 
 const placement: RecordingPlacement = { anchorId: "start-1", frameId: "group-rec", frameLabel: "Recording" };
 
@@ -112,11 +112,21 @@ describe("placeRecordedStep", () => {
     expect(graph.nodes.find((node) => node.id === "s1")?.data).toMatchObject({ label: "Fill Email", config: { value: "ada" } });
   });
 
-  it("keeps a renamed title even when it matches the action's plain words", () => {
+  it("follows the config for a title carrying only the action's own words", () => {
+    // A step saved before titles named their target: "Type into a field" is generated, not the user's.
     const graph = record({ nodes: [start], edges: [] }, [fill("s1", "a")]);
-    const renamed = { ...graph, nodes: graph.nodes.map((node) => (node.id === "s1" ? { ...node, data: { ...node.data, label: "Type into a field" } } : node)) };
-    const after = placeRecordedStep(renamed, fill("s1", "ada"), placement, ["s1"]).nodes.find((node) => node.id === "s1");
-    expect(after?.data.label).toBe("Type into a field");
+    const earlier = { ...graph, nodes: graph.nodes.map((node) => (node.id === "s1" ? { ...node, data: { ...node.data, label: "Type into a field" } } : node)) };
+    const after = placeRecordedStep(earlier, fill("s1", "ada"), placement, ["s1"]).nodes.find((node) => node.id === "s1");
+    expect(after?.data.label).toBe("Fill Email");
+  });
+
+  it("follows the config for an older title once the recorder names the target", () => {
+    const bare: RecordedBrowserStep = { stepId: "s1", config: { action: "click", locator: { kind: "css", value: "div" } } };
+    const graph = record({ nodes: [start], edges: [] }, [bare]);
+    expect(graph.nodes.find((node) => node.id === "s1")?.data.label).toBe("Click");
+    const refined: RecordedBrowserStep = { stepId: "s1", config: { action: "click", locator: { kind: "role", role: "button", name: "Continuer" } } };
+    const after = placeRecordedStep(graph, refined, placement, ["s1"]).nodes.find((node) => node.id === "s1");
+    expect(after?.data.label).toBe("Click Continuer");
   });
 
   it("does not put back a step the user deleted, and connects the next one to the last step still there", () => {
@@ -182,5 +192,24 @@ describe("placeRecordedStep", () => {
     const pass: CanvasEdge = { id: "e-pass", source: "start-1", sourceHandle: "pass", target: "end-1", type: "custom" };
     const graph = record({ nodes: [start, end], edges: [pass] }, [navigate("s1")]);
     expect(edgePairs(graph)).toEqual(["start-1->end-1", "start-1->s1"]);
+  });
+});
+
+describe("hasGeneratedLabel", () => {
+  const config = { action: "fill", locator: { kind: "role", role: "textbox", name: "Email" } };
+
+  it("accepts an empty title, the title the recorder writes now, and the one it wrote before targets were named", () => {
+    expect(hasGeneratedLabel(undefined, config)).toBe(true);
+    expect(hasGeneratedLabel("", config)).toBe(true);
+    expect(hasGeneratedLabel("Fill Email", config)).toBe(true);
+    expect(hasGeneratedLabel("Type into a field", config)).toBe(true);
+    expect(hasGeneratedLabel("Click", { action: "click" })).toBe(true);
+    expect(hasGeneratedLabel("Browser step", {})).toBe(true);
+  });
+
+  it("refuses a title the user typed", () => {
+    expect(hasGeneratedLabel("Focus email", config)).toBe(false);
+    expect(hasGeneratedLabel("Type", config)).toBe(false);
+    expect(hasGeneratedLabel("Open /login", config)).toBe(false);
   });
 });
