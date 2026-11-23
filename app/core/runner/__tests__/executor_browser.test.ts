@@ -410,6 +410,25 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(result(stored, "email")?.error).toBe("Browser step: {{env.TEST_EMAIL}} is not set")
   })
 
+  it("finds an element by a name held in a workflow variable, and fails one whose variable is unset", async () => {
+    const workflowId = create(
+      [
+        step("open", { action: "navigate", url: `${base}/login` }),
+        step("email", { action: "fill", locator: role("textbox", "Email"), value: "ada@example.com" }),
+        step("submit", { action: "click", locator: role("button", "{{variables.button}}") }),
+        step("arrived", { action: "expect-url", url: "/dashboard", match: "contains" }),
+        step("missing", { action: "click", locator: role("button", "{{variables.missing}}") }),
+      ],
+      { button: "Sign in" },
+    )
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "submit")?.status, result(stored, "submit")?.error).toBe("passed")
+    expect(result(stored, "arrived")?.status, result(stored, "arrived")?.error).toBe("passed")
+    expect(result(stored, "missing")?.error).toBe("Browser step: {{variables.missing}} is not set")
+  })
+
   it("names an ambiguous locator", async () => {
     const workflowId = create([
       step("open", { action: "navigate", url: `${base}/login` }),

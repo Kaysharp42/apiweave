@@ -74,6 +74,8 @@ import useCanvasHistory from "../hooks/useCanvasHistory";
 import { useBrowserRecording } from "../hooks/useBrowserRecording";
 import { useStepReplay } from "../hooks/useStepReplay";
 import { useTurnIntoExtract } from "../hooks/useTurnIntoExtract";
+import { useMakeStepVariable } from "../hooks/useMakeStepVariable";
+import { MakeStepVariableDialog } from "./organisms/MakeStepVariableDialog";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import { useAcyclicConnections } from "../hooks/useAcyclicConnections";
@@ -131,7 +133,7 @@ import { isEditableNode } from "../utils/nodeNavigation";
 import { useNodeEditorWalk } from "../hooks/useNodeEditorWalk";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { grpcCallType, reconcileGrpcStreamEdges } from "../utils/grpcStreamEdges";
-import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Wand2 } from "lucide-react";
+import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Variable, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -302,6 +304,7 @@ function WorkflowCanvas({
   const {
     variables: workflowVariables,
     registerExtractors,
+    updateVariable,
     updateVariables,
     onVariablesDeletedRef,
   } = useWorkflow();
@@ -1630,6 +1633,13 @@ function WorkflowCanvas({
 
   const turnIntoExtract = useTurnIntoExtract({ nodesRef, setNodes });
 
+  const makeStepVariable = useMakeStepVariable({
+    nodesRef,
+    setNodes,
+    variables: workflowVariables,
+    setVariable: updateVariable,
+  });
+
   const stepReplay = useStepReplay({
     workflowId,
     workspaceId: scope.workspaceId ?? undefined,
@@ -2264,6 +2274,16 @@ function WorkflowCanvas({
                   },
                 ]
               : []),
+            ...(makeStepVariable.canMake(stepMenu.nodeId)
+              ? [
+                  {
+                    key: "make-variable",
+                    icon: Variable,
+                    label: "Make value a variable",
+                    onSelect: () => makeStepVariable.start(stepMenu.nodeId),
+                  },
+                ]
+              : []),
             {
               key: "duplicate",
               icon: Files,
@@ -2315,6 +2335,16 @@ function WorkflowCanvas({
         placeholder="orderNumber"
         submitLabel="Turn into extract"
         icon={Download}
+      />
+
+      <MakeStepVariableDialog
+        key={`variable-${makeStepVariable.dialog.nodeId ?? "none"}`}
+        open={makeStepVariable.dialog.open}
+        node={makeStepVariable.dialog.node}
+        nodes={makeStepVariable.dialog.nodes}
+        variables={makeStepVariable.dialog.variables}
+        onClose={makeStepVariable.dialog.onClose}
+        onSubmit={makeStepVariable.dialog.onSubmit}
       />
 
       {/* Keyed by node id so each open re-mounts with that node's label

@@ -2,6 +2,7 @@ import { BrowserLocatorSchema } from "@shared/zod-schemas/BrowserLocatorSchema";
 import type { BrowserStepDraft } from "../types/BrowserStepDraft";
 import type { CanvasNode } from "../types/CanvasNode";
 import { configFromDraft, draftFromConfig } from "./browserStep";
+import { camelName } from "./makeStepVariable";
 import { hasGeneratedLabel, recordedStepLabel } from "./recordedSteps";
 
 /** Steps on a form field read its value; any other element is read for its text. */
@@ -33,13 +34,7 @@ export function canTurnIntoExtract(node: CanvasNode): boolean {
 /** A variable name drawn from what the locator names: `Order number` → `orderNumber`, `#total` → `total`. */
 export function suggestedVariableName(node: CanvasNode): string {
   const { locator } = draftFromConfig(configOf(node));
-  const source = locator.kind === "role" ? (locator.name ?? "") : locator.value;
-  // A name may not start with a digit: begin at the first letter.
-  const words = source.replace(/^[^A-Za-z]+/, "").match(/[A-Za-z0-9]+/g) ?? [];
-  const name = words
-    .map((word, index) => (index === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()))
-    .join("")
-    .slice(0, 40);
+  const name = camelName(locator.kind === "role" ? (locator.name ?? "") : locator.value);
   return name === "" ? "value" : name;
 }
 
