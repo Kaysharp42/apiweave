@@ -216,7 +216,7 @@ describe("the sync cycle", () => {
     const a = openDevice(sandbox, "a")
     const remote = makeBareRemote(sandbox, "shared.git")
     const workspaceId = await publish(a, sandbox, remote)
-    const shared = a.repositories.workflows.create({ workspaceId, name: "Shared" })
+    a.repositories.workflows.create({ workspaceId, name: "Shared" })
     await a.sync.syncNow(workspaceId, { message: "Add shared" })
     let fastForwards = 0
     let writeDuringFastForward: (() => void) | undefined
@@ -232,9 +232,14 @@ describe("the sync cycle", () => {
     const opened = await openFromRemote(b, remote.url)
     const onA = a.repositories.workflows.create({ workspaceId, name: "On A" })
     await a.sync.syncNow(workspaceId, { message: "Add on A" })
-    // A write the repositories announce, but one that leaves the serialized tree as it was.
+    // A write the repositories announce, but one that leaves the serialized tree
+    // as it was: the workspace row's revision is local bookkeeping, never a file.
+    // (A workflow update that re-sends stored content is no longer such a write —
+    // WorkflowRepository.update returns before its UPDATE, so nothing is
+    // announced — the workspace row is where an announced, tree-identical write
+    // still lands.)
     writeDuringFastForward = () => {
-      b.repositories.workflows.update(shared.workflowId, {})
+      b.repositories.workspaces.update(opened, {})
     }
 
     const status = await b.sync.syncNow(opened)

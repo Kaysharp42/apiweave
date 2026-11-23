@@ -103,9 +103,37 @@ describe("workflow revisions", () => {
     expect(nodeIds(agentResult.snapshot.nodes)).toEqual(["a", "b"])
   })
 
-  it("does not keep the same content twice in a row", async () => {
+  it("keeps no revision and bumps no rev when a write re-sends the stored content", async () => {
+    // Two different sources: the no-op guard sits before capture's source-aware
+    // suppression, so neither an interval skip nor a content skip is what keeps
+    // the history clean — the write simply never happens.
     await service.update(workspaceId, workflowId, { name: "Orders" }, { source: "agent:a" })
-    await service.update(workspaceId, workflowId, { name: "Orders" }, { source: "agent:a" })
+    await service.update(workspaceId, workflowId, { name: "Orders" }, { source: "agent:b" })
+    expect(revisions()).toHaveLength(0)
+    expect(workflows.getById(workflowId)?.rev).toBe(1)
+  })
+
+  it("answers a stale revision with a conflict even when the content already matches the stored row", async () => {
+    const before = await service.get(workspaceId, workflowId)
+
+    // The compare-and-swap answers "did anything change since my read", not
+    // "would my write change anything" — so identical content at the current
+    // revision is a clean no-op, while the same content at the revision the
+    // caller last saw still conflicts, telling it to re-read and retry.
+    const noop = await service.update(workspaceId, workflowId, { name: before.name }, { expectedRevision: before.rev })
+    expect(noop).toMatchObject({ rev: before.rev, updatedAt: before.updatedAt })
+    expect(revisions()).toHaveLength(0)
+
+    const changed = await service.update(workspaceId, workflowId, { name: "v2" }, { expectedRevision: before.rev })
+    expect(changed.rev).toBe(before.rev + 1)
+    expect(revisions()).toHaveLength(1)
+
+    await expect(service.update(workspaceId, workflowId, { name: "v2" }, { expectedRevision: before.rev }))
+      .rejects.toBeInstanceOf(ConflictError)
+
+    const retried = await service.update(workspaceId, workflowId, { name: "v2" }, { expectedRevision: changed.rev })
+    expect(retried.rev).toBe(changed.rev)
+    expect(workflows.getById(workflowId)?.rev).toBe(changed.rev)
     expect(revisions()).toHaveLength(1)
   })
 

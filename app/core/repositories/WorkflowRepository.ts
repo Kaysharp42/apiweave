@@ -86,6 +86,9 @@ const COLUMNS =
 /** The one-row read `getById` shares with `create`'s read-back. */
 const GET_BY_ID_SQL = `SELECT ${COLUMNS} FROM workflows WHERE id = ?`
 
+/** `update`'s no-op guard compares every column it writes, so its read adds `slug` to {@link COLUMNS}. */
+const GET_BY_ID_FOR_UPDATE_SQL = `SELECT ${COLUMNS}, slug FROM workflows WHERE id = ?`
+
 interface WorkflowRow extends SqliteRow {
   readonly id: string
   readonly workspace_id: string
@@ -96,6 +99,11 @@ interface WorkflowRow extends SqliteRow {
   readonly rev: number
   readonly createdAt: string
   readonly updatedAt: string
+}
+
+/** The stored form of every column an `update` writes; its no-op guard compares against this row. */
+interface WorkflowWriteRow extends WorkflowRow {
+  readonly slug: string
 }
 
 interface WorkflowGraph {
@@ -259,14 +267,27 @@ export class WorkflowRepository {
     return this.listByCollection(workspaceId, collectionId).total
   }
 
-  /** `source` is who is writing, for the revision this write keeps of what it replaces. */
+  /**
+   * `source` is who is writing, for the revision this write keeps of what it
+   * replaces. A write whose persisted columns would all hold the values they
+   * already store is a no-op: it returns the stored workflow unchanged — no
+   * revision capture, no UPDATE (whose touch trigger would bump `rev` for
+   * nothing), no change notification. The comparison runs on the serialized
+   * column values the write would produce, so a re-sent identical graph (an
+   * auto-save after a run settles, a layout of an already-laid-out canvas, an
+   * agent re-writing what it just read) never moves the revision MCP agents
+   * pin their compare-and-swap writes to. Content equality never masks a lost
+   * race: {@link updateAtRevision} refuses a stale `expectedRevision` before
+   * delegating here, so the no-op short-circuit only ever answers a write the
+   * caller was entitled to make.
+   */
   public update(workflowId: string, patch: WorkflowUpdate, source: WorkflowWriteSource = "canvas"): Workflow | undefined {
     return this.transaction(() => {
-      const existing = this.getById(workflowId)
-      if (existing === undefined) {
+      const row = this.store.get<WorkflowWriteRow>(GET_BY_ID_FOR_UPDATE_SQL, [workflowId])
+      if (row === undefined) {
         return undefined
       }
-      this.revisions.capture(existing, source)
+      const existing = rowToWorkflow(row)
       const merged: Workflow = { ...existing, ...patch }
       const graph = canonicalWorkflow({ nodes: merged.nodes, edges: merged.edges })
       const settings: WorkflowSettings = {
@@ -276,9 +297,24 @@ export class WorkflowRepository {
         selectedEnvironmentId: merged.selectedEnvironmentId ?? null,
         nodeTemplates: merged.nodeTemplates,
       }
+      const name = merged.name
+      const slug = slugify(merged.name, workflowId)
+      const graphJson = toJson(graph)
+      const variablesJson = toJson(merged.variables)
+      const settingsJson = toJson(settings)
+      if (
+        row.name === name &&
+        row.slug === slug &&
+        row.graph_json === graphJson &&
+        row.variables_json === variablesJson &&
+        row.settings_json === settingsJson
+      ) {
+        return existing
+      }
+      this.revisions.capture(existing, source)
       this.store.set(
         "UPDATE workflows SET name = ?, slug = ?, graph_json = ?, variables_json = ?, settings_json = ? WHERE id = ?",
-        [merged.name, slugify(merged.name, workflowId), toJson(graph), toJson(merged.variables), toJson(settings), workflowId],
+        [name, slug, graphJson, variablesJson, settingsJson, workflowId],
       )
       const updated = this.getById(workflowId)
       if (updated !== undefined) this.notifyChanged(updated)

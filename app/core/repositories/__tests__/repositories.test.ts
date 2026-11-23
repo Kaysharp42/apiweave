@@ -172,6 +172,70 @@ describe("WorkflowRepository", () => {
     expect(described?.description).toBe("new")
   })
 
+  it("treats an update whose content is already stored as a no-op: same rev, no revision kept, no notification", () => {
+    const workspaceId = seedWorkspace()
+    const changes: string[] = []
+    const observed = new WorkflowRepository(db.kvStore, (event) => {
+      if (event.kind !== "upsert") return
+      changes.push(`${event.workflow.workflowId}:${event.workflow.rev}`)
+    })
+    const created = observed.create({
+      workspaceId,
+      name: "demo",
+      nodes: [{ nodeId: "n1", type: "start", position: { x: 0, y: 0 } }],
+      variables: { base: "https://api.test" },
+      tags: ["smoke"],
+    })
+    expect(changes).toEqual([`${created.workflowId}:1`])
+
+    // The canvas auto-save shape: the whole stored graph re-sent unchanged.
+    const resent = observed.update(created.workflowId, {
+      name: created.name,
+      nodes: created.nodes,
+      edges: created.edges,
+      variables: created.variables,
+      tags: created.tags,
+    })
+    const empty = observed.update(created.workflowId, {})
+    for (const result of [resent, empty]) {
+      expect(result).toMatchObject({ rev: created.rev, updatedAt: created.updatedAt })
+    }
+    expect(observed.getById(created.workflowId)).toMatchObject({ rev: created.rev, updatedAt: created.updatedAt })
+    expect(observed.revisions.list(created.workflowId)).toEqual([])
+    expect(changes).toEqual([`${created.workflowId}:1`])
+  })
+
+  it("still bumps rev by exactly one and keeps one revision when content really changes", () => {
+    const workspaceId = seedWorkspace()
+    const created = workflows.create({ workspaceId, name: "demo" })
+
+    const renamed = workflows.update(created.workflowId, { name: "demo2" })
+    expect(renamed?.rev).toBe(created.rev + 1)
+    expect(renamed?.updatedAt).not.toBe(created.updatedAt)
+
+    const revisions = workflows.revisions.list(created.workflowId)
+    expect(revisions).toHaveLength(1)
+    expect(revisions[0]).toMatchObject({ workflowRev: created.rev, source: "canvas" })
+  })
+
+  it("refuses a stale expectedRevision even when the content already matches the stored row", () => {
+    const workspaceId = seedWorkspace()
+    const created = workflows.create({ workspaceId, name: "demo" })
+    const renamed = workflows.update(created.workflowId, { name: "renamed" })
+    expect(renamed?.rev).toBe(created.rev + 1)
+
+    // The compare-and-swap check runs before the no-op short-circuit: a caller
+    // whose revision lost the race is told so, whatever its write would do.
+    expect(workflows.updateAtRevision(created.workflowId, created.rev, { name: "renamed" })).toBeUndefined()
+    expect(workflows.getById(created.workflowId)?.rev).toBe(created.rev + 1)
+
+    // At the current revision the same content is a clean no-op that returns the row.
+    const noop = workflows.updateAtRevision(created.workflowId, renamed!.rev, { name: "renamed" })
+    expect(noop).toMatchObject({ rev: renamed!.rev })
+    expect(workflows.getById(created.workflowId)?.rev).toBe(renamed!.rev)
+    expect(workflows.revisions.list(created.workflowId)).toHaveLength(1)
+  })
+
   it("filters collection-attached workflows from the default workspace listing", () => {
     const workspaceId = seedWorkspace()
     workflows.create({ workspaceId, name: "loose" })
