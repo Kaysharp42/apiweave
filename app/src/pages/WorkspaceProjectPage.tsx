@@ -1,3 +1,4 @@
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router";
 import { FolderKanban, ArrowLeft, FileText, Plus } from "lucide-react";
@@ -155,16 +156,7 @@ export function WorkspaceProjectPage() {
         collectionId: projectId,
         name,
         description: "",
-        nodes: [
-          {
-            nodeId: "start-1",
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-        ],
-        edges: [],
+        ...initialWorkflowGraph(),
         variables: {},
       });
       toast.success(`Workflow "${name}" created and added to project`);

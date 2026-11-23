@@ -96,7 +96,8 @@ import {
   shouldActOnDetach,
   writeFollowsBaseRevision,
 } from "../utils/canvasRefreshGuards";
-import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
+import { canvasToWorkflow, graphToCanvas, workflowToCanvas } from "../adapters/workflowCanvas";
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import {
   groupSelection,
   adoptIntoFrame,
@@ -257,14 +258,7 @@ let nextExtractorConfigId = 0;
 const configRefMap = new WeakMap<object, number>();
 let nextConfigRefId = 0;
 
-const initialNodes: Node<WorkflowCanvasNodeData>[] = [
-  {
-    id: "start-1",
-    type: "start",
-    position: { x: 250, y: 50 },
-    data: { label: "Start" },
-  },
-];
+const initialGraph = graphToCanvas(initialWorkflowGraph());
 
 /**
  * ReactFlow answers "are all nodes measured" from its own store, which
@@ -314,8 +308,8 @@ function WorkflowCanvas({
   const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<CanvasNode>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
+    useNodesState<CanvasNode>(initialGraph.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialGraph.edges);
 
   const nodesRef = useRef(nodes);
   // The same graph as `nodesRef`, with frames dropped and every position made

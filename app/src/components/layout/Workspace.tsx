@@ -1,3 +1,4 @@
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import { useCallback, useEffect, useState } from "react";
 import {
   TabBar,
@@ -84,16 +85,7 @@ export function Workspace({ active = true }: WorkspaceProps) {
           workspaceId,
           name,
           description: "",
-          nodes: [
-            {
-              nodeId: "start-1",
-              type: "start",
-              label: "Start",
-              position: { x: 100, y: 100 },
-              config: {},
-            },
-          ],
-          edges: [],
+          ...initialWorkflowGraph(),
           variables: {},
         });
         openTab(workflow);

@@ -1,3 +1,4 @@
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -147,16 +148,7 @@ export function Sidebar() {
         workspaceId,
         name,
         description: "",
-        nodes: [
-          {
-            nodeId: "start-1",
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-        ],
-        edges: [],
+        ...initialWorkflowGraph(),
         variables: {},
       });
       void refreshAll(selectedNav);
@@ -178,16 +170,7 @@ export function Sidebar() {
         collectionId: addWorkflowToProjectTarget,
         name,
         description: "",
-        nodes: [
-          {
-            nodeId: "start-1",
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-        ],
-        edges: [],
+        ...initialWorkflowGraph(),
         variables: {},
       });
       void refreshAll("projects");

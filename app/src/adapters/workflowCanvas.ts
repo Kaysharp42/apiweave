@@ -43,7 +43,8 @@ function canonicalizeKvFields(
   return next;
 }
 
-export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
+/** A workflow's nodes and edges as React Flow holds them. */
+export function graphToCanvas(workflow: Pick<Workflow, "nodes" | "edges">): Pick<CanvasWorkflowState, "nodes" | "edges"> {
   const nodes: Node<WorkflowCanvasNodeData>[] = workflow.nodes.map((node) => {
     const config = (node.config ?? {}) as Record<string, unknown>;
     return {
@@ -93,11 +94,14 @@ export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
     // only; the branch is identified by the socket the edge leaves.
   }));
 
+  // Frames to the front, and any `parentId` the cloud merge left dangling
+  // dropped before React Flow ever sees it.
+  return { nodes: reconcileFrames(nodes), edges };
+}
+
+export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
   return {
-    // Frames to the front, and any `parentId` the cloud merge left dangling
-    // dropped before React Flow ever sees it.
-    nodes: reconcileFrames(nodes),
-    edges,
+    ...graphToCanvas(workflow),
     variables: { ...workflow.variables },
     selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
   };
