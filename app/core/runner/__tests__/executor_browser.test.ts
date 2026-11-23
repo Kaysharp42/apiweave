@@ -1,6 +1,7 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
+import type { Page } from "playwright-core"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { RunScheduler } from "../scheduler"
@@ -18,6 +19,24 @@ import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 const SECRET_PASSWORD = "s3cret-pass-987"
+
+/**
+ * One test holds a settle open to cancel the run between its step passing and
+ * its evidence being taken, which timing a real page cannot do reliably.
+ * Every other test's settle goes straight through.
+ */
+const settleHold = vi.hoisted(() => ({ wait: undefined as (() => Promise<void>) | undefined }))
+
+vi.mock("../browser/settle", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../browser/settle")>()
+  return {
+    ...actual,
+    settle: async (page: Page, maxMs: number, intervalMs?: number) => {
+      if (settleHold.wait !== undefined) await settleHold.wait()
+      return actual.settle(page, maxMs, intervalMs)
+    },
+  }
+})
 
 /** The login form's button; a test renames it, as a frontend change would. */
 let loginLabel = "Sign in"
@@ -342,15 +361,48 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
   })
 
   it("keeps a passed step's evidence from the page it settled on, not the page its action finished on", async () => {
-    // The page churns for 400ms after load, then leaves: the navigate is done
+    // The page churns for 200ms after load, then leaves: the navigate is done
     // well before that, and a passed step's 1s settle outlasts it.
-    const workflowId = create([step("open", { action: "navigate", url: `${base}/unsettled?ms=400` })])
+    const workflowId = create([step("open", { action: "navigate", url: `${base}/unsettled?ms=200` })])
 
     const stored = await run(workflowId)
 
     expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
     expect(result(stored, "open")?.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
     expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
+  })
+
+  it("takes no evidence of a step that passed when the run is cancelled while its page settles", async () => {
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered: () => void = () => undefined
+    const settling = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    settleHold.wait = async () => {
+      entered()
+      await held
+    }
+    try {
+      const workflowId = create([step("open", { action: "navigate", url: `${base}/login` })])
+      const runId = scheduler.enqueue({ workspaceId, workflowId })
+      await settling
+      // The step has passed and its settle holds; the cancel closes the page
+      // underneath it, so capturing afterwards would evidence a dead page.
+      expect(scheduler.cancel(runId)).toBe(true)
+      release()
+      expect(await scheduler.whenFinished(runId)).toBe("cancelled")
+
+      const opened = result(runs.getById(runId)!, "open")
+      expect(opened?.status).toBe("passed")
+      expect(opened?.browser?.ariaSnapshot).toBeUndefined()
+      expect(opened?.browser?.evidenceNote).toBeUndefined()
+      expect(artifacts).toEqual([])
+    } finally {
+      settleHold.wait = undefined
+    }
   })
 
   it("gives a failed step's evidence the fuller settle, where a page that changed late is the diagnosis", async () => {

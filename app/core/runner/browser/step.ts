@@ -464,8 +464,12 @@ function detailOf(error: unknown): string | undefined {
   return plain.length > DETAIL_MAX_CHARS ? `${plain.slice(0, DETAIL_MAX_CHARS)}…` : plain
 }
 
-/** Where the page is after the step. */
-async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
+/**
+ * Where the page is: its url without the query and its title. Read after a
+ * step, and again of the settled page when its evidence is taken, so both say
+ * which page they belong to.
+ */
+export async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
   const url = page.url()
   const title = await within(page.title(), 2_000, "")
   return { ...(url !== "" ? { url: withoutQuery(url) } : {}), ...(title !== "" ? { title } : {}) }

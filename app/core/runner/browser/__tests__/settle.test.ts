@@ -18,15 +18,17 @@ interface StubPage {
 
 /**
  * A page that answers each ARIA read with `snapshot(read)`, counting from 0.
- * `dead` makes every read and wait fail the way a closed page's do.
+ * `dead` makes every read and wait fail the way a closed page's do, and a
+ * `dead` page is closed; `closed` says so for a page whose reads still answer.
  */
-function stubPage(snapshot: (read: number) => string, dead = false): StubPage {
+function stubPage(snapshot: (read: number) => string, dead = false, closed = dead): StubPage {
   const waits: number[] = []
   const loadTimeouts: number[] = []
   const readTimeouts: number[] = []
   let reads = 0
   const reject = (): Promise<never> => Promise.reject(new Error("Target page, context or browser has been closed"))
   const page = {
+    isClosed: () => closed,
     waitForTimeout: (ms: number) => {
       waits.push(ms)
       return dead ? reject() : new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -105,14 +107,51 @@ describe("settle", () => {
     expect(stub.waits).toEqual([300])
   })
 
+  it("keeps the snapshot it had when a later read finds nothing", async () => {
+    // A read that runs out of budget answers nothing. That is no reason to
+    // throw away the page the first read did see.
+    const stub = stubPage((read) => (read === 0 ? "before" : ""))
+    const settled = settle(stub.page, 1_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "before" })
+    expect(stub.waits).toEqual([SETTLE_INTERVAL_MS, SETTLE_INTERVAL_MS])
+  })
+
+  it("does not call two empty reads a settled page while the page is still open", async () => {
+    const stub = stubPage(() => "")
+    const settled = settle(stub.page, 1_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    await expect(settled).resolves.toEqual({})
+    // Silence is not agreement: settle spends its cap rather than stopping
+    // after the first interval, during which a slow navigation would be cut.
+    expect(stub.waits.reduce((total, ms) => total + ms, 0)).toBe(1_000)
+    expect(stub.waits.length).toBeGreaterThan(1)
+  })
+
+  it("stops waiting when the page has closed, keeping the last real snapshot", async () => {
+    // A closed page's reads stay empty, which is not agreement. Only the
+    // close ends the wait early: watching it would learn nothing more.
+    const stub = stubPage((read) => (read === 0 ? "before" : ""), false, true)
+    const settled = settle(stub.page, 60_000)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "before" })
+    expect(stub.waits).toEqual([SETTLE_INTERVAL_MS])
+    expect(stub.readTimeouts).toHaveLength(2)
+  })
+
   it("reports no snapshot when no read could be taken, without throwing", async () => {
     const stub = stubPage(() => "never", true)
     const settled = settle(stub.page, 3_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    // Two failed reads agree on nothing: settle stops early and says so.
+    // Reads of a closed page take nothing, and the close is what ends the
+    // wait: it says so rather than watching a deadline that cannot help.
     await expect(settled).resolves.toEqual({})
     expect(stub.readTimeouts).toHaveLength(2)
+    expect(stub.waits).toEqual([SETTLE_INTERVAL_MS])
   })
 
   it("swallows a page that throws on every call", async () => {

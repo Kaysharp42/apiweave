@@ -60,8 +60,8 @@ import type { Page } from "playwright-core"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
 import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
 import { BROWSER_STEP_PREFIX, BrowserSession, BrowserSessionError, type BrowserLaunchSettings } from "./browser/session"
-import { runBrowserStep, withoutQuery, type BrowserStepContext } from "./browser/step"
-import { capturePage, within } from "./browser/capture"
+import { runBrowserStep, pageFacts, type BrowserStepContext } from "./browser/step"
+import { capturePage } from "./browser/capture"
 import { settle } from "./browser/settle"
 
 /**
@@ -1222,7 +1222,7 @@ export class WorkflowExecutor {
         const outcome = await runBrowserStep(page, config, context)
         // Evidence is kept for every step that ran, pass or fail; a cancelled
         // run's browser is already closed, so there is no page to capture.
-        const evidence = cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId, outcome.passed)
+        const evidence = cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId, outcome.passed, cancelSignal)
         return {
           status: outcome.passed ? "success" : "error",
           duration: Date.now() - startTime,
@@ -1266,6 +1266,7 @@ export class WorkflowExecutor {
     page: Page,
     nodeId: string,
     passed: boolean,
+    cancelSignal: AbortSignal | undefined,
   ): Promise<Pick<BrowserStepResult, "ariaSnapshot" | "screenshotArtifactId" | "evidenceNote" | "url" | "title">> {
     // Settle first: a click that signs in navigates a moment later, and a
     // page fills in once its data arrives, so reading at once would store the
@@ -1274,6 +1275,17 @@ export class WorkflowExecutor {
     const settled = passed
       ? await settle(page, WorkflowExecutor.PASSED_SETTLE_MS, WorkflowExecutor.PASSED_SETTLE_INTERVAL_MS)
       : await settle(page, WorkflowExecutor.FAILED_SETTLE_MS)
+    // A cancel that landed while the page was settling closed the browser with
+    // the step's action already done: capturing a dead page would put "could
+    // not be taken" on a step that passed. The step keeps the result it had
+    // before evidence, exactly as one cancelled before settling does.
+    if (cancelSignal?.aborted) return {}
+    // The settled page's url and title are read before the screenshot, which
+    // can take seconds: read afterwards they could describe a later page than
+    // the snapshot the evidence keeps, and one capture is one moment of one
+    // page. Only of a page that could still be read: a browser that died under
+    // the step keeps the step's own facts.
+    const facts = settled.ariaSnapshot !== undefined ? await pageFacts(page) : {}
     const evidence = await capturePage(
       page,
       this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}),
@@ -1298,22 +1310,7 @@ export class WorkflowExecutor {
       ...(evidence.ariaSnapshot !== undefined ? { ariaSnapshot: evidence.ariaSnapshot } : {}),
       ...(screenshotArtifactId !== undefined ? { screenshotArtifactId } : {}),
       ...(notes.length > 0 ? { evidenceNote: notes.join(" ") } : {}),
-      // The step read url and title before the page settled; the evidence
-      // shows the settled page, so they are read again — over what the step
-      // reported, never dropping it — but only of a page that could still be
-      // read. A browser that died under the step keeps the step's own facts.
-      ...(settled.ariaSnapshot !== undefined ? await this.settledFacts(page) : {}),
-    }
-  }
-
-  /** The page's url and title as the settled evidence found them, or nothing when the page will not say. */
-  private async settledFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
-    try {
-      const url = page.url()
-      const title = await within(page.title(), 2_000, "")
-      return { ...(url !== "" ? { url: withoutQuery(url) } : {}), ...(title !== "" ? { title } : {}) }
-    } catch {
-      return {}
+      ...facts,
     }
   }
 

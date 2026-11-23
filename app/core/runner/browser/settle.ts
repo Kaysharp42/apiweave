@@ -10,10 +10,10 @@ const READ_MAX_MS = 1_500
 /** What waiting for a page to settle leaves behind. */
 export interface SettledPage {
   /**
-   * The last ARIA snapshot the reads took, whether or not two agreed: the
-   * freshest view of the page there is, for capture to keep rather than read
-   * again. Undefined when no read could be taken at all, so the caller
-   * captures as it would have without settling.
+   * The last non-empty ARIA snapshot the reads took, whether or not two
+   * agreed: the freshest view of the page there is, for capture to keep rather
+   * than read again. Undefined when no read could be taken at all, so the
+   * caller captures as it would have without settling.
    */
   readonly ariaSnapshot?: string
 }
@@ -25,8 +25,13 @@ export interface SettledPage {
  * in once its data arrives: read at once, evidence would show the page
  * before either. Settled means two ARIA snapshots `intervalMs` apart agree,
  * so a stable page costs one interval: a caller that settles after every
- * step passes a short one. Every call is bounded by what is left of the
- * deadline, so a slow load or a hanging read cannot stretch the wait past it.
+ * step passes a short one. An empty read is a read that ran out of budget,
+ * not a page with nothing on it: it never agrees with anything, so a page
+ * that keeps returning nothing is waited out rather than called settled —
+ * unless it has closed, since a closed page will never say more and waiting
+ * for it only spends the cap.
+ * Every call is bounded by what is left of the deadline, so a slow load or a
+ * hanging read cannot stretch the wait past it.
  *
  * Never throws: a page that is closed or navigating yields whatever the
  * reads managed, never more than the deadline, and no snapshot at all when
@@ -50,6 +55,13 @@ export async function settle(page: Page, maxMs: number, intervalMs: number = SET
       const budget = left()
       await within(page.waitForLoadState("load", { timeout: budget }), budget, undefined)
       const next = await read()
+      // A read that ran out of budget is no snapshot: it neither replaces the
+      // one already read nor agrees with it. A page that closed under it has
+      // nothing more to say, and waiting cannot change that, so stop there.
+      if (next === "") {
+        if (page.isClosed()) return latest(previous)
+        continue
+      }
       if (next === previous) return latest(previous)
       previous = next
     }
