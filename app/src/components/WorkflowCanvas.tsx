@@ -1524,6 +1524,9 @@ function WorkflowCanvas({
           return false;
         }
         baseRevisionRef.current = savedWorkflow.rev;
+        // A direct write, not `setHydratedBaseline`: this graph came from the
+        // committed canvas, so there is no pending commit to wait for, and
+        // raising the "canvas behind baseline" flag here would stall autosave.
         hydratedBaselineRef.current = { nodeCount, edgeCount };
         // This echo is our own graph coming back. Claim it before the tab
         // store hands it to `useHydration`, or the canvas re-hydrates from

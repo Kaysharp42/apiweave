@@ -75,7 +75,11 @@ interface UseHydrationParams {
 interface UseHydrationReturn {
   isHydrated: boolean;
   hydratedBaselineRef: React.MutableRefObject<HydratedBaseline | null>;
-  /** Record the graph just handed to `setNodes`/`setEdges` as the baseline. */
+  /**
+   * Record the graph just handed to `setNodes`/`setEdges` as the baseline.
+   * Call it only right after queuing new node/edge arrays: it holds silent
+   * saves back until the next commit of `nodes`/`edges`.
+   */
   setHydratedBaseline: (baseline: HydratedBaseline) => void;
   /**
    * False from the moment a baseline is set until the canvas commits the graph
