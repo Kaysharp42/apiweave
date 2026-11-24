@@ -279,9 +279,8 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 
 | Component         | File                            | Purpose                                                        |
 | ----------------- | ------------------------------- | -------------------------------------------------------------- |
-| `BaseNode`        | `atoms/flow/BaseNode.tsx`       | Shared node shell for all ReactFlow nodes.                     |
+| `BaseNode`        | `atoms/flow/BaseNode.tsx`       | Shared node shell; its ⋯ button and right-click both open the shared `ContextMenu`, rendered by the canvas from the store. |
 | `NodeHandle`      | `atoms/flow/NodeHandle.tsx`     | Typed connection handle.                                       |
-| `NodeActionMenu`  | `atoms/flow/NodeActionMenu.tsx` | Three-dot context menu for nodes.                              |
 | `HTTPRequestNode` | `nodes/HTTPRequestNode.tsx`     | HTTP request node with method, URL, headers, body, extractors. |
 | `AssertionNode`   | `nodes/AssertionNode.tsx`       | Assertion node for response validation.                        |
 | `DelayNode`       | `nodes/DelayNode.tsx`           | Delay node for timing control.                                 |
@@ -354,9 +353,8 @@ app/
 │       │   ├── Tooltip.tsx        — Tooltip wrapper
 │       │   ├── Backdrop.tsx       — Dialog backdrop; dims the native window controls
 │       │   ├── flow/
-│       │   │   ├── BaseNode.tsx       — Shared node shell
-│       │   │   ├── NodeHandle.tsx     — Connection handle
-│       │   │   └── NodeActionMenu.tsx — Node context menu
+│       │   │   ├── BaseNode.tsx       — Shared node shell; ⋯ and right-click open the shared ContextMenu
+│       │   │   └── NodeHandle.tsx     — Connection handle
 │       │   └── index.ts           — Barrel exports
 │       ├── molecules/
 │       │   ├── Panel.tsx          — Reusable panel shell

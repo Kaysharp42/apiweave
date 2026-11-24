@@ -18,4 +18,3 @@ export { HighlightedText } from "./HighlightedText";
 // Flow atoms — ReactFlow primitives
 export { BaseNode } from "./flow/BaseNode";
 export { NodeHandle } from "./flow/NodeHandle";
-export { NodeActionMenu } from "./flow/NodeActionMenu";

@@ -29,6 +29,26 @@ const useCanvasStore = create<CanvasState>()((set) => ({
   reloadVersion: 0,
   pendingHistory: null,
   pendingFocus: null,
+  nodeMenu: null,
+  expandedNodeIds: new Set<string>(),
+
+  openNodeMenu: (request) => set({ nodeMenu: request }),
+
+  closeNodeMenu: () => set({ nodeMenu: null }),
+
+  setNodeExpanded: (nodeId, expanded) =>
+    set((state) => {
+      if (state.expandedNodeIds.has(nodeId) === expanded) return state;
+
+      const next = new Set(state.expandedNodeIds);
+      if (expanded) next.add(nodeId);
+      else next.delete(nodeId);
+
+      return { expandedNodeIds: next };
+    }),
+
+  resetCanvasNodeUi: () =>
+    set({ nodeMenu: null, expandedNodeIds: new Set<string>() }),
 
   duplicateNode: (nodeId: string) => {
     const action = {

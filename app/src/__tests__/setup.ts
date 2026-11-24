@@ -1,5 +1,13 @@
 import "@testing-library/jest-dom/vitest";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
+import useCanvasStore from "../stores/CanvasStore";
+
+// Node expansion and the open node menu live in a module-level store, so a
+// node expanded by one test would start the next test expanded. Every test
+// begins with every node collapsed and no menu open, as a fresh canvas does.
+beforeEach(() => {
+  useCanvasStore.getState().resetCanvasNodeUi();
+});
 
 vi.stubGlobal("__APIWEAVE_IPC__", {
   invoke: vi

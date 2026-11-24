@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import {
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement, type ReactElement } from "react";
 import { readFileSync } from "node:fs";
@@ -7,6 +12,7 @@ import { join } from "node:path";
 import { ReactFlowProvider } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
 import { NodeRunStrip } from "./NodeRunStrip";
+import useCanvasStore from "../../../stores/CanvasStore";
 import type { NodeStatus } from "../../../types/NodeStatus";
 
 /**
@@ -175,6 +181,159 @@ describe("BaseNode expanded stacking", () => {
     expect(rule).toContain("!important");
     const zIndex = Number(rule?.match(/z-index:\s*(\d+)/)?.[1]);
     expect(zIndex).toBeGreaterThan(1000);
+  });
+});
+
+describe("BaseNode action menu", () => {
+  function renderWithMenu(
+    props: { showMenu?: boolean; collapsible?: boolean } = {},
+  ) {
+    return renderNode(
+      <BaseNode title="Login" nodeId="node-1" {...props}>
+        body
+      </BaseNode>,
+    );
+  }
+
+  it("opens the store menu on right-click and prevents the browser menu", () => {
+    renderWithMenu({ collapsible: false });
+    const slab = screen.getByLabelText("Node status: Idle");
+    const event = createEvent.contextMenu(slab, {
+      clientX: 120,
+      clientY: 240,
+    });
+
+    fireEvent(slab, event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(useCanvasStore.getState().nodeMenu).toEqual({
+      nodeId: "node-1",
+      x: 120,
+      y: 240,
+      collapsible: false,
+    });
+  });
+
+  it("opens at the ⋯ button and closes again on a second click", async () => {
+    renderWithMenu();
+    const trigger = screen.getByRole("button", { name: "Node actions" });
+    const rect = {
+      left: 40,
+      top: 10,
+      right: 64,
+      bottom: 34,
+      width: 24,
+      height: 24,
+      x: 40,
+      y: 10,
+      toJSON: () => ({}),
+    } as DOMRect;
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue(rect);
+
+    await userEvent.click(trigger);
+
+    expect(useCanvasStore.getState().nodeMenu).toEqual({
+      nodeId: "node-1",
+      x: 40,
+      y: 38,
+      collapsible: true,
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(trigger);
+
+    expect(useCanvasStore.getState().nodeMenu).toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes, not reopens, when the menu's outside-close listener fires first", async () => {
+    renderWithMenu();
+    const trigger = screen.getByRole("button", { name: "Node actions" });
+    await userEvent.click(trigger);
+    expect(useCanvasStore.getState().nodeMenu).not.toBeNull();
+
+    // The shared ContextMenu closes on any document mousedown outside itself.
+    const closeOnOutsidePress = () => useCanvasStore.getState().closeNodeMenu();
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    try {
+      await userEvent.click(trigger);
+    } finally {
+      document.removeEventListener("mousedown", closeOnOutsidePress);
+    }
+
+    // That listener closes the menu before the click; the click must not
+    // read the now-closed menu as a request to reopen it.
+    expect(useCanvasStore.getState().nodeMenu).toBeNull();
+  });
+
+  it("lets the press reach other document listeners", async () => {
+    renderWithMenu();
+    const onDocumentPress = vi.fn();
+    document.addEventListener("mousedown", onDocumentPress);
+    try {
+      await userEvent.click(screen.getByRole("button", { name: "Node actions" }));
+    } finally {
+      document.removeEventListener("mousedown", onDocumentPress);
+    }
+    expect(onDocumentPress).toHaveBeenCalled();
+  });
+
+  it("offers neither trigger when showMenu is false", () => {
+    renderWithMenu({ showMenu: false });
+    expect(screen.queryByRole("button", { name: "Node actions" })).toBeNull();
+
+    const slab = screen.getByLabelText("Node status: Idle");
+    const event = createEvent.contextMenu(slab, {
+      clientX: 10,
+      clientY: 20,
+    });
+    fireEvent(slab, event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(useCanvasStore.getState().nodeMenu).toBeNull();
+  });
+});
+
+describe("BaseNode store-backed expansion", () => {
+  it("reads and writes expansion through the store", async () => {
+    renderNode(
+      <BaseNode title="Login" nodeId="node-1">
+        {({ isExpanded }) => (isExpanded ? "body" : null)}
+      </BaseNode>,
+    );
+
+    expect(screen.queryByText("body")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /expand/i }));
+
+    expect(useCanvasStore.getState().expandedNodeIds.has("node-1")).toBe(true);
+    expect(screen.getByText("body")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /collapse/i }));
+
+    expect(useCanvasStore.getState().expandedNodeIds.has("node-1")).toBe(false);
+  });
+
+  it("expands two nodes independently", async () => {
+    renderNode(
+      <>
+        <BaseNode title="First" nodeId="first">
+          {({ isExpanded }) => (isExpanded ? "first body" : null)}
+        </BaseNode>
+        <BaseNode title="Second" nodeId="second">
+          {({ isExpanded }) => (isExpanded ? "second body" : null)}
+        </BaseNode>
+      </>,
+    );
+
+    const [first] = screen.getAllByRole("button", { name: /expand/i });
+    await userEvent.click(first!);
+
+    const state = useCanvasStore.getState();
+    expect(state.expandedNodeIds.has("first")).toBe(true);
+    expect(state.expandedNodeIds.has("second")).toBe(false);
+    expect(screen.getByText("first body")).toBeInTheDocument();
+    expect(screen.queryByText("second body")).toBeNull();
   });
 });
 

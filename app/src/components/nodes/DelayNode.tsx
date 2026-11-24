@@ -33,11 +33,9 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
       status={status}
       selected={selected ?? false}
       nodeId={id}
-      presetNodeType="delay"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}
-      defaultExpanded={false}
       typeChip={typeChip}
       restLine={{ operation: "waits", argument: humanLabel }}
       activityLine={{ operation: "waiting", argument: humanLabel }}

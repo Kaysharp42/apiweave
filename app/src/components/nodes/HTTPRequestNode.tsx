@@ -464,11 +464,9 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
       status={status}
       selected={selected ?? false}
       nodeId={id}
-      presetNodeType="http-request"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}
-      defaultExpanded={false}
       typeChip={typeChip}
       restLine={{
         operation: method,
