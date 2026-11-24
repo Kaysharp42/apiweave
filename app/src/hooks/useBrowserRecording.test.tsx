@@ -208,6 +208,38 @@ describe("useBrowserRecording placement", () => {
     expect(byId.get("frame-recording-old")?.width).toBe(1200);
   });
 
+  it("puts a re-record from inside a user-made group in a new recording frame, clear of the group's children", () => {
+    const group: CanvasNode = { id: "group-1", type: "group", position: { x: 40, y: 40 }, width: 600, height: 300, data: { label: "Group", config: {} } };
+    const inGroup = (id: string, x: number, config: Record<string, unknown>): CanvasNode => ({
+      id,
+      type: "browser",
+      position: { x, y: 60 },
+      parentId: "group-1",
+      extent: "parent",
+      data: { label: id, config },
+    });
+    const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target });
+    const canvas = createCanvas(
+      [group, startNode, inGroup("open", 28 + 160, { action: "navigate", url: "https://dev.test/" }), inGroup("delete", 400, { action: "click", locator: { kind: "css", value: "#delete" } })],
+      [edge("start-1", "open"), edge("open", "delete")],
+    );
+    const recorded = { stepId: "browser-recording-1-1", config: { action: "click" as const, locator: { kind: "css" as const, value: "#remove" } } };
+    useBrowserRecordingStore.setState({ operation: "rerecord", nodeId: "delete", anchorId: null, frameId: null, frameLabel: "Re-recorded today", steps: [recorded] });
+
+    mountRecording(canvas);
+
+    const byId = new Map(canvas.nodes().map((node) => [node.id, node] as const));
+    expect(byId.get(recorded.stepId)?.parentId).toBe(frameId);
+    expect(byId.get(frameId)?.type).toBe("group");
+    expect(byId.get("open")?.parentId).toBe("group-1");
+    expect(byId.has("delete")).toBe(false);
+    // The new frame starts below the anchor, so the step is not on `open`.
+    const open = byId.get("open")!;
+    const newFrame = byId.get(frameId)!;
+    const step = byId.get(recorded.stepId)!;
+    expect(newFrame.position.y + step.position.y).toBeGreaterThan(group.position.y + open.position.y + 150);
+  });
+
   it("inserts a record-after's steps between its step and what followed it, keeping every step", () => {
     const end: CanvasNode = { id: "end-1", type: "end", position: { x: 0, y: 0 }, data: { label: "End", config: {} } };
     const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target, type: "custom" });
