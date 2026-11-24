@@ -31,11 +31,11 @@ describe("turnIntoExtract", () => {
   it("keeps the element and the shared fields, reads text, and retitles the step", () => {
     const before = node(
       { action: "expect-text", locator: heading, text: "A-1", match: "contains", timeoutMs: 5_000, description: "Order id" },
-      "Check text",
+      "Expect Order number text",
     );
     const after = turnIntoExtract(before, "orderNumber");
     expect(after.data).toEqual({
-      label: "Save a value",
+      label: "Save Order number",
       config: { action: "extract", locator: heading, from: "text", variable: "orderNumber", timeoutMs: 5_000, description: "Order id" },
     });
     expect(after.data).not.toBe(before.data);

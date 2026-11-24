@@ -111,9 +111,8 @@ async function runFindAndPatchTask(client: Client, recorder: McpBenchmarkRecorde
 async function runDebugTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
   const debug = asRecord(await callSeeded(client, recorder, seed, "workflows_debugContext", { workflowId: seed.workflowId }))
   const summary = asRecord(debug["failureSummary"])
-  const failedNodeId = asArray(summary["failedNodeIds"])
-    .map((nodeId) => asString(nodeId))[0] ?? seed.failedNodeId
-  await callSeeded(client, recorder, seed, "runs_getNodeResult", { runId: seed.failedRunId, nodeId: failedNodeId })
+  const nodeIds = [asArray(summary["failedNodeIds"]).map((nodeId) => asString(nodeId))[0] ?? seed.failedNodeId]
+  await callSeeded(client, recorder, seed, "runs_getNodeResult", { runId: seed.failedRunId, nodeIds })
 }
 
 async function runAddAssertionTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {

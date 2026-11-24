@@ -32,7 +32,7 @@ function summary(runId: string, status: RunSummary["status"], createdAt: string)
     nodeCount: 0,
     iteration: null,
     resumeFromRunId: null,
-    runRev: 1,
+    workflowRev: null,
     createdAt,
     updatedAt: createdAt,
   };

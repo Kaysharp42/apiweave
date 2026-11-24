@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AppliedAriaScopeSchema } from "./AriaScopeSchema"
 import { RunArtifactSchema } from "./RunArtifactSchema"
 
 /**
@@ -25,10 +26,12 @@ export const BrowserInspectionSchema = z
             preview: z.string(),
             previewTruncated: z.boolean(),
             totalBytes: z.number().int().nonnegative(),
+            scope: AppliedAriaScopeSchema,
+            scopeNote: z.string().optional().describe("Why the applied scope is the whole page — the requested scope was not present."),
           })
           .strict()
           .optional()
-          .describe("The page's accessibility tree in Playwright's ARIA snapshot format: roles, accessible names, and field values (secrets masked). Pick role and label locators from it."),
+          .describe("The page's accessibility tree in Playwright's ARIA snapshot format, scoped and windowed: scope says which part (the open dialog, the main landmark, or the whole page — default \"auto\"), preview is a byte window into that scoped text (maxBytes/start/end), and totalBytes is the scoped text's size. Pick role and label locators from it; secrets are masked."),
       })
       .strict()
       .nullable()

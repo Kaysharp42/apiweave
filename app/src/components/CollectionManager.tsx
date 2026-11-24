@@ -1,3 +1,4 @@
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import {
   useState,
   useEffect,
@@ -469,16 +470,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         collectionId: projectId,
         name,
         description: "",
-        nodes: [
-          {
-            nodeId: "start-1",
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-        ],
-        edges: [],
+        ...initialWorkflowGraph(),
         variables: {},
       });
       addWorkflowToOrder(workflow.workflowId);

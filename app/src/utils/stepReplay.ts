@@ -91,22 +91,31 @@ function chainFrom(graph: CanvasGraph, nodeId: string): { chain: string[]; next:
 /**
  * Take out the steps a re-record from `nodeId` replaces, and join the step
  * before them to what followed them, so the recorded steps can be spliced in
- * between (`placeRecordedStep` with the returned anchor). A frame they leave
- * empty goes too. Null when `nodeId` cannot be re-recorded from.
+ * between (`placeRecordedStep` with the returned anchor).
+ *
+ * `frameId` is the frame `nodeId` was in, which the recorded steps go back
+ * into: it stays even when this leaves it empty, because they refill it in
+ * the same edit. Another frame the replaced steps leave empty goes. Null when
+ * `nodeId` cannot be re-recorded from.
  */
-export function removeStepsFrom(graph: CanvasGraph, nodeId: string): { graph: CanvasGraph; anchorId: string } | null {
+export function removeStepsFrom(
+  graph: CanvasGraph,
+  nodeId: string,
+): { graph: CanvasGraph; anchorId: string; frameId: string | null } | null {
   const entry = soleEntry(graph, nodeId);
   if (entry === undefined || !canRerecordFrom(graph, nodeId)) return null;
   const { chain, next } = chainFrom(graph, nodeId);
   const removed = new Set(chain);
+  const originFrame = graph.nodes.find((node) => node.id === nodeId)?.parentId;
+  const frameId = graph.nodes.some((node) => node.id === originFrame && node.type === FRAME_NODE_TYPE) ? (originFrame ?? null) : null;
   const frames = new Set(graph.nodes.filter((node) => removed.has(node.id) && node.parentId != null).map((node) => node.parentId as string));
   const remaining = graph.nodes.filter((node) => !removed.has(node.id));
   const emptied = new Set(
-    [...frames].filter((frameId) => !remaining.some((node) => node.parentId === frameId)),
+    [...frames].filter((id) => id !== frameId && !remaining.some((node) => node.parentId === id)),
   );
   const nodes = remaining.filter((node) => !(node.type === FRAME_NODE_TYPE && emptied.has(node.id)));
   const edges = graph.edges.filter((edge) => !removed.has(edge.source) && !removed.has(edge.target));
   // The way in now leads to what followed: the recorded steps are spliced into that connection.
   if (next !== undefined) edges.push({ ...entry, target: next });
-  return { graph: { nodes, edges }, anchorId: entry.source };
+  return { graph: { nodes, edges }, anchorId: entry.source, frameId };
 }

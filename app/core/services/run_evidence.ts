@@ -1,4 +1,5 @@
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
+import type { AriaScope } from "@shared/types/AriaScope"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeEvidence } from "@shared/types/NodeEvidence"
 import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
@@ -6,6 +7,7 @@ import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunHistoryCursor } from "../repositories/RunRepository"
 import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, CALL_EVIDENCE_MAX_ITERATIONS, truncateUtf8, truncateUtf8Marked } from "./read_budgets"
+import { scopeAriaSnapshot } from "./aria_scope"
 import { sanitizeAgentReadValue } from "./secret_utils"
 import { assertCursorSnapshot, cursorScope, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
@@ -62,6 +64,8 @@ export interface EvidenceSelection {
   readonly sections?: readonly EvidenceSection[]
   readonly path?: string
   readonly maxBytes?: number
+  /** Which part of a browser step's ARIA snapshot to return; default "auto" (dialog, else main, else page). */
+  readonly scope?: AriaScope
   readonly start?: number
   readonly end?: number
 }
@@ -93,12 +97,8 @@ export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): N
       missingNodeIds.push(nodeId)
       continue
     }
-    items.push(buildNodeEvidence(result, wanted, {
-      maxBytes,
-      ...(selection.path !== undefined ? { path: selection.path } : {}),
-      ...(selection.start !== undefined ? { start: selection.start } : {}),
-      ...(selection.end !== undefined ? { end: selection.end } : {}),
-    }))
+    // The selection's path, scope and window are already exact optionals; only maxBytes gets its default.
+    items.push(buildNodeEvidence(result, wanted, { ...selection, maxBytes }))
   }
   const omittedSections = ALL_SECTIONS.filter((section) => !wanted.has(section))
   const withOmissions: NodeEvidence[] = items.map((item) => ({ ...item, omittedSections: [...item.omittedSections, ...omittedSections] }))
@@ -116,7 +116,7 @@ export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): N
 function buildNodeEvidence(
   result: RunResult,
   wanted: ReadonlySet<EvidenceSection>,
-  bounds: EvidenceBounds & { path?: string },
+  bounds: EvidenceBounds & { path?: string; scope?: AriaScope },
 ): NodeEvidence {
   const base = {
     nodeId: result.nodeId,
@@ -207,7 +207,7 @@ function buildRequestEvidence(
   return {
     method,
     url,
-    ...previewFields(preview),
+    ...preview,
   }
 }
 
@@ -234,7 +234,7 @@ function buildResponseEvidence(
         statusCode,
         storedTruncated,
         pathStatus: "resolved" as const,
-        ...previewFields(preview),
+        ...preview,
       }
     }
     return { statusCode, storedTruncated, pathStatus: selected.reason }
@@ -243,7 +243,7 @@ function buildResponseEvidence(
   return {
     statusCode,
     storedTruncated,
-    ...previewFields(preview),
+    ...preview,
   }
 }
 
@@ -275,15 +275,18 @@ export function browserEvidenceSummary(
  * One browser step's stored evidence, as an agent reads it. The ARIA snapshot
  * goes through the same bounded, windowable text preview a response body does
  * (a whole snapshot is up to 64 KiB, most of a page budget, and an agent
- * repairing a locator usually needs a slice, not the document). `expected` and
- * `actual` are page text too, so they are cut to the caller's preview cap with
- * a visible marker rather than arriving whole. The screenshot is reported as a
- * presence flag: its artifact id is a transport detail (the bytes are read
- * through a different, capped route), never part of this read.
+ * repairing a locator usually needs a slice, not the document) — scoped first,
+ * so the preview and its byte window address the dialog or main content the
+ * locator lives in rather than the navigation chrome that opens every
+ * snapshot. `expected` and `actual` are page text too, so they are cut to the
+ * caller's preview cap with a visible marker rather than arriving whole. The
+ * screenshot is reported as a presence flag: its artifact id is a transport
+ * detail (the bytes are read through a different, capped route), never part
+ * of this read.
  */
 function buildBrowserEvidence(
   browser: NonNullable<RunResult["browser"]>,
-  bounds: EvidenceBounds,
+  bounds: EvidenceBounds & { scope?: AriaScope },
 ): NonNullable<NodeEvidence["browser"]> {
   return {
     ...browserEvidenceSummary(browser, bounds.maxBytes),
@@ -296,13 +299,19 @@ function buildBrowserEvidence(
 
 function snapshotPreview(
   snapshot: string,
-  bounds: EvidenceBounds,
+  bounds: EvidenceBounds & { scope?: AriaScope },
 ): NonNullable<NonNullable<NodeEvidence["browser"]>["ariaSnapshot"]> {
-  const preview = previewText(snapshot, bounds)
+  // Scope the stored (already masked) text, then window the scoped text: the
+  // preview and its offsets address what was actually returned, and masking
+  // still ran on the full text before any of it reached here.
+  const scoped = scopeAriaSnapshot(snapshot, bounds.scope ?? "auto")
+  const preview = previewText(scoped.text, bounds)
   return {
     preview: preview.preview,
     previewTruncated: preview.previewTruncated,
     totalBytes: preview.totalBytes,
+    scope: scoped.applied,
+    ...(scoped.note !== undefined ? { scopeNote: scoped.note } : {}),
   }
 }
 
@@ -344,7 +353,7 @@ function previewSelected(
   bounds: EvidenceBounds,
 ): { preview?: string; previewTruncated?: boolean; totalBytes?: number } {
   const text = JSON.stringify(value) ?? "null"
-  return previewText(text, bounds)
+  return previewFields(previewText(text, bounds))
 }
 
 /** Serialize a body to a bounded text preview with explicit cut accounting. */
@@ -354,13 +363,24 @@ function previewValue(
 ): { preview?: string; previewTruncated?: boolean; totalBytes?: number } {
   const text = typeof body === "string" ? body : JSON.stringify(body)
   if (text === undefined) return {}
-  return previewText(text, bounds)
+  return previewFields(previewText(text, bounds))
 }
 
-function previewText(
+/**
+ * Serialize a value to a bounded text preview with explicit cut accounting.
+ * Shared by the node-evidence read and the browser inspection read, so a
+ * snapshot window means the same bytes in both.
+ *
+ * `previewTruncated` means the returned window is not the whole text — either
+ * because the caller asked for `start`/`end` or because `maxBytes` cut it, which
+ * is what the field has always stated. `maxBytesCut` isolates the second case:
+ * a caller that says "cut at maxBytes" must key on it, or a window the caller
+ * chose is described as a cap that never acted.
+ */
+export function previewText(
   text: string,
   bounds: EvidenceBounds,
-): { preview: string; previewTruncated: boolean; totalBytes: number } {
+): { preview: string; previewTruncated: boolean; maxBytesCut: boolean; totalBytes: number } {
   const totalBytes = Buffer.byteLength(text, "utf8")
   const start = bounds.start ?? 0
   // Every bound on this path is a byte count, so the window and the cap are
@@ -371,22 +391,18 @@ function previewText(
   const head = bounds.end === undefined ? text : truncateUtf8(text, bounds.end)
   const window = head.slice(truncateUtf8(head, start).length)
   const preview = truncateUtf8(window, bounds.maxBytes)
-  const windowCut = start > 0 || (bounds.end !== undefined && bounds.end < totalBytes)
-  const cut = windowCut || Buffer.byteLength(preview, "utf8") < Buffer.byteLength(window, "utf8")
-  return { preview, previewTruncated: cut, totalBytes }
+  const maxBytesCut = Buffer.byteLength(preview, "utf8") < Buffer.byteLength(window, "utf8")
+  const windowed = start > 0 || (bounds.end !== undefined && bounds.end < totalBytes)
+  return { preview, previewTruncated: windowed || maxBytesCut, maxBytesCut, totalBytes }
 }
 
-/** The optional fields of a text preview, ready to spread into an evidence section. */
-function previewFields(preview: { preview?: string; previewTruncated?: boolean; totalBytes?: number }): {
-  preview?: string
-  previewTruncated?: boolean
-  totalBytes?: number
+/** The fields of a text preview an evidence section carries: `maxBytesCut` is the inspection read's alone. */
+function previewFields({ preview, previewTruncated, totalBytes }: ReturnType<typeof previewText>): {
+  preview: string
+  previewTruncated: boolean
+  totalBytes: number
 } {
-  return Object.fromEntries(Object.entries(preview).filter(([, value]) => value !== undefined)) as {
-    preview?: string
-    previewTruncated?: boolean
-    totalBytes?: number
-  }
+  return { preview, previewTruncated, totalBytes }
 }
 
 interface BudgetInput {

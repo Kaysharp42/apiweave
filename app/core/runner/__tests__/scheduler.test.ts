@@ -860,6 +860,85 @@ describe("RunScheduler", () => {
     })
   })
 
+  // A run reports the revision it executed. Both of these were recorded from a
+  // read made at another moment: enqueue (before a queued run re-read its graph)
+  // and Call-node time (after the child had been patched), so `debugContext`
+  // called a run stale that had run the current graph, and a sub-run claimed a
+  // revision it never executed.
+  describe("recorded workflow revision", () => {
+    it("reports the revision the run executed, not the one it was queued at", async () => {
+      const ws = seedWorkspace()
+      const wf = seedWorkflow(ws)
+      const queuedAt = workflows.getById(wf)!.rev
+      // A cap of zero holds the run in the queue until the test opens the gate,
+      // with no timing window to lose.
+      const scheduler = makeScheduler({ concurrencyCap: 0 })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf })
+      expect(runs.getById(runId)?.status).toBe("pending")
+      expect(scheduler.getQueueLength()).toBe(1)
+      // Nothing has executed yet, so no revision is recorded: the field means
+      // "the graph this run ran", not "the graph it asked for".
+      expect(runs.getById(runId)?.workflowRev).toBeNull()
+
+      // An agent patches the workflow while the run waits: this is the graph it will run.
+      const patched = workflows.update(wf, { name: "patched while queued" })!
+      expect(patched.rev).toBeGreaterThan(queuedAt)
+
+      scheduler.ensureConcurrency(1)
+      expect(await scheduler.whenFinished(runId)).toBe("completed")
+      expect(runs.getById(runId)?.workflowRev).toBe(patched.rev)
+    })
+
+    it("reports the revision a Call Workflow sub-run executed, not one written mid-run", async () => {
+      const ws = seedWorkspace()
+      const target = workflows.create({
+        workspaceId: ws,
+        name: "target-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+      })
+      const callerId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "wait", type: "delay", position: { x: 1, y: 0 }, config: { duration: 50 } as never },
+          { nodeId: "call1", type: "workflow", position: { x: 2, y: 0 }, config: { targetWorkflowId: target.workflowId } },
+          { nodeId: "end", type: "end", position: { x: 3, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "wait" },
+          { edgeId: "e2", source: "wait", target: "call1" },
+          { edgeId: "e3", source: "call1", target: "end" },
+        ],
+      }).workflowId
+      // The caller read every reachable graph when it started. Patch the child
+      // from the wait node's own progress — after that snapshot exists, before
+      // the Call node runs — so no timing window decides the assertion.
+      let patchedRev: number | null = null
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => {
+          if (patchedRev !== null || event.kind !== "node.status" || event.nodeId !== "wait" || event.status !== "running") {
+            return
+          }
+          patchedRev = workflows.update(target.workflowId, { name: "patched mid-run" })!.rev
+        },
+      })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
+      expect(await scheduler.whenFinished(runId)).toBe("completed")
+
+      expect(patchedRev).not.toBeNull()
+      expect(patchedRev!).toBeGreaterThan(target.rev)
+      const childRun = runs.listByWorkflow(target.workflowId, ws).items[0]
+      expect(childRun?.workflowRev).toBe(target.rev)
+    })
+  })
+
   describe("interrupted reconciliation", () => {
     it("marks non-terminal runs as interrupted on startup", () => {
       const ws = seedWorkspace()

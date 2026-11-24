@@ -1,3 +1,4 @@
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import useSidebarStore from "../stores/SidebarStore";
 import {
@@ -408,9 +409,6 @@ export function CollectionExportImport({
       ) as { nodes?: Workflow["nodeTemplates"] };
       const nodeTemplates = parseResult.nodes ?? [];
 
-      const startNodeId = `start_${Date.now()}`;
-      const endNodeId = `end_${Date.now()}`;
-
       await apiweave.workflows.create({
         workspaceId,
         collectionId: selectedTargetProject,
@@ -418,29 +416,7 @@ export function CollectionExportImport({
           detectedType === "openapi"
             ? `Imported OpenAPI - ${new Date().toLocaleString()}`
             : `Imported HAR - ${new Date().toLocaleString()}`,
-        nodes: [
-          {
-            nodeId: startNodeId,
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-          {
-            nodeId: endNodeId,
-            type: "end",
-            label: "End",
-            position: { x: 100, y: 300 },
-            config: {},
-          },
-        ],
-        edges: [
-          {
-            edgeId: `edge_${Date.now()}`,
-            source: startNodeId,
-            target: endNodeId,
-          },
-        ],
+        ...initialWorkflowGraph(),
         nodeTemplates,
         variables: {},
         tags: ["imported"],

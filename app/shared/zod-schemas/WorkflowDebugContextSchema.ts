@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { AppliedAriaScopeSchema } from "./AriaScopeSchema"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { McpWorkflowDiagnosisSchema } from "./McpWorkflowDiagnosisSchema"
 import { EvidenceCallSchema } from "./NodeEvidenceSchema"
@@ -29,7 +30,7 @@ const DebugRunSchema = z
     runId: z.string().min(1),
     workflowId: z.string().min(1),
     status: z.enum(["pending", "running", "completed", "failed", "cancelled", "interrupted"]),
-    runRev: RevisionSchema,
+    workflowRev: RevisionSchema.nullable(),
     trigger: z.enum(["manual", "schedule"]),
     startedAt: TimestampSchema.nullable().optional(),
     completedAt: TimestampSchema.nullable().optional(),
@@ -81,9 +82,12 @@ const DebugEvidenceSelectorSchema = z
 /**
  * A failed browser step, compacted for the one-call debug read: what ran, what
  * it compared, which page it was on, and the start of its ARIA snapshot with
- * byte accounting. Screenshots are presence only. Budget pressure removes the
- * page text (see `dropBrowserSummaries`), never the identity fields, so the
- * `moreDetail` selector that asks for the `browser` section stays meaningful.
+ * byte accounting — scoped to the open dialog or main landmark when the page
+ * has one (`ariaSnapshotScope`; `ariaSnapshotScopeNote` says why a scope fell
+ * back to the whole page). Screenshots are presence only. Budget pressure
+ * removes the page text (see `dropBrowserSummaries`), never the identity
+ * fields, so the `moreDetail` selector that asks for the `browser` section
+ * stays meaningful.
  */
 const DebugBrowserSummarySchema = z
   .object({
@@ -94,6 +98,9 @@ const DebugBrowserSummarySchema = z
     actual: z.string().optional(),
     hasScreenshot: z.boolean(),
     ariaSnapshotPreview: z.string().optional(),
+    /** Present only when a snapshot was stored: the part of the page the preview windows. */
+    ariaSnapshotScope: AppliedAriaScopeSchema.optional(),
+    ariaSnapshotScopeNote: z.string().optional(),
     ariaSnapshotTruncated: z.boolean(),
     ariaSnapshotBytes: z.number().int().nonnegative(),
   })
@@ -178,10 +185,9 @@ const DebugNextReadSchema = z
  * Held to a 32 KiB aggregate inline budget. Over-budget detail moves to
  * `omittedNodeIds`/`nextReads` with explicit continuation arguments — counts
  * still describe every failure, and partial reads are never presented as
- * complete. `run.runRev` is the run record's own revision, never a workflow
- * revision; `graphCorrelation` compares the revision the run was created
- * against with the current one (unknown only for runs recorded before that
- * was tracked).
+ * complete. `run.workflowRev` is the workflow revision the run executed
+ * (null for runs recorded before it was tracked); `graphCorrelation` compares
+ * that revision with the current one.
  */
 export const WorkflowDebugContextSchema = z
   .object({

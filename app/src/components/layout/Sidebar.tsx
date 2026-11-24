@@ -17,6 +17,7 @@ import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import useTabStore from "../../stores/TabStore";
 import { apiweave } from "../../utils/apiweaveClient";
+import { createBlankWorkflow } from "../../utils/createBlankWorkflow";
 import type { Workflow } from "../../types/Workflow";
 import type { Project } from "../../types/Project";
 import { noteLocalWorkflowRemoval } from "../../utils/localWorkflowRemovals";
@@ -143,22 +144,7 @@ export function Sidebar() {
     }
 
     try {
-      const workflow = await apiweave.workflows.create({
-        workspaceId,
-        name,
-        description: "",
-        nodes: [
-          {
-            nodeId: "start-1",
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-        ],
-        edges: [],
-        variables: {},
-      });
+      const workflow = await createBlankWorkflow(workspaceId, name);
       void refreshAll(selectedNav);
       useTabStore.getState().openTab(workflow);
     } catch (error) {
@@ -173,23 +159,7 @@ export function Sidebar() {
     }
 
     try {
-      const workflow = await apiweave.workflows.create({
-        workspaceId,
-        collectionId: addWorkflowToProjectTarget,
-        name,
-        description: "",
-        nodes: [
-          {
-            nodeId: "start-1",
-            type: "start",
-            label: "Start",
-            position: { x: 100, y: 100 },
-            config: {},
-          },
-        ],
-        edges: [],
-        variables: {},
-      });
+      const workflow = await createBlankWorkflow(workspaceId, name, addWorkflowToProjectTarget);
       void refreshAll("projects");
       useTabStore.getState().openTab(workflow);
       toast.success(`Workflow "${name}" created and added to project`);

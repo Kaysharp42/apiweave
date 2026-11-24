@@ -2,7 +2,7 @@
 export interface RecordingPlacement {
   /** The node the first step is connected after: the selected node, or Start. */
   readonly anchorId: string;
-  /** The frame the steps are put in, created with the first step. */
+  /** The frame the steps are put in: created with the first step, unless it is already there (a re-record goes back into the frame of the step it replaces). */
   readonly frameId: string;
   readonly frameLabel: string;
 }

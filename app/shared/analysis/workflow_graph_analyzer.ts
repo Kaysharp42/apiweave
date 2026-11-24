@@ -400,6 +400,7 @@ export const WORKFLOW_DIAGNOSTIC_CODES = [
   // Browser steps
   "browser_chain_starts_without_navigate",
   "browser_selector_fallback",
+  "browser_chain_without_check",
   // Run-correlated
   "run_result_unknown_node",
   "http_request_failed",
@@ -941,11 +942,15 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
 }
 
-/** Whether a locator, or a parent it is searched within, is a raw recorder selector. */
+/**
+ * Whether a locator, or a parent it is searched within, is a raw recorder
+ * selector or CSS that picks its element by position (`nth`): both find a
+ * different element, or none, after a small change to the page.
+ */
 function usesSelectorFallback(locator: unknown): boolean {
   if (locator === null || typeof locator !== "object") return false
   const record = locator as Readonly<Record<string, unknown>>
-  return record["kind"] === "selector" || usesSelectorFallback(record["within"])
+  return record["kind"] === "selector" || (record["kind"] === "css" && record["nth"] !== undefined) || usesSelectorFallback(record["within"])
 }
 
 /**
@@ -1005,7 +1010,9 @@ export function browserParallelNodeIds<N extends { readonly nodeId: string; read
  *    on it at the same time (an error: the run's outcome would depend on timing);
  *  - the first step of the chain should open a page, unless a Call Workflow
  *    node before it may have (a login sub-workflow);
- *  - a raw recorder selector works but breaks easily, and is worth replacing.
+ *  - a raw recorder selector works but breaks easily, and is worth replacing;
+ *  - a chain that ends on an action proves nothing: the run passes as long as
+ *    the action does not error.
  *
  * A Call Workflow node into a workflow with browser steps drives the same page,
  * so it is part of the chain: `browserStepWorkflowIds` names those targets,
@@ -1065,9 +1072,44 @@ function addBrowserDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workfl
       "notice",
       "execution",
       [step.nodeId],
-      "This step finds its element with a raw recorded selector, which breaks easily; prefer a role, label or test id locator.",
+      "This step finds its element with a raw recorded selector or a CSS selector picked by position (nth), which breaks easily; prefer a role, label, text or test id locator.",
       { action: config.action },
       { kind: "replace_locator", nodeId: step.nodeId },
+    ))
+  }
+
+  addUncheckedChainEndDiagnostics(steps, downstream, nodesById, drivesBrowser, diagnostics)
+}
+
+/**
+ * The chain's last steps: those that reach no other browser step. One is
+ * proved by a check after it — an assertion, or a called workflow that
+ * carries the chain on — and an `expect-*` or `extract` is a check itself.
+ */
+function addUncheckedChainEndDiagnostics(
+  steps: readonly Extract<WorkflowNode, { type: "browser" }>[],
+  downstream: ReadonlyMap<string, ReadonlySet<string>>,
+  nodesById: ReadonlyMap<string, WorkflowNode>,
+  drivesBrowser: (node: WorkflowNode) => boolean,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  const lasts = steps.filter((step) => !steps.some((other) => other !== step && downstream.get(step.nodeId)!.has(other.nodeId)))
+  for (const last of lasts) {
+    const action = last.config?.action
+    if (action === undefined || action.startsWith("expect-") || action === "extract") continue
+    const checkedAfter = [...downstream.get(last.nodeId)!].some((id) => {
+      const node = id === last.nodeId ? undefined : nodesById.get(id)
+      return node !== undefined && (node.type === "assertion" || drivesBrowser(node))
+    })
+    if (checkedAfter) continue
+    diagnostics.push(diagnostic(
+      "browser_chain_without_check",
+      "notice",
+      "execution",
+      [last.nodeId],
+      "The browser steps end without a check, so the run passes as long as the last action does not error; add an expect step that proves the outcome.",
+      { action },
+      { kind: "add_check_step", nodeId: last.nodeId },
     ))
   }
 }

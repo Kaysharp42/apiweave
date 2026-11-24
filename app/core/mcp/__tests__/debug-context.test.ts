@@ -194,7 +194,7 @@ async function seedFailure(): Promise<SeededFailure> {
       { edgeId: "e3", source: "check", target: "end", sourceHandle: "pass" },
     ],
   })
-  const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+  const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId, workflowRev: workflow.rev })
   runRepository.update(run.runId, {
     status: "failed",
     selectedEnvironmentId: child.environmentId,
@@ -230,8 +230,8 @@ describe("Phase 3 — one call explains a known failure", () => {
     expect(context.workflow).toMatchObject({ workflowId: seed.workflowId, workspaceId: seed.workspaceId, rev: seed.workflowRev })
     expect(context.runSelection).toEqual({ policy: "latest-failed", runId: seed.runId })
     expect(context.run).toMatchObject({ runId: seed.runId, workflowId: seed.workflowId, status: "failed" })
-    expect(typeof context.run?.runRev).toBe("number")
-    expect(context.graphCorrelation.status).toBe("unknown")
+    expect(context.run?.workflowRev).toBe(seed.workflowRev)
+    expect(context.graphCorrelation.status).toBe("current")
 
     expect(context.failureSummary.failedNodeIds).toEqual(["login"])
     expect(context.failureSummary.failedNodeCount).toBe(1)
@@ -495,7 +495,7 @@ describe("Phase 3 — empty, denied and stale cases are explicit", () => {
     expect(error.code).toBe("not_found")
   })
 
-  it("labels historical correlation unknown after the graph moved on", async () => {
+  it("labels historical correlation stale after the graph moved on", async () => {
     const seed = await seedFailure()
     const stored = await dispatchOk<{ rev: number }>("workflows", "get", {
       workspaceId: seed.workspaceId,
@@ -512,7 +512,7 @@ describe("Phase 3 — empty, denied and stale cases are explicit", () => {
     // Current rev advanced past the revision the run executed against.
     expect(context.workflow.rev).toBe(seed.workflowRev + 1)
     expect(context.run?.runId).toBe(seed.runId)
-    expect(context.graphCorrelation).toMatchObject({ status: "unknown" })
+    expect(context.graphCorrelation).toMatchObject({ status: "stale" })
     expect(context.graphCorrelation.reason.length).toBeGreaterThan(0)
   })
 })
@@ -832,7 +832,7 @@ describe("Phase 3 — redaction and whitelist", () => {
     expect(description).toMatch(/32 KiB/)
     expect(description).toContain("omittedNodeIds")
     expect(description).toContain("nextReads")
-    expect(description).toContain("runRev")
+    expect(description).toContain("workflowRev")
   })
 })
 
@@ -909,6 +909,8 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
       title: "Sign in",
       hasScreenshot: true,
       ariaSnapshotPreview: SNAPSHOT,
+      ariaSnapshotScope: "page",
+      ariaSnapshotScopeNote: "No dialog or main landmark in this ARIA snapshot; returned the whole page.",
       ariaSnapshotTruncated: false,
       ariaSnapshotBytes: Buffer.byteLength(SNAPSHOT, "utf8"),
     })
@@ -916,6 +918,39 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
     expect(item?.moreDetail.args.sections).toContain("browser")
     // The screenshot is a presence flag; its id and bytes never travel here.
     expect(JSON.stringify(context)).not.toContain("shot-0")
+  })
+
+  it("scopes a failed step's snapshot to the open dialog for the overview", async () => {
+    const snapshot = [
+      "- banner [ref=e1]:",
+      '  - heading "App" [level=1]',
+      "- main [ref=e2]:",
+      '  - textbox "Email": ann@example.test',
+      '- dialog "Confirm" [ref=e9]:',
+      '  - button "OK" [ref=e10]',
+    ].join("\n")
+    const seed = await seedBrowserFailures(1, { snapshot })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    const browser = context.evidence[0]?.browser
+    const scoped = '- dialog "Confirm" [ref=e9]:\n  - button "OK" [ref=e10]'
+    expect(browser?.ariaSnapshotScope).toBe("dialog")
+    // The overview names the landmark the dialog scope left out, so the agent
+    // knows the main content is one `scope` away.
+    expect(browser?.ariaSnapshotScopeNote).toBe('A main landmark is also on the page; scope "main" or "page" shows it.')
+    expect(browser?.ariaSnapshotPreview).toBe(scoped)
+    expect(browser?.ariaSnapshotBytes).toBe(Buffer.byteLength(scoped, "utf8"))
+  })
+
+  it("says a captured snapshot was truncated when auto had to fall back past the cut", async () => {
+    const snapshot = ["- main [ref=e1]:", '  - button "Continue"', "… (truncated)"].join("\n")
+    const seed = await seedBrowserFailures(1, { snapshot })
+    const context = await debugContext({ workspaceId: seed.workspaceId, workflowId: seed.workflowId })
+
+    const browser = context.evidence[0]?.browser
+    expect(browser?.ariaSnapshotScope).toBe("main")
+    expect(browser?.ariaSnapshotScopeNote).toMatch(/truncated/)
+    expect(browser?.ariaSnapshotScopeNote).toMatch(/scope "page"/)
   })
 
   it("cuts a long snapshot and long compared text with byte accounting", async () => {
@@ -961,6 +996,9 @@ describe("Phase 3 — a failed browser step is legible in one call", () => {
       expect(entry.browser?.ariaSnapshotTruncated).toBe(true)
       expect(entry.browser?.expected).toBeUndefined()
       expect(entry.browser?.actual).toBeUndefined()
+      // The scope note described the dropped preview: it goes with it, so no
+      // "no dialog or main" explanation dangles beside an absent snapshot.
+      expect(entry.browser?.ariaSnapshotScopeNote).toBeUndefined()
     }
   })
 })

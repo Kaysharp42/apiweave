@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { useStepMenuTarget } from "./useStepMenuTarget";
 import type { UseTurnIntoExtractParams } from "../types/UseTurnIntoExtractParams";
 import type { UseTurnIntoExtractResult } from "../types/UseTurnIntoExtractResult";
 import { canTurnIntoExtract, suggestedVariableName, turnIntoExtract } from "../utils/turnIntoExtract";
@@ -16,21 +17,12 @@ function variableNameFrom(typed: string): string {
  * through `setNodes` like any edit: auto-save keeps it, undo takes it back.
  */
 export function useTurnIntoExtract({ nodesRef, setNodes }: UseTurnIntoExtractParams): UseTurnIntoExtractResult {
-  const [nodeId, setNodeId] = useState<string | null>(null);
-  const target = nodeId === null ? undefined : nodesRef.current.find((node) => node.id === nodeId);
-
-  const canTurn = useCallback(
-    (id: string) => {
-      const node = nodesRef.current.find((candidate) => candidate.id === id);
-      return node !== undefined && canTurnIntoExtract(node);
-    },
-    [nodesRef],
-  );
+  const target = useStepMenuTarget(nodesRef, canTurnIntoExtract);
+  const { take } = target;
 
   const onSubmit = useCallback(
     (typed: string) => {
-      const id = nodeId;
-      setNodeId(null);
+      const id = take();
       const variable = variableNameFrom(typed);
       if (id === null) return;
       // `_1` survives cleaning but is not a name: it needs a letter A-Z.
@@ -43,17 +35,17 @@ export function useTurnIntoExtract({ nodesRef, setNodes }: UseTurnIntoExtractPar
       setNodes(nodesRef.current);
       toast.success(`The step now saves its element into {{variables.${variable}}}`);
     },
-    [nodeId, nodesRef, setNodes],
+    [take, nodesRef, setNodes],
   );
 
   return {
-    canTurn,
-    start: setNodeId,
+    canTurn: target.can,
+    start: target.start,
     dialog: {
-      nodeId,
-      open: target !== undefined,
-      defaultValue: target === undefined ? "" : suggestedVariableName(target),
-      onClose: () => setNodeId(null),
+      nodeId: target.nodeId,
+      open: target.node !== undefined,
+      defaultValue: target.node === undefined ? "" : suggestedVariableName(target.node),
+      onClose: target.close,
       onSubmit,
     },
   };

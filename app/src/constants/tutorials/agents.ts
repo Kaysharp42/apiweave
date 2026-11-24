@@ -222,7 +222,7 @@ export const agentsChapter: TutorialChapter = {
           instruction:
             "Treat the token like a password. The bridge is loopback-only, requires the token on every request, and accepts browser-originated requests only from a loopback origin. It exposes many read and write tools, but never secret values and no secret write: secret reads return metadata only.",
           detail:
-            "Run tools return metadata-only projections, except runs_getNodeResult, which returns one node's stored request/response after the standard secret redaction.",
+            "Run tools return metadata-only projections, except runs_getNodeResult, which returns the stored request/response evidence of the nodes you name (nodeIds) after the standard secret redaction.",
         },
       ],
       example: {
@@ -266,7 +266,7 @@ export const agentsChapter: TutorialChapter = {
         {
           title: "No raw response body",
           instruction:
-            "Run tools expose safe metadata only. Inspect the full body in the desktop UI, or call runs_getNodeResult for one node.",
+            "Run tools expose safe metadata only. Inspect the full body in the desktop UI, or call runs_getNodeResult with the node's id in nodeIds.",
         },
       ],
       relatedLessonIds: ["embedded-agents", "runs-history", "secrets", "settings"],

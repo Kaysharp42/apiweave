@@ -23,6 +23,8 @@ interface BrowserRecordingState {
   readonly recordingId: string | null;
   /** The node the steps follow. Null after a renderer reload, and for a re-record until its first step: the canvas works it out. */
   readonly anchorId: string | null;
+  /** The frame the steps go in, once a re-record has put them back in the frame of the step it replaces; null otherwise, and the canvas names one after the recording. */
+  readonly frameId: string | null;
   readonly frameLabel: string;
   /** In the order they first arrived, each with its latest config. */
   readonly steps: readonly RecordedBrowserStep[];
@@ -47,7 +49,7 @@ interface BrowserRecordingState {
   stop(): Promise<void>;
   setPlaced(steps: readonly RecordedBrowserStep[]): void;
   /** Where a re-record's steps go, once the canvas has taken out the steps they replace. */
-  setAnchor(anchorId: string): void;
+  setAnchor(anchorId: string, frameId: string | null): void;
   /** Take the picked element to apply it, so a second canvas — or a second effect run — finds none. */
   takePicked(): PickedBrowserElement | null;
 }
@@ -69,6 +71,7 @@ function fresh(
     nodeId: fields.nodeId ?? null,
     recordingId: null,
     anchorId: fields.anchorId ?? null,
+    frameId: null,
     frameLabel: fields.frameLabel ?? "Recording",
     steps: [],
     placedSteps: [],
@@ -94,6 +97,7 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
   workflowId: null,
   recordingId: null,
   anchorId: null,
+  frameId: null,
   frameLabel: "Recording",
   steps: [],
   placedSteps: [],
@@ -148,7 +152,7 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
   },
 
   setPlaced: (steps) => set({ placedSteps: steps }),
-  setAnchor: (anchorId) => set({ anchorId }),
+  setAnchor: (anchorId, frameId) => set({ anchorId, frameId }),
   takePicked: () => {
     const { picked } = get();
     if (picked !== null) set({ picked: null });
@@ -230,6 +234,7 @@ export function subscribeToRecording(): void {
         workflowId: status.workflowId,
         recordingId: status.recordingId,
         anchorId: null,
+        frameId: null,
       });
     },
     () => undefined,

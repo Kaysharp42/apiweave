@@ -60,8 +60,9 @@ import type { Page } from "playwright-core"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
 import { BrowserNodeDataSchema } from "@shared/zod-schemas/BrowserNodeDataSchema"
 import { BROWSER_STEP_PREFIX, BrowserSession, BrowserSessionError, type BrowserLaunchSettings } from "./browser/session"
-import { runBrowserStep, type BrowserStepContext } from "./browser/step"
+import { runBrowserStep, pageFacts, type BrowserStepContext } from "./browser/step"
 import { capturePage } from "./browser/capture"
+import { settle } from "./browser/settle"
 
 /**
  * Workflow executor.
@@ -455,7 +456,7 @@ export interface NodeResult {
   readonly attempts?: readonly HttpAttempt[]
   /** What the node's pre-request and post-response scripts did, in the order they ran. */
   readonly scripts?: readonly ScriptOutcome[]
-  /** A browser node's step: the page after it, compared values, and on failure its evidence. */
+  /** A browser node's step: the page after it, compared values, and the evidence every executed step stores. */
   readonly browser?: BrowserStepResult
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
@@ -1221,7 +1222,7 @@ export class WorkflowExecutor {
         const outcome = await runBrowserStep(page, config, context)
         // Evidence is kept for every step that ran, pass or fail; a cancelled
         // run's browser is already closed, so there is no page to capture.
-        const evidence = cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId)
+        const evidence = cancelSignal?.aborted ? {} : await this.browserEvidence(page, node.nodeId, outcome.passed, cancelSignal)
         return {
           status: outcome.passed ? "success" : "error",
           duration: Date.now() - startTime,
@@ -1241,9 +1242,55 @@ export class WorkflowExecutor {
     }
   }
 
-  /** A step's ARIA snapshot and stored screenshot, pass or fail, or a note saying what is missing. */
-  private async browserEvidence(page: Page, nodeId: string): Promise<Pick<BrowserStepResult, "ariaSnapshot" | "screenshotArtifactId" | "evidenceNote">> {
-    const evidence = await capturePage(page, this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}))
+  /**
+   * How long evidence waits for the page to settle before it is captured. A
+   * passed step has only just acted and the run wants to move on, so it gets
+   * the short wait with a tight check, since a stable page costs one check
+   * interval on every step of every run; a failed step's evidence is what an agent diagnoses from,
+   * and a page that changed just after the failed check is the diagnosis, so
+   * it gets the fuller wait `browser_inspect` gives a page a run left open.
+   * A failed step has usually waited its own timeout out already, so the
+   * fuller cap costs nothing on a page that is stable by then: it bites only
+   * when the page is genuinely still moving, which is when it matters.
+   */
+  private static readonly PASSED_SETTLE_MS = 1_000
+  private static readonly PASSED_SETTLE_INTERVAL_MS = 150
+  private static readonly FAILED_SETTLE_MS = 3_000
+
+  /**
+   * A step's ARIA snapshot and stored screenshot, pass or fail, or a note
+   * saying what is missing. Taken of the page as settled, not as the step's
+   * action left it, and never able to fail the step it documents.
+   */
+  private async browserEvidence(
+    page: Page,
+    nodeId: string,
+    passed: boolean,
+    cancelSignal: AbortSignal | undefined,
+  ): Promise<Pick<BrowserStepResult, "ariaSnapshot" | "screenshotArtifactId" | "evidenceNote" | "url" | "title">> {
+    // Settle first: a click that signs in navigates a moment later, and a
+    // page fills in once its data arrives, so reading at once would store the
+    // page before either. Settle never throws and returns no snapshot when
+    // the page cannot be read, and capturePage then captures as it always did.
+    const settled = passed
+      ? await settle(page, WorkflowExecutor.PASSED_SETTLE_MS, WorkflowExecutor.PASSED_SETTLE_INTERVAL_MS)
+      : await settle(page, WorkflowExecutor.FAILED_SETTLE_MS)
+    // A cancel that landed while the page was settling closed the browser with
+    // the step's action already done: capturing a dead page would put "could
+    // not be taken" on a step that passed. The step keeps the result it had
+    // before evidence, exactly as one cancelled before settling does.
+    if (cancelSignal?.aborted) return {}
+    // The settled page's url and title are read before the screenshot, which
+    // can take seconds: read afterwards they could describe a later page than
+    // the snapshot the evidence keeps, and one capture is one moment of one
+    // page. Only of a page that could still be read: a browser that died under
+    // the step keeps the step's own facts.
+    const facts = settled.ariaSnapshot !== undefined ? await pageFacts(page) : {}
+    const evidence = await capturePage(
+      page,
+      this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}),
+      { screenshot: true, ...(settled.ariaSnapshot !== undefined ? { ariaSnapshot: settled.ariaSnapshot } : {}) },
+    )
     const notes = evidence.note !== undefined ? [evidence.note] : []
     let screenshotArtifactId: string | undefined
     if (evidence.screenshot !== undefined && this.deps.saveArtifact !== undefined) {
@@ -1263,6 +1310,7 @@ export class WorkflowExecutor {
       ...(evidence.ariaSnapshot !== undefined ? { ariaSnapshot: evidence.ariaSnapshot } : {}),
       ...(screenshotArtifactId !== undefined ? { screenshotArtifactId } : {}),
       ...(notes.length > 0 ? { evidenceNote: notes.join(" ") } : {}),
+      ...facts,
     }
   }
 

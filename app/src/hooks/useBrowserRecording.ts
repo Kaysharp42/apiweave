@@ -23,13 +23,15 @@ function anchorFor(nodes: readonly CanvasNode[]): string | null {
   return nodes.find((node) => node.type === "start")?.id ?? null;
 }
 
+/** What main names a recording's steps: `browser-<stamp>-<n>` for a recording `recording-<stamp>`. */
+const stepPrefix = (recordingId: string): string => `browser-${recordingId.replace(/^recording-/, "")}-`;
+
 /**
  * After a renderer reload the store has lost where the steps go. They follow
- * the last step this recording already put on the canvas (main names them
- * `browser-<stamp>-<n>` for a recording `recording-<stamp>`), else Start.
+ * the last step this recording already put on the canvas, else Start.
  */
 function resumedAnchor(nodes: readonly CanvasNode[], recordingId: string): string | null {
-  const prefix = `browser-${recordingId.replace(/^recording-/, "")}-`;
+  const prefix = stepPrefix(recordingId);
   const last = nodes
     .filter((node) => node.id.startsWith(prefix))
     .sort((a, b) => Number(a.id.slice(prefix.length)) - Number(b.id.slice(prefix.length)))
@@ -47,12 +49,12 @@ function replaceForRerecord(
   graph: CanvasGraph,
   operation: BrowserRecordingStatus["operation"],
   nodeId: string | null,
-): { graph: CanvasGraph; anchorId: string } | null {
+): { graph: CanvasGraph; anchorId: string; frameId: string | null } | null {
   if (operation !== "rerecord" || nodeId === null || !graph.nodes.some((node) => node.id === nodeId)) return null;
   const removed = removeStepsFrom(graph, nodeId);
   if (removed !== null) return removed;
   toast.warning("The steps around this one changed during the replay, so the new steps were added after it instead of replacing it.");
-  return { graph, anchorId: nodeId };
+  return { graph, anchorId: nodeId, frameId: null };
 }
 
 const recordingLabel = (): string =>
@@ -71,30 +73,38 @@ function pendingSteps(
   return steps.filter((step) => placedById.get(step.stepId) !== step);
 }
 
-function placementIn(anchorId: string, recordingId: string, frameLabel: string): RecordingPlacement {
-  return { anchorId, frameId: `frame-${recordingId}`, frameLabel };
+/** The steps go in `frameId` when one is known, else in a frame named after the recording. */
+function placementIn(anchorId: string, frameId: string | null | undefined, recordingId: string, frameLabel: string): RecordingPlacement {
+  return { anchorId, frameId: frameId ?? `frame-${recordingId}`, frameLabel };
 }
 
 /**
- * The graph the pending steps go onto, where they go, and the anchor to
- * remember when a re-record moved it. A re-record's first step takes out the
- * steps it replaces, in the same edit as the step itself.
+ * The graph the pending steps go onto, where they go, and the anchor and frame
+ * to remember when a re-record chose them. A re-record's first step takes out
+ * the steps it replaces, in the same edit as the step itself, and its steps
+ * go back into the frame of the step they replace.
  */
 function planPlacement(
   graph: CanvasGraph,
   store: ReturnType<typeof useBrowserRecordingStore.getState>,
   recordingId: string,
-): { graph: CanvasGraph; placement: RecordingPlacement; replacedAnchorId: string | null } {
+): { graph: CanvasGraph; placement: RecordingPlacement; replaced: { anchorId: string; frameId: string | null } | null } {
   const replaced = store.anchorId === null ? replaceForRerecord(graph, store.operation, store.nodeId) : null;
   if (replaced !== null) {
     return {
       graph: replaced.graph,
-      placement: placementIn(replaced.anchorId, recordingId, store.frameLabel),
-      replacedAnchorId: replaced.anchorId,
+      placement: placementIn(replaced.anchorId, replaced.frameId, recordingId, store.frameLabel),
+      replaced: { anchorId: replaced.anchorId, frameId: replaced.frameId },
     };
   }
-  const anchorId = store.anchorId ?? resumedAnchor(graph.nodes, recordingId) ?? "";
-  return { graph, placement: placementIn(anchorId, recordingId, store.frameLabel), replacedAnchorId: null };
+  if (store.anchorId !== null) {
+    return { graph, placement: placementIn(store.anchorId, store.frameId, recordingId, store.frameLabel), replaced: null };
+  }
+  // After a reload: the steps follow this recording's last step, in its frame.
+  const anchorId = resumedAnchor(graph.nodes, recordingId) ?? "";
+  const anchor = graph.nodes.find((node) => node.id === anchorId);
+  const frameId = anchor?.type === "browser" && anchorId.startsWith(stepPrefix(recordingId)) ? anchor.parentId : undefined;
+  return { graph, placement: placementIn(anchorId, frameId, recordingId, store.frameLabel), replaced: null };
 }
 
 /**
@@ -146,7 +156,7 @@ function usePlaceRecordedSteps(
     const pending = pendingSteps(steps, store.placedSteps);
     if (pending.length === 0) return;
     const plan = planPlacement({ nodes: nodesRef.current, edges: edgesRef.current }, store, recordingId);
-    if (plan.replacedAnchorId !== null) store.setAnchor(plan.replacedAnchorId);
+    if (plan.replaced !== null) store.setAnchor(plan.replaced.anchorId, plan.replaced.frameId);
     const result = placePendingSteps(plan.graph, pending, plan.placement, store.placedSteps);
     // A save reads the refs: set them first, so Ctrl+S right after a step keeps it.
     nodesRef.current = result.graph.nodes;

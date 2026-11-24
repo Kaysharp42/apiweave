@@ -30,7 +30,7 @@ import { ZodError } from "zod"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
-import { browserActionLabel } from "@shared/browser/browser_action_labels"
+import { browserStepLabel } from "@shared/browser/browser_action_labels"
 import { canonicalizeNodeConfig } from "../repositories/helpers"
 import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
@@ -155,19 +155,18 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
 }
 
 /**
- * A browser node written without a label is named after its action — the same
- * name the recorder gives a placed step — so an agent-authored step is never
- * anonymous on the canvas, in a read, or in a run report. Applied to NEW
- * nodes only: an existing node keeps the label its author chose, including a
- * cleared one.
+ * A browser node written without a label is named after its action and target
+ * — the same name the recorder gives a placed step — so an agent-authored step
+ * is never anonymous on the canvas, in a read, or in a run report. Applied to
+ * NEW nodes only: an existing node keeps the label its author chose, including
+ * a cleared one.
  *
  * `undefined` means "keep the label as sent"; a string replaces it.
  */
 function browserStepDefaultLabel(type: unknown, label: unknown, config: unknown): string | undefined {
   if (type !== "browser") return undefined
   if (typeof label === "string" && label !== "") return undefined
-  const action = isPlainRecord(config) && typeof config["action"] === "string" ? config["action"] : ""
-  return browserActionLabel(action)
+  return browserStepLabel(config)
 }
 
 /**

@@ -1,6 +1,7 @@
 export { AgentAvailabilitySchema, AgentAvailabilityStateSchema } from "./AgentAvailabilitySchema"
 export { AgentDefinitionSchema, AgentPromptModeSchema, StoredAgentDefinitionSchema } from "./AgentDefinitionSchema"
 export { AgentLaunchModeSchema, AgentSessionSchema, AgentSessionStatusSchema } from "./AgentSessionSchema"
+export { AriaScopeSchema } from "./AriaScopeSchema"
 export { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
 export { SchemaViolationSchema } from "./SchemaViolationSchema"
 export { OpenApiNodeMetaSchema } from "./OpenApiNodeMetaSchema"

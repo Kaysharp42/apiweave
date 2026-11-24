@@ -1,7 +1,7 @@
 import type { Frame, Locator, Page } from "playwright-core"
 import { MIN_MASKED_SECRET_LENGTH } from "../secret_masker"
 
-/** The ARIA snapshot kept on a failed step's result. */
+/** The ARIA snapshot kept on every executed browser step's result. */
 export const ARIA_SNAPSHOT_MAX_CHARS = 64 * 1024
 /** A screenshot is dropped above this, whether stored or sent to an agent. */
 export const SCREENSHOT_MAX_BYTES = 1024 * 1024
@@ -31,6 +31,10 @@ export interface PageCapture {
  * bounded in time: a page that is gone or stuck yields what could be taken,
  * with a note.
  *
+ * `options.ariaSnapshot` is a snapshot a caller has already read of this page
+ * (settle's, usually): it is kept as the capture's snapshot rather than read
+ * again, and read anew only when it is empty or missing.
+ *
  * The ARIA snapshot shows typed field values, passwords included: it must go
  * through the run's masker, which also knows every password a fill typed.
  * The screenshot cannot be masked afterwards, so it is masked as it is taken.
@@ -40,10 +44,11 @@ export interface PageCapture {
 export async function capturePage(
   page: Page,
   sensitiveValues: readonly string[],
-  options: { readonly screenshot: boolean } = { screenshot: true },
+  options: { readonly screenshot: boolean; readonly ariaSnapshot?: string } = { screenshot: true },
 ): Promise<PageCapture> {
   const notes: string[] = []
-  const snapshot = await within(page.locator("body").ariaSnapshot({ timeout: 2_000 }), 3_000, "")
+  let snapshot = options.ariaSnapshot ?? ""
+  if (snapshot === "") snapshot = await within(page.locator("body").ariaSnapshot({ timeout: 2_000 }), 3_000, "")
   if (snapshot === "") notes.push("The ARIA snapshot could not be taken.")
   const screenshot = options.screenshot ? await within(maskedScreenshot(page, sensitiveValues), 8_000, null) : undefined
   if (screenshot === null) notes.push("The screenshot could not be taken.")

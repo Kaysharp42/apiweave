@@ -17,6 +17,7 @@ import {
   truncateUtf8,
 } from "./read_budgets"
 import { browserEvidenceSummary, callEvidenceSummary } from "./run_evidence"
+import { scopeAriaSnapshot } from "./aria_scope"
 import type { EnvironmentService } from "./environment_service"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
@@ -37,9 +38,9 @@ export interface DebugContextRequest {
  * ONCE (explicit `runId`, otherwise the latest failed run) and threaded
  * through every section, so sub-reads cannot disagree about which run or
  * revision they describe. Current workflow `rev` is returned separately from
- * the run record's own `runRev`, and graph correlation compares the workflow
- * revision the run recorded at creation with the current one — a past run is
- * never assumed to describe the graph now on canvas.
+ * the `workflowRev` the run recorded when it started, and graph correlation
+ * compares that revision with the current one — a past run is never assumed to
+ * describe the graph now on canvas.
  *
  * Deterministic throughout: ordered failure ids, severity-ordered diagnosis,
  * sorted keys/secrets/placeholders, no LLM summarizer. Secret output is names
@@ -209,12 +210,12 @@ export class DebugContextService {
   }
 }
 
-/** Whether the run executed the graph now stored, from the revision it recorded at creation. */
+/** Whether the run executed the graph now stored, from the revision it recorded when it started. */
 function correlateGraph(currentRev: number, run: Run | null): WorkflowDebugContext["graphCorrelation"] {
   if (run === null) return { status: "unknown", reason: "No run was selected." }
   const ran = run.workflowRev
   if (ran === null || ran === undefined) {
-    return { status: "unknown", reason: "This run was recorded before runs tracked the workflow revision." }
+    return { status: "unknown", reason: "This run has no recorded workflow revision: it never started, or it ran before runs recorded one." }
   }
   return ran === currentRev
     ? { status: "current", reason: `The run executed workflow revision ${ran}, which is the current revision.` }
@@ -230,7 +231,7 @@ function describeRun(run: Run): NonNullable<WorkflowDebugContext["run"]> {
     runId: run.runId,
     workflowId: run.workflowId,
     status: run.status,
-    runRev: run.rev,
+    workflowRev: run.workflowRev ?? null,
     trigger: run.trigger,
     ...(run.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
     ...(run.completedAt !== undefined ? { completedAt: run.completedAt } : {}),
@@ -430,22 +431,30 @@ const EVIDENCE_SECTIONS_WITH_BROWSER: DebugEvidenceSections = [...EVIDENCE_SECTI
 /**
  * A failed browser step, compacted: what ran, what it compared, which page it
  * was on, whether a screenshot exists, and the opening of the masked ARIA
- * snapshot with its full size stated. The artifact id never travels — bytes are
- * read through their own capped route — and the snapshot is cut in bytes so a
- * multi-byte page cannot overrun the aggregate budget.
+ * snapshot with its full size stated. The snapshot is scoped with `"auto"` —
+ * no new request parameter: this read is the bounded one-call overview, and
+ * its `moreDetail` selector already points at `runs_getNodeResult`, where a
+ * `scope` can be named; the applied scope is still reported so the overview
+ * and the follow-up read agree. The artifact id never travels — bytes are
+ * read through their own capped route — and the scoped text is cut in bytes
+ * so a multi-byte page cannot overrun the aggregate budget.
  */
 function summarizeBrowser(
   browser: NonNullable<RunResult["browser"]>,
 ): NonNullable<WorkflowDebugContext["evidence"][number]["browser"]> {
-  const snapshot = browser.ariaSnapshot
-  const snapshotBytes = snapshot === undefined ? 0 : Buffer.byteLength(snapshot, "utf8")
-  const snapshotTruncated = snapshotBytes > DEBUG_CONTEXT_BROWSER_TEXT_BYTES
+  const scoped = browser.ariaSnapshot === undefined ? undefined : scopeAriaSnapshot(browser.ariaSnapshot, "auto")
+  const scopedBytes = scoped === undefined ? 0 : Buffer.byteLength(scoped.text, "utf8")
+  const snapshotTruncated = scopedBytes > DEBUG_CONTEXT_BROWSER_TEXT_BYTES
   return {
     ...browserEvidenceSummary(browser, DEBUG_CONTEXT_BROWSER_TEXT_BYTES),
     hasScreenshot: browser.screenshotArtifactId !== undefined,
-    ...(snapshot === undefined ? {} : { ariaSnapshotPreview: snapshotTruncated ? truncateUtf8(snapshot, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) : snapshot }),
+    ...(scoped === undefined ? {} : {
+      ariaSnapshotPreview: snapshotTruncated ? truncateUtf8(scoped.text, DEBUG_CONTEXT_BROWSER_TEXT_BYTES) : scoped.text,
+      ariaSnapshotScope: scoped.applied,
+      ...(scoped.note !== undefined ? { ariaSnapshotScopeNote: scoped.note } : {}),
+    }),
     ariaSnapshotTruncated: snapshotTruncated,
-    ariaSnapshotBytes: snapshotBytes,
+    ariaSnapshotBytes: scopedBytes,
   }
 }
 
@@ -598,12 +607,13 @@ function previewBytes(preview: string | undefined): number {
 
 /**
  * Second rung: a browser step's page text. Page values and the snapshot opening
- * go first, and only if that is not enough do its URL and title — the step's
- * identity (action, `hasScreenshot`) and the snapshot's full size always
- * survive, so the entry still says what ran and how much evidence exists.
- * `ariaSnapshotTruncated` then states that what is left is not the whole page,
- * and the `moreDetail` selector on the same entry asks `runs_getNodeResult` for
- * the `browser` section, whose preview the caller can window.
+ * go first — with the scope note that describes why the opening is what it is —
+ * and only if that is not enough do its URL and title. The step's identity
+ * (action, `hasScreenshot`) and the snapshot's full size always survive, so the
+ * entry still says what ran and how much evidence exists. `ariaSnapshotTruncated`
+ * then states that what is left is not the whole page, and the `moreDetail`
+ * selector on the same entry asks `runs_getNodeResult` for the `browser`
+ * section, whose preview the caller can window.
  */
 function dropBrowserSummaries(response: WorkflowDebugContext, bytes: () => number): void {
   while (overBudget(bytes)) {
@@ -619,6 +629,7 @@ function dropBrowserSummaries(response: WorkflowDebugContext, bytes: () => numbe
       delete victim.expected
       delete victim.actual
       delete victim.ariaSnapshotPreview
+      delete victim.ariaSnapshotScopeNote
       victim.ariaSnapshotTruncated = victim.ariaSnapshotBytes > 0
       continue
     }

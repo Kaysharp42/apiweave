@@ -319,16 +319,20 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
     const workflowId = create(loginFlow("Goodbye"))
     const created = await call("runs_create", { workflowId, waitMs: 30_000 })
     const runId = (created.result as { runId: string }).runId
-    const evidence = await call("runs_getNodeResult", { runId, nodeId: "greets", sections: ["browser"], screenshot: true })
+    const evidence = await call("runs_getNodeResult", { runId, nodeIds: ["greets"], sections: ["browser"], screenshot: true })
     const page = evidence.result as { items: Array<{ browser?: { hasScreenshot: boolean } }> }
     expect(page.items[0]?.browser?.hasScreenshot).toBe(true)
     expect(evidence.content.find((item) => item.type === "image")?.mimeType).toBe("image/jpeg")
     expect(JSON.stringify(evidence.result)).not.toContain("base64")
 
-    const without = await call("runs_getNodeResult", { runId, nodeId: "greets", sections: ["browser"] })
+    const without = await call("runs_getNodeResult", { runId, nodeIds: ["greets"], sections: ["browser"] })
     expect(without.content.some((item) => item.type === "image")).toBe(false)
 
+    // A screenshot is a one-node read: several ids, or a screenshot read
+    // without naming one, is a validation error — through the same SDK parse
+    // an agent's client performs.
     const several = await call("runs_getNodeResult", { runId, nodeIds: ["greets", "open"], screenshot: true })
     expect(several.isError).toBe(true)
+    expect(JSON.stringify(several.content)).toMatch(/exactly one id in nodeIds/)
   })
 })

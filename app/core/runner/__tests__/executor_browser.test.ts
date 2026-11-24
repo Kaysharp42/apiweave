@@ -1,6 +1,7 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
+import type { Page } from "playwright-core"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { RunScheduler } from "../scheduler"
@@ -18,6 +19,24 @@ import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 const SECRET_PASSWORD = "s3cret-pass-987"
+
+/**
+ * One test holds a settle open to cancel the run between its step passing and
+ * its evidence being taken, which timing a real page cannot do reliably.
+ * Every other test's settle goes straight through.
+ */
+const settleHold = vi.hoisted(() => ({ wait: undefined as (() => Promise<void>) | undefined }))
+
+vi.mock("../browser/settle", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../browser/settle")>()
+  return {
+    ...actual,
+    settle: async (page: Page, maxMs: number, intervalMs?: number) => {
+      if (settleHold.wait !== undefined) await settleHold.wait()
+      return actual.settle(page, maxMs, intervalMs)
+    },
+  }
+})
 
 /** The login form's button; a test renames it, as a frontend change would. */
 let loginLabel = "Sign in"
@@ -49,6 +68,27 @@ document.getElementById('del').onclick = () => {
 }
 </script>`
 
+/**
+ * A page that leaves its `load` event behind still moving: its heading
+ * changes every 40ms for `ms` after load, then it goes to `/arrived`, which
+ * changes the URL and title too. Settle sees two snapshots differ for as long
+ * as the page churns, whatever interval it checks at, so these tests depend
+ * on what settle promises rather than on when it happens to look.
+ */
+const unsettledPage = (ms: number): string => `<!doctype html><title>Before</title><h1>Before</h1>
+<script>addEventListener('load', () => {
+  const start = Date.now()
+  const tick = () => {
+    const elapsed = Date.now() - start
+    if (elapsed >= ${ms}) { location.href = '/arrived'; return }
+    document.querySelector('h1').textContent = 'Loading ' + elapsed
+    setTimeout(tick, 40)
+  }
+  tick()
+})</script>`
+
+const arrivedPage = (): string => `<!doctype html><title>Arrived</title><h1>Arrived</h1><p>The page settled here.</p>`
+
 let channel: BrowserChannel | undefined
 let server: Server
 let base: string
@@ -68,6 +108,11 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(loginPage())
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
+    } else if (path === "/unsettled") {
+      const ms = Number(new URLSearchParams((request.url ?? "").split("?")[1] ?? "").get("ms") ?? "300")
+      response.writeHead(200, { "content-type": "text/html" }).end(unsettledPage(ms))
+    } else if (path === "/arrived") {
+      response.writeHead(200, { "content-type": "text/html" }).end(arrivedPage())
     } else if (path === "/slow") {
       // Slower than any click: Playwright reports a new tab only once its first page has loaded.
       setTimeout(() => response.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Help</title>"), 1_500)
@@ -315,6 +360,72 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect([...artifacts[2]!.body.subarray(0, 2)]).toEqual([0xff, 0xd8])
   })
 
+  it("keeps a passed step's evidence from the page it settled on, not the page its action finished on", async () => {
+    // The page churns for 200ms after load, then leaves: the navigate is done
+    // well before that, and a passed step's 1s settle outlasts it.
+    const workflowId = create([step("open", { action: "navigate", url: `${base}/unsettled?ms=200` })])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
+    expect(result(stored, "open")?.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
+    expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
+  })
+
+  it("takes no evidence of a step that passed when the run is cancelled while its page settles", async () => {
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered: () => void = () => undefined
+    const settling = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    settleHold.wait = async () => {
+      entered()
+      await held
+    }
+    try {
+      const workflowId = create([step("open", { action: "navigate", url: `${base}/login` })])
+      const runId = scheduler.enqueue({ workspaceId, workflowId })
+      await settling
+      // The step has passed and its settle holds; the cancel closes the page
+      // underneath it, so capturing afterwards would evidence a dead page.
+      expect(scheduler.cancel(runId)).toBe(true)
+      release()
+      expect(await scheduler.whenFinished(runId)).toBe("cancelled")
+
+      const opened = result(runs.getById(runId)!, "open")
+      expect(opened?.status).toBe("passed")
+      expect(opened?.browser?.ariaSnapshot).toBeUndefined()
+      expect(opened?.browser?.evidenceNote).toBeUndefined()
+      expect(artifacts).toEqual([])
+    } finally {
+      settleHold.wait = undefined
+    }
+  })
+
+  it("gives a failed step's evidence the fuller settle, where a page that changed late is the diagnosis", async () => {
+    // The page churns for 3s after load. The navigate's 1s settle gives up
+    // while it still churns, the check fails 300ms later, and only the failed
+    // step's 3s settle lasts long enough to show what the page became.
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/unsettled?ms=3000` }),
+      step("missing", { action: "expect-text", locator: role("heading"), text: "Never", match: "equals", timeoutMs: 300 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status).toBe("failed")
+    const failed = result(stored, "missing")!
+    expect(failed.error).toBe("Browser step: the text of getByRole('heading') did not equal the expected text within 0.3s")
+    // The evidence shows what the page became. What the check compared while
+    // it polled is not asserted: on a loaded machine the steps before it can
+    // outlast the churn, and the check then reads the arrived page itself.
+    expect(failed.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
+    expect(failed.browser?.ariaSnapshot).toContain('heading "Arrived"')
+  })
+
   it("answers a confirm() only when the step says so", async () => {
     const workflowId = create([
       step("open", { action: "navigate", url: `${base}/dashboard` }),
@@ -351,6 +462,25 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     const stored = await run(workflowId)
 
     expect(result(stored, "email")?.error).toBe("Browser step: {{env.TEST_EMAIL}} is not set")
+  })
+
+  it("finds an element by a name held in a workflow variable, and fails one whose variable is unset", async () => {
+    const workflowId = create(
+      [
+        step("open", { action: "navigate", url: `${base}/login` }),
+        step("email", { action: "fill", locator: role("textbox", "Email"), value: "ada@example.com" }),
+        step("submit", { action: "click", locator: role("button", "{{variables.button}}") }),
+        step("arrived", { action: "expect-url", url: "/dashboard", match: "contains" }),
+        step("missing", { action: "click", locator: role("button", "{{variables.missing}}") }),
+      ],
+      { button: "Sign in" },
+    )
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "submit")?.status, result(stored, "submit")?.error).toBe("passed")
+    expect(result(stored, "arrived")?.status, result(stored, "arrived")?.error).toBe("passed")
+    expect(result(stored, "missing")?.error).toBe("Browser step: {{variables.missing}} is not set")
   })
 
   it("names an ambiguous locator", async () => {

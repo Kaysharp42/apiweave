@@ -272,7 +272,8 @@ assertion are fine). A Call Workflow child shares the page.
 \`locator\` is structured, never a selector string:
 \`{"kind": "role", "role": "button", "name": "Sign in"}\` first, then \`label\`,
 then \`testId\`, then \`placeholder\`/\`text\`/\`alt\`/\`title\`; \`css\` last, and
-never \`kind: "selector"\` (recorder output; it raises an analyzer notice).
+never \`kind: "selector"\` (recorder output); either, or \`css\` picked by \`nth\`,
+raises an analyzer notice.
 Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`.
 
 \`{{secrets.NAME}}\` is allowed **only in a fill's value**, and a password is
@@ -282,28 +283,43 @@ account. An unresolved placeholder fails the step.
 **Write from the page, not from source.** Write the \`navigate\` step and any
 login steps, then call \`browser_inspect\` without \`beforeNodeId\`: it runs the
 workflow headless and returns the page it ends on — URL, title and the masked
-ARIA snapshot — which is where the next step starts. Take that step's locator
+ARIA snapshot — which is where the next step starts. The snapshot is scoped
+(\`scope\`, default \`"auto"\`): the open dialog when the page has one, else the
+main landmark, else the whole page — the part a locator lives in, not the
+banner and navigation that open every snapshot. \`maxBytes\`/\`start\`/\`end\`
+window the scoped text; the response's \`scope\` and \`totalBytes\` say what was
+extracted and how big it is, so you can window it. Take that step's locator
 from the snapshot, the tree Playwright's own recorder picks locators from:
 \`button "Sign in"\` is \`{"kind": "role", "role": "button", "name": "Sign in"}\`,
 and \`textbox "Email"\` is role \`textbox\` name \`Email\`, or a \`label\` locator.
 Add the step with \`workflows_patch\`, inspect again, and \`runs_create\` once the
 flow is written. \`beforeNodeId\` stops the run before an existing step instead,
-showing the page that step acts on: the way to check a locator you are
-repairing. \`page: null\` means no browser step had run: add a \`navigate\`
-first (there is no \`url\` mode). \`browser_inspect\` sends real traffic and
-records a run, like \`runs_create\`. Its wait is bounded (\`waitMs\`, default
-10000, max 30000): \`terminal: false\` means the run has not finished, possibly
-waiting for the user's approval — pass that \`runId\` back to keep waiting, which
-starts no new run and asks for no second approval. \`deniedByUser: true\` means
-they refused or did not answer — say so, do not retry. A timeout or disconnect
-never cancels the run (only \`runs_cancel\` does).
+returning the page as it is just before this node runs — the page that step
+acts on: the way to check a locator you are repairing. \`page: null\` means no
+browser step had run: add a \`navigate\` first (there is no \`url\` mode).
+\`browser_inspect\` sends real traffic and records a run, like \`runs_create\`.
+Its wait is bounded (\`waitMs\`, default 10000, max 30000): \`terminal: false\`
+means the run has not finished, possibly waiting for the user's approval —
+pass that \`runId\` back to keep waiting, which starts no new run and asks for
+no second approval. \`deniedByUser: true\` means they refused or did not answer
+— say so, do not retry. A timeout or disconnect never cancels the run (only
+\`runs_cancel\` does).
 
-**Repair.** A failed step's evidence is in \`workflows_debugContext\`, or in
+**Read a finished run's page.** Every executed browser step — passed or failed —
+stores its URL, title, masked ARIA snapshot and a screenshot, readable without a
+rerun: \`runs_getNodeResult\` with \`nodeIds: [<step>]\` and \`sections: ["browser"]\`
+(+ \`screenshot: true\`). The snapshot there carries the same \`scope\` default
+and the same \`maxBytes\`/\`start\`/\`end\` windowing over the scoped text. For the
+page *before* step X, read the step before X. Prefer that stored evidence; use
+\`browser_inspect\` only when the page must be re-observed after the workflow
+changed, because it replays every earlier node for real.
+
+**Repair.** A browser step's evidence is in \`workflows_debugContext\`, or in
 \`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,
-Playwright's \`detail\`, the page URL and title, and the masked ARIA snapshot at
-the failure. Add \`screenshot: true\` with one \`nodeId\` when the tree is not
-enough; the image arrives as image content. Patch only that node with
-\`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
+Playwright's \`detail\`, the page URL and title, and the scoped masked ARIA
+snapshot at the step. Add \`screenshot: true\` with one id in \`nodeIds\` when the
+tree is not enough; the image arrives as image content. Patch only that node
+with \`workflows_patch\`, then rerun with \`runs_create\` \`resume: { nodeId }\` — a
 rerun that reaches a browser step restarts the chain from its first step.
 
 The desktop's **Re-pick element** is yours too: \`browser_inspect\` with
@@ -316,7 +332,7 @@ its complete node, its edges kept:
 
 \`\`\`json
 { "removeNodeIds": ["fill-email"], "upsertNodes": [
-  { "nodeId": "fill-email", "type": "browser", "label": "Type into a field",
+  { "nodeId": "fill-email", "type": "browser", "label": "Fill Email address",
     "position": { "x": 220, "y": 0 },
     "config": { "action": "fill",
                 "locator": { "kind": "label", "value": "Email address" },
@@ -739,7 +755,8 @@ Clear every \`error\` before running.
 | --- | --- |
 | \`browser_parallel_branches\` | browser steps share one page, so page-driving nodes (a \`browser\` step, or a \`workflow\` call into a workflow with browser steps) on branches neither of which reaches the other would act on it in the same run — an error; wire them into one chain |
 | \`browser_chain_starts_without_navigate\` | the first step of the chain is not a \`navigate\`, so it runs on an empty page (warning) |
-| \`browser_selector_fallback\` | the locator is a raw recorder \`selector\`, which works but breaks easily (notice) — prefer a role, label or test id |
+| \`browser_selector_fallback\` | the locator is a raw recorder \`selector\` or \`css\` picked by \`nth\`, which works but breaks easily (notice) — prefer a role, label or test id |
+| \`browser_chain_without_check\` | the last browser step is an action, not an \`expect-*\` or \`extract\`, and no assertion follows it, so the run passes as long as that action does not error (notice) — add an expect step that proves the outcome, such as the confirmation message or the next page's address |
 
 ## Run-correlated (pass a \`runId\`)
 
@@ -822,7 +839,10 @@ masked ARIA snapshot. \`browser_inspect\` returns the page its run left open —
 URL, title and masked ARIA snapshot — and with \`screenshot: true\` the
 viewport JPEG, painted over the same way. All three run the same
 secret-redaction pass every other read gets, and bodies travel as previews,
-never whole. Everything else about runs stays metadata-only; to see other
+never whole. One exception in the run summaries themselves: a failed browser
+step in \`runs_create\`, \`runs_wait\` or \`runs_get\` carries its action, page URL
+and title and the runner's own failure message, plus a \`nextRead\` pointing at
+its evidence. Everything else about runs stays metadata-only; to see other
 payloads, open the run in the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response

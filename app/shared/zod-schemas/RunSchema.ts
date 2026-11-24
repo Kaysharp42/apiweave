@@ -29,7 +29,7 @@ export const RunSchema = z
     resolvedSecrets: z.array(ResolvedSecretInfoSchema).optional(),
     /** Set when the run is one iteration of a data-driven run. */
     iteration: RunIterationSchema.nullable().optional(),
-    /** The workflow revision this run was created against; null for runs recorded before it was tracked. */
+    /** The workflow revision this run executed, recorded when it starts; null until then, and for runs recorded before it was tracked. */
     workflowRev: RevisionSchema.nullable().optional(),
     rev: RevisionSchema,
     createdAt: TimestampSchema,

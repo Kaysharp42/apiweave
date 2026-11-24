@@ -86,6 +86,16 @@ describe("capturePage", { timeout: BROWSER_TEST_TIMEOUT_MS }, () => {
     expect(capture.ariaSnapshot).toContain("Keys")
   })
 
+  it("keeps the ARIA snapshot it is given instead of reading the page again", async (context) => {
+    if (channel === undefined) context.skip()
+    const given = await capturePage(page, [], { screenshot: false, ariaSnapshot: "- generic: already read" })
+    expect(given.ariaSnapshot).toBe("- generic: already read")
+    expect(given.note).toBeUndefined()
+    // An empty given snapshot is no snapshot: the page is read as before.
+    const read = await capturePage(page, [], { screenshot: false, ariaSnapshot: "" })
+    expect(read.ariaSnapshot).toContain("Keys")
+  })
+
   it("paints over a secret shown inside an open shadow root", async (context) => {
     if (channel === undefined) context.skip()
     const shadow = await openPage(SHADOW_PAGE)

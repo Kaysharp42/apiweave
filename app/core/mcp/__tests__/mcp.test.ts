@@ -601,6 +601,103 @@ describe("MCP bridge — second transport, parity by construction", () => {
     await client.close()
   })
 
+  it("names a failed browser step's page and its own error, with the evidence read to open next", async () => {
+    const secret = "opaque-browser-error-that-must-never-cross-mcp"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "browser summary",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      failedNodes: ["fill-email", "raw-error"],
+      results: [
+        {
+          nodeId: "fill-email",
+          status: "failed",
+          duration: 10_003,
+          error: "Browser step: fill on getByLabel('Email') timed out after 10s: it was not found",
+          browser: {
+            action: "fill",
+            url: "https://app.example.test/login",
+            title: "Sign in",
+            detail: "locator.fill: Timeout 10000ms exceeded.\nCall log:\n  - waiting for getByLabel('Email')",
+            ariaSnapshot: '- heading "Sign in" [level=1]\n- textbox "Email"',
+            screenshotArtifactId: "shot-1",
+          },
+        },
+        {
+          // A stored error that is not the runner's own browser-step diagnosis:
+          // the summary keeps it behind hasError instead of republishing it.
+          nodeId: "raw-error",
+          status: "failed",
+          duration: 5,
+          error: secret,
+          browser: { action: "click" },
+        },
+      ],
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId },
+    })
+    const text = textOf(result as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      failedNodeDetails: Array<{
+        nodeId: string
+        status: string
+        durationMs: number
+        unresolvedPlaceholders: string[]
+        hasError: boolean
+        browser?: { action: string; url?: string; title?: string; error?: string }
+        nextRead?: { tool: string; args: Record<string, unknown> }
+      }>
+    }
+
+    expect(parsed.failedNodeDetails).toHaveLength(2)
+    const step = parsed.failedNodeDetails[0]!
+    const raw = parsed.failedNodeDetails[1]!
+    expect(step).toEqual({
+      nodeId: "fill-email",
+      status: "failed",
+      durationMs: 10_003,
+      unresolvedPlaceholders: [],
+      hasError: true,
+      browser: {
+        action: "fill",
+        url: "https://app.example.test/login",
+        title: "Sign in",
+        error: "Browser step: fill on getByLabel('Email') timed out after 10s: it was not found",
+      },
+      nextRead: {
+        tool: "runs_getNodeResult",
+        args: { workspaceId: workspace.workspaceId, runId: run.runId, nodeIds: ["fill-email"], sections: ["browser"] },
+      },
+    })
+    expect(raw).toEqual({
+      nodeId: "raw-error",
+      status: "failed",
+      durationMs: 5,
+      unresolvedPlaceholders: [],
+      hasError: true,
+      browser: { action: "click" },
+      nextRead: {
+        tool: "runs_getNodeResult",
+        args: { workspaceId: workspace.workspaceId, runId: run.runId, nodeIds: ["raw-error"], sections: ["browser"] },
+      },
+    })
+    // Playwright's own account, the page's ARIA snapshot and the screenshot's id
+    // stay in the evidence tool; an unmasked stored error stays out entirely.
+    expect(text).not.toContain("ariaSnapshot")
+    expect(text).not.toContain("shot-1")
+    expect(text).not.toContain("waiting for")
+    expect(text).not.toContain(secret)
+    await client.close()
+  })
+
   it("runs_getNodeResult returns bounded evidence for one node, with secret-looking values redacted", async () => {
     const responseSecret = "Bearer sensitive-token-that-must-leave-redacted"
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
@@ -629,7 +726,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const client = await connectClient()
     const toolResult = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "mc-create" },
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeIds: ["mc-create"] },
     })
     const text = textOf(toolResult as { content: Array<{ type: string; text?: string }> })
     const parsed = JSON.parse(text) as {
@@ -678,7 +775,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const client = await connectClient()
     const result = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "nope" },
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeIds: ["nope"] },
     })
     expect((result as { isError?: boolean }).isError).toBeFalsy()
     const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
@@ -701,26 +798,27 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const client = await connectClient()
     const result = await client.callTool({
       name: "runs_getNodeResult",
-      arguments: { workspaceId: "ws-not-mine", runId: run.runId, nodeId: "nope" },
+      arguments: { workspaceId: "ws-not-mine", runId: run.runId, nodeIds: ["nope"] },
     })
     expect((result as { isError?: boolean }).isError).toBe(true)
     expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
     await client.close()
   })
 
-  it("runs_get uses runRev rather than the workflow revision name", async () => {
+  it("runs_get exposes the workflow revision the run executed", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
-    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+    const workflow = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
       workspaceId: workspace.workspaceId,
       name: "run revision name",
     })
-    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, workflowRev: workflow.rev })
 
     const client = await connectClient()
     const result = await client.callTool({ name: "runs_get", arguments: { workspaceId: workspace.workspaceId, runId: run.runId } })
     const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
 
-    expect(parsed["runRev"]).toBe(run.rev)
+    expect(parsed["workflowRev"]).toBe(workflow.rev)
+    expect(parsed).not.toHaveProperty("runRev")
     expect(parsed).not.toHaveProperty("rev")
     await client.close()
   })

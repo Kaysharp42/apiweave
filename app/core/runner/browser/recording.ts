@@ -9,9 +9,13 @@ import {
   type ConverterOutput,
   type RecorderAction,
 } from "./recorded"
+import { ariaRoleAndName, betterSelector } from "./better_selector"
+import { buildLocator } from "./locator"
+import { outcomeCheck, pathOf, readActionLandmarks, readLandmarks, type PageState } from "./outcome_check"
 import { roleSelectorWithName } from "./selector_parse"
 import type { RecordingValues } from "./recording_values"
 import { BrowserSessionError, contextOptions, launchBrowser, type BrowserLaunchSettings } from "./session"
+import { settle } from "./settle"
 import { disarmDialog } from "./step"
 
 /**
@@ -72,6 +76,49 @@ const RECORDER_BUFFER_MS = 600
  * previous action, and leaves room for a slow page.
  */
 const DIALOG_WINDOW_MS = 5_000
+/** The longest a step waits for its selector to be made sturdier before keeping the recorder's. */
+const IMPROVE_TIMEOUT_MS = 1_500
+/**
+ * How long a click or key press waits for the page to stop changing before
+ * its outcome is read. Playwright already held a left click for 500 ms, so a
+ * transition of a second or so has mostly happened; the interval is tight
+ * because a page that did not change costs one interval.
+ */
+const OUTCOME_SETTLE_MS = 1_500
+const OUTCOME_SETTLE_INTERVAL_MS = 150
+/** The most one read of the page's landmarks, or one count of a check's elements, may take. */
+const OBSERVE_TIMEOUT_MS = 1_000
+const OBSERVE_MAX_MS = 1_500
+/** How many of the page's last paths are kept, which is far more than a user visits in the half second one is looked up for. */
+const PATHS_KEPT = 50
+/** The chain part Playwright writes between an iframe and what is inside it, the way `selector_parse` reads it. */
+const ENTER_FRAME = "internal:control=enter-frame"
+/** A new click or key press: what earns a check of its outcome. A click Playwright reports after a key press with no count is noise. */
+function changesPage(kind: "added" | "updated", action: RecorderAction): boolean {
+  return kind === "added" && (action.name === "press" || (action.name === "click" && action.clickCount !== 0))
+}
+
+/**
+ * Whether an action can change what a check already under way would read.
+ * Everything can — a fill brings text the page may show, and a page closing
+ * takes the page away — except the click Playwright reports after a key press
+ * with no count, which is noise.
+ */
+function affectsOutcome(action: RecorderAction): boolean {
+  return action.name !== "closePage" && !(action.name === "click" && action.clickCount === 0)
+}
+
+/**
+ * What one improved selector is remembered by: the path the page was on when
+ * the user acted, whether the action was a click, and the selector Playwright
+ * wrote. A fragile selector such as `button >> nth=1` repeats across pages and
+ * for both clicks and fills, so anything less would hand a step an element the
+ * user never touched.
+ */
+export function selectorImprovementKey(actedPath: string | null, selector: string, isClick: boolean): string {
+  return `${actedPath ?? ""}\u0000${isClick ? "click" : "other"}\u0000${selector}`
+}
+
 /** What an abandoned recording tells its owner: nothing at all. */
 const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () => undefined, ended: () => undefined }
 
@@ -81,20 +128,42 @@ const SILENT_LISTENER: RecordingListener = { step: () => undefined, warning: () 
  *
  * Recorder events arrive synchronously and are handled one at a time, in
  * order, because a fill needs one question to the page (is this a password
- * field?) before it can be converted. Typing sends one update per keystroke;
+ * field?) before it can be converted. The question is asked as the event
+ * arrives and its answer awaited in the queue. Typing sends one update per keystroke;
  * those are sent at most once per {@link DEFAULT_THROTTLE_MS}, and a new step
  * first flushes the updates before it, so the order never changes.
+ *
+ * A click or key press is followed, in the same turn of the queue, by the
+ * check that proves what it did (see {@link outcomeCheck}): the page is let
+ * settle, read, and compared with the page as the user acted — the snapshot
+ * Playwright's recorder took in the page at that moment, and the path the
+ * page was on then. The next event waits in the queue meanwhile, so the check
+ * always lands right after its action, and every wait is bounded, so a slow
+ * page delays steps but never drops one. Two clicks earn no check: one that
+ * only puts the cursor in a text field, where the user is about to type, and
+ * one inside an iframe, whose snapshot is another document. A check is
+ * dropped when another action is still waiting behind it: the page may
+ * already show what that action did, or hold the text it is typing.
  */
 export class BrowserRecording {
   private queue: Promise<void> = Promise.resolve()
+  /**
+   * Every action received and not yet handled, each answering whether it may
+   * change what a check under way would read. A text or a choice in this set is
+   * test data a check must not pin on the page; a click in it may turn the
+   * page over first.
+   */
+  private readonly waitingOutcomes = new Set<Promise<boolean>>()
+  /** The main page's paths, newest last, and when it reached each: what the page was on when the user acted. */
+  private readonly paths: Array<{ readonly at: number; readonly path: string | null }> = []
   private mainPage: Page | null = null
   private accepting = true
   private stopping: Promise<void> | null = null
   /** When the last recorder action arrived, to tell a dialog it opened from one the page raised later. */
   private lastActionAt: number | null = null
-  private readonly passwordFields = new Map<string, boolean>()
-  /** A recorded selector after its role's accessible name was added, by the selector Playwright wrote. */
-  private readonly namedSelectors = new Map<string, string>()
+  private readonly passwordFields = new Map<string, Promise<boolean>>()
+  /** The last selector made sturdier, by {@link selectorImprovementKey}, and its answer: only the run of events that repeat it reuses it. */
+  private lastImproved: { readonly key: string; readonly answer: Promise<string> } | null = null
   private readonly sentStepIds = new Set<string>()
   private readonly pending = new Map<string, RecordedBrowserStep>()
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -184,6 +253,13 @@ export class BrowserRecording {
   /** The page the run will drive: closing it, or the browser, ends the recording. */
   private watch(page: Page): void {
     this.mainPage ??= page
+    this.paths.push({ at: Date.now(), path: pathOf(page.url()) })
+    // Same-document navigations (a single-page app's pushState) count too.
+    page.on("framenavigated", (frame) => {
+      if (frame !== page.mainFrame()) return
+      this.paths.push({ at: Date.now(), path: pathOf(frame.url()) })
+      if (this.paths.length > PATHS_KEPT) this.paths.shift()
+    })
     page.on("close", () => void this.stop())
     this.browser.on("disconnected", () => void this.stop())
   }
@@ -241,7 +317,53 @@ export class BrowserRecording {
     // after the action Playwright sent it, and the queue may lag behind that.
     this.lastActionAt = Date.now()
     const onMainPage = page === this.mainPage
-    this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage)).catch(() => undefined)
+    // Asked of the page now, not when the queue reaches the event: a click's
+    // outcome check holds the queue for a moment, and by then the field may
+    // be gone — a password field read too late would count as one not found.
+    const isPassword = readsField(action) && onMainPage && action.selector !== undefined ? this.isPasswordField(page, action.selector) : undefined
+    // The path the page was on when the user acted, read before the selector is
+    // improved: a navigation the action itself caused has moved the page by now.
+    const actedPath = this.pathAsActed()
+    const selector = action.selector === undefined || !onMainPage ? undefined : this.improvedSelector(page, action.selector, action.name === "click", actedPath)
+    const before = changesPage(kind, action) && onMainPage ? this.pageAsActed(actedPath, raw) : null
+    // This action joins the queue's tally until its own turn: a check made
+    // meanwhile would show what this one did too, or the text it types.
+    const unhandled = affectsOutcome(action) ? this.mayChangeOutcome(page, action, onMainPage) : null
+    if (unhandled !== null) this.waitingOutcomes.add(unhandled)
+    this.queue = this.queue.then(() => this.handle(kind, page, action, onMainPage, isPassword, selector, before, unhandled)).catch(() => undefined)
+  }
+
+  /**
+   * The page as the user clicked or pressed: the landmarks in the snapshot
+   * Playwright's recorder took in the page at that moment, and the path it
+   * was on. The action may reach here up to half a second after it happened
+   * (Playwright holds a left click that long), so the path is the one the
+   * page had that long ago: a navigation since then is counted as this
+   * action's.
+   */
+  private pageAsActed(actedPath: string | null, raw: unknown): PageState | null {
+    const landmarks = readActionLandmarks(raw)
+    return landmarks === null ? null : { path: actedPath, landmarks }
+  }
+
+  /** The path the main page was on when the user acted, or null when it is not known yet. */
+  private pathAsActed(): string | null {
+    const actedBy = Date.now() - RECORDER_BUFFER_MS
+    return [...this.paths].reverse().find((entry) => entry.at <= actedBy)?.path ?? null
+  }
+
+  /**
+   * Whether this action may still change what a check under way would read. A
+   * fill or a choice does: its text may be what the page goes on to show. A
+   * click does unless it only puts the cursor in a text field, or happens
+   * inside an iframe, whose snapshot is another document.
+   */
+  private async mayChangeOutcome(page: Page, action: RecorderAction, onMainPage: boolean): Promise<boolean> {
+    if (!onMainPage) return false
+    const selector = action.selector
+    if (selector !== undefined && selector.includes(ENTER_FRAME)) return false
+    if (action.name !== "click" || selector === undefined) return true
+    return !(await this.isTextField(page, selector))
   }
 
   /** A signal (`dialog`…) goes through the same queue, so it follows the action Playwright sent it after. */
@@ -254,19 +376,70 @@ export class BrowserRecording {
     this.queue = this.queue.then(() => this.report(this.converter.signal(name, onMainPage, isRecent))).catch(() => undefined)
   }
 
-  private async handle(kind: "added" | "updated", page: Page, action: RecorderAction, onMainPage: boolean): Promise<void> {
-    const isPassword =
-      readsField(action) && onMainPage && action.selector !== undefined ? await this.isPasswordField(page, action.selector) : undefined
-    const selector =
-      action.selector === undefined || !onMainPage ? action.selector : await this.namedSelector(page, action.selector)
-    this.report(
-      this.converter.apply({
-        kind,
-        action: selector === undefined || selector === action.selector ? action : { ...action, selector },
-        onMainPage,
-        ...(isPassword === undefined ? {} : { isPassword }),
-      }),
-    )
+  private async handle(
+    kind: "added" | "updated",
+    page: Page,
+    action: RecorderAction,
+    onMainPage: boolean,
+    passwordAnswer: Promise<boolean> | undefined,
+    improved: Promise<string> | undefined,
+    before: PageState | null,
+    unhandled: Promise<boolean> | null,
+  ): Promise<void> {
+    if (unhandled !== null) this.waitingOutcomes.delete(unhandled)
+    const isPassword = await passwordAnswer
+    const selector = improved === undefined ? action.selector : await improved
+    const output = this.converter.apply({
+      kind,
+      action: selector === undefined || selector === action.selector ? action : { ...action, selector },
+      onMainPage,
+      ...(isPassword === undefined ? {} : { isPassword }),
+    })
+    this.report(output)
+    // A click into a text field only puts the cursor where the user types
+    // next, and a click inside an iframe was made in another document: neither
+    // earns a check of what it did.
+    const earnsOutcome = unhandled !== null && changesPage(kind, action) && (await unhandled)
+    if (before !== null && output.steps.length > 0 && earnsOutcome) await this.checkOutcome(page, before)
+  }
+
+  /**
+   * Add the check that proves what the click or key press just recorded did:
+   * wait for the page to settle, then compare it with the page as the user acted.
+   */
+  private async checkOutcome(page: Page, before: PageState): Promise<void> {
+    await settle(page, OUTCOME_SETTLE_MS, OUTCOME_SETTLE_INTERVAL_MS)
+    const after = await this.observe(page)
+    // Playwright reports a left click up to half a second after it happened,
+    // so a click it reports in that time may have changed the page before
+    // this read. Once the recording is stopping, nothing more arrives.
+    if (this.accepting) await new Promise<void>((resolve) => setTimeout(resolve, RECORDER_BUFFER_MS))
+    if (after === null) return
+    // An action received after this one, and still waiting in the queue, may
+    // change the page or type into it: the page read here may show what that
+    // action did, or nothing of what this one will, so no check here rather
+    // than one pinned on the wrong step.
+    if ((await Promise.all([...this.waitingOutcomes])).some((changes) => changes)) return
+    const check = outcomeCheck(before, after, this.converter.typedValues(), this.options.values)
+    if (check === null) return
+    if (check.probe !== null) {
+      const count = await within(buildLocator(page, check.probe, (text) => text).count(), OBSERVE_MAX_MS, 0)
+      if (count !== 1) return
+    }
+    this.report(this.converter.addCheck(check.config))
+  }
+
+  /**
+   * The page's path and landmarks, read in one bounded call: null when the
+   * page cannot answer. The snapshot is taken the way Playwright's recorder
+   * takes the one it compares with (`mode: "ai"`, the body), and only its
+   * landmarks are kept.
+   */
+  private async observe(page: Page): Promise<PageState | null> {
+    if (page.isClosed()) return null
+    const snapshot = await within(page.locator("body").ariaSnapshot({ mode: "ai", timeout: OBSERVE_TIMEOUT_MS }), OBSERVE_MAX_MS, "")
+    const landmarks = snapshot === "" ? null : readLandmarks(snapshot)
+    return landmarks === null ? null : { path: pathOf(page.url()), landmarks }
   }
 
   private report(output: ConverterOutput): void {
@@ -280,46 +453,83 @@ export class BrowserRecording {
    * secret for a field that was not a password is a nuisance, a password sent
    * as text is a leak.
    */
-  private async isPasswordField(page: Page, selector: string): Promise<boolean> {
+  private isPasswordField(page: Page, selector: string): Promise<boolean> {
     const known = this.passwordFields.get(selector)
     if (known !== undefined) return known
     const answer = page
       .locator(selector)
       .first()
       .evaluate((element) => element instanceof HTMLInputElement && element.type === "password", undefined, { timeout: 1_000 })
-    const isPassword = await within(answer, 1_500, true)
+    const isPassword = within(answer, 1_500, true)
     this.passwordFields.set(selector, isPassword)
     return isPassword
   }
 
   /**
-   * The selector with its role's accessible name, when Playwright wrote a bare
-   * role. Asked once per selector, and never blocks a step for long: a page that
-   * cannot answer leaves the selector as the recorder wrote it.
+   * Whether the field behind `selector` takes typed text: an input of one of
+   * the types Playwright types into, a textarea, something editable, or a
+   * widget whose role says text entry. Asked of the page as the click arrives,
+   * because by the time the queue reaches it the user has moved on. A page that
+   * cannot answer counts as one that does not: a needless check is a nuisance,
+   * a missing one means the step after the click is never checked.
    */
-  private async namedSelector(page: Page, selector: string): Promise<string> {
-    if (!selector.startsWith("internal:role=")) return selector
-    const known = this.namedSelectors.get(selector)
-    if (known !== undefined) return known
-    const name = await within(this.accessibleName(page, selector), 1_500, "")
-    const named = roleSelectorWithName(selector, name) ?? selector
-    this.namedSelectors.set(selector, named)
-    return named
+  private isTextField(page: Page, selector: string): Promise<boolean> {
+    const answer = page
+      .locator(selector)
+      .first()
+      .evaluate(
+        (element) => {
+          const role = element.getAttribute("role")
+          if (role === "textbox" || role === "searchbox") return true
+          if (element instanceof HTMLTextAreaElement) return true
+          if (element instanceof HTMLInputElement) return ["text", "search", "email", "password", "tel", "url", "number"].includes(element.type)
+          return element instanceof HTMLElement && element.isContentEditable
+        },
+        undefined,
+        { timeout: 1_000 },
+      )
+    return within(answer, 1_500, false)
   }
 
-  /** The accessible name in an ARIA snapshot's first line: `- heading "Orders" [level=1]`. */
+  /**
+   * The selector made sturdier, asked once per run of events for the same
+   * selector, page and action kind — the updates typing sends — and never
+   * blocking a step for long: a page that cannot answer leaves the
+   * selector as the recorder wrote it. A bare role gets its accessible name; a
+   * fragile selector — kept whole, or CSS leaning on a position or a text
+   * filter — is swapped for a role, label or exact text that finds the same one
+   * element (see {@link betterSelector}).
+   *
+   * The answer belongs to the page the user acted on: once the page has left
+   * that path, a candidate found there names another page's element, so the
+   * recorded selector is kept. Only the last answer is remembered: a
+   * single-page wizard keeps its path from one step to the next, so the same
+   * fragile selector coming back after another action may name another
+   * element, and is asked again.
+   */
+  private improvedSelector(page: Page, selector: string, isClick: boolean, actedPath: string | null): Promise<string> {
+    if (this.leftPath(page, actedPath)) return Promise.resolve(selector)
+    const key = selectorImprovementKey(actedPath, selector, isClick)
+    if (this.lastImproved?.key === key) return this.lastImproved.answer
+    const answered = selector.startsWith("internal:role=")
+      ? within(this.accessibleName(page, selector), IMPROVE_TIMEOUT_MS, "").then((name) => roleSelectorWithName(selector, name) ?? selector)
+      : within(betterSelector(page, selector, isClick), IMPROVE_TIMEOUT_MS, selector)
+    // The page may navigate while the answer is being found, and what it named
+    // was on the page the user acted on.
+    const improved = answered.then((chosen) => (this.leftPath(page, actedPath) ? selector : chosen))
+    this.lastImproved = { key, answer: improved }
+    return improved
+  }
+
+  /** Whether the page has left the path it was on when the user acted, so an element found now is not the one the user used. */
+  private leftPath(page: Page, actedPath: string | null): boolean {
+    return actedPath !== null && pathOf(page.url()) !== actedPath
+  }
+
+  /** The accessible name in the element's ARIA snapshot. */
   private async accessibleName(page: Page, selector: string): Promise<string> {
     const snapshot = await page.locator(selector).first().ariaSnapshot({ timeout: 1_000 })
-    const first = snapshot.split("\n", 1)[0] ?? ""
-    const quoted = /^-\s+[a-z]+\s+"((?:[^"\\]|\\.)*)"/.exec(first)
-    if (quoted === null) return ""
-    try {
-      const name: unknown = JSON.parse(`"${quoted[1] ?? ""}"`)
-      return typeof name === "string" ? name : ""
-    } catch {
-      // An escape JSON does not know: not a name this can reproduce exactly.
-      return ""
-    }
+    return ariaRoleAndName(snapshot)?.name ?? ""
   }
 
   private send(step: RecordedBrowserStep): void {

@@ -74,6 +74,8 @@ import useCanvasHistory from "../hooks/useCanvasHistory";
 import { useBrowserRecording } from "../hooks/useBrowserRecording";
 import { useStepReplay } from "../hooks/useStepReplay";
 import { useTurnIntoExtract } from "../hooks/useTurnIntoExtract";
+import { useMakeStepVariable } from "../hooks/useMakeStepVariable";
+import { MakeStepVariableDialog } from "./organisms/MakeStepVariableDialog";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import { useAcyclicConnections } from "../hooks/useAcyclicConnections";
@@ -96,7 +98,8 @@ import {
   shouldActOnDetach,
   writeFollowsBaseRevision,
 } from "../utils/canvasRefreshGuards";
-import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
+import { canvasToWorkflow, graphToCanvas, workflowToCanvas } from "../adapters/workflowCanvas";
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import {
   groupSelection,
   adoptIntoFrame,
@@ -130,7 +133,7 @@ import { isEditableNode } from "../utils/nodeNavigation";
 import { useNodeEditorWalk } from "../hooks/useNodeEditorWalk";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { grpcCallType, reconcileGrpcStreamEdges } from "../utils/grpcStreamEdges";
-import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Wand2 } from "lucide-react";
+import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Variable, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -257,14 +260,7 @@ let nextExtractorConfigId = 0;
 const configRefMap = new WeakMap<object, number>();
 let nextConfigRefId = 0;
 
-const initialNodes: Node<WorkflowCanvasNodeData>[] = [
-  {
-    id: "start-1",
-    type: "start",
-    position: { x: 250, y: 50 },
-    data: { label: "Start" },
-  },
-];
+const initialGraph = graphToCanvas(initialWorkflowGraph());
 
 /**
  * ReactFlow answers "are all nodes measured" from its own store, which
@@ -308,14 +304,15 @@ function WorkflowCanvas({
   const {
     variables: workflowVariables,
     registerExtractors,
+    updateVariable,
     updateVariables,
     onVariablesDeletedRef,
   } = useWorkflow();
   const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<CanvasNode>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
+    useNodesState<CanvasNode>(initialGraph.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>(initialGraph.edges);
 
   const nodesRef = useRef(nodes);
   // The same graph as `nodesRef`, with frames dropped and every position made
@@ -1636,6 +1633,13 @@ function WorkflowCanvas({
 
   const turnIntoExtract = useTurnIntoExtract({ nodesRef, setNodes });
 
+  const makeStepVariable = useMakeStepVariable({
+    nodesRef,
+    setNodes,
+    variables: workflowVariables,
+    setVariable: updateVariable,
+  });
+
   const stepReplay = useStepReplay({
     workflowId,
     workspaceId: scope.workspaceId ?? undefined,
@@ -1647,6 +1651,14 @@ function WorkflowCanvas({
     setNodes,
     saveWorkflowRef,
   });
+
+  /** The step menu's browser-step actions, each offered only on the steps it can act on. */
+  const browserStepActions = [
+    { key: "repick-element", icon: Crosshair, label: "Re-pick element", offered: stepReplay.canRepick, run: stepReplay.repick },
+    { key: "rerecord-from-here", icon: Circle, label: "Re-record from here", offered: stepReplay.canRerecord, run: stepReplay.rerecord },
+    { key: "turn-into-extract", icon: Download, label: "Turn into extract", offered: turnIntoExtract.canTurn, run: turnIntoExtract.start },
+    { key: "make-variable", icon: Variable, label: "Make value a variable", offered: makeStepVariable.canMake, run: makeStepVariable.start },
+  ];
 
   const canvasTipContext = useMemo(() => {
     const selection = selectedIds(nodes);
@@ -2240,36 +2252,9 @@ function WorkflowCanvas({
               label: "Run from here",
               onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
             },
-            ...(stepReplay.canRepick(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "repick-element",
-                    icon: Crosshair,
-                    label: "Re-pick element",
-                    onSelect: () => stepReplay.repick(stepMenu.nodeId),
-                  },
-                ]
-              : []),
-            ...(stepReplay.canRerecord(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "rerecord-from-here",
-                    icon: Circle,
-                    label: "Re-record from here",
-                    onSelect: () => stepReplay.rerecord(stepMenu.nodeId),
-                  },
-                ]
-              : []),
-            ...(turnIntoExtract.canTurn(stepMenu.nodeId)
-              ? [
-                  {
-                    key: "turn-into-extract",
-                    icon: Download,
-                    label: "Turn into extract",
-                    onSelect: () => turnIntoExtract.start(stepMenu.nodeId),
-                  },
-                ]
-              : []),
+            ...browserStepActions
+              .filter((action) => action.offered(stepMenu.nodeId))
+              .map(({ key, icon, label, run }) => ({ key, icon, label, onSelect: () => run(stepMenu.nodeId) })),
             {
               key: "duplicate",
               icon: Files,
@@ -2321,6 +2306,16 @@ function WorkflowCanvas({
         placeholder="orderNumber"
         submitLabel="Turn into extract"
         icon={Download}
+      />
+
+      <MakeStepVariableDialog
+        key={`variable-${makeStepVariable.dialog.nodeId ?? "none"}`}
+        open={makeStepVariable.dialog.open}
+        node={makeStepVariable.dialog.node}
+        nodes={makeStepVariable.dialog.nodes}
+        variables={makeStepVariable.dialog.variables}
+        onClose={makeStepVariable.dialog.onClose}
+        onSubmit={makeStepVariable.dialog.onSubmit}
       />
 
       {/* Keyed by node id so each open re-mounts with that node's label

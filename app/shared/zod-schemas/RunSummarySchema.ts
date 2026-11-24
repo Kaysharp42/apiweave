@@ -5,8 +5,9 @@ import { TimestampSchema } from "./TimestampSchema"
 
 /**
  * One compact run-history row: identity, status, timing, failure counts and
- * revision. No per-node results, statuses, bodies or variables — history rows
- * stay constant-sized no matter how large the workflow is.
+ * the workflow revision it executed. No per-node results, statuses, bodies or
+ * variables — history rows stay constant-sized no matter how large the
+ * workflow is.
  */
 export const RunSummarySchema = z
   .object({
@@ -24,7 +25,8 @@ export const RunSummarySchema = z
     iteration: RunIterationSchema.nullable(),
     /** Set on a rerun: the run whose results and variables it reused. */
     resumeFromRunId: z.string().min(1).nullable(),
-    runRev: RevisionSchema,
+    /** The workflow revision this run executed; null on a run recorded before it was tracked. */
+    workflowRev: RevisionSchema.nullable(),
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
   })
