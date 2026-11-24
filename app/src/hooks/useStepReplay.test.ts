@@ -29,11 +29,15 @@ const remove: CanvasNode = {
   position: { x: 0, y: 0 },
   data: { label: "Click", config: { action: "click", locator: { kind: "role", role: "button", name: "Delete" }, dialog: "accept", timeoutMs: 5_000 } },
 };
-const edges: CanvasEdge[] = [{ id: "open-delete", source: "open", target: "delete" }];
+const start: CanvasNode = { id: "start", type: "start", position: { x: 0, y: 0 }, data: { label: "Start", config: {} } };
+const edges: CanvasEdge[] = [
+  { id: "start-open", source: "start", target: "open" },
+  { id: "open-delete", source: "open", target: "delete" },
+];
 const picked: BrowserLocator = { kind: "role", role: "button", name: "Remove" };
 
 function setup(options: { save?: () => Promise<boolean>; hydrated?: boolean; workflowId?: string; strict?: boolean } = {}) {
-  const nodesRef: MutableRefObject<CanvasNode[]> = { current: [open, remove] };
+  const nodesRef: MutableRefObject<CanvasNode[]> = { current: [open, remove, start] };
   const edgesRef: MutableRefObject<CanvasEdge[]> = { current: edges };
   const setNodes = vi.fn((next: CanvasNode[]) => void (nodesRef.current = next));
   const saveWorkflowRef = { current: vi.fn(options.save ?? (async () => true)) };

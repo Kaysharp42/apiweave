@@ -43,6 +43,9 @@ function harness(overrides: Partial<BrowserRecordingDeps> = {}): Harness {
                 { nodeId: "open", type: "browser", config: { action: "navigate", url: "{{env.BASE_URL}}/orders" } },
                 { nodeId: "delete", type: "browser", config: { action: "click", locator: DELETE_BUTTON, dialog: "accept" } },
                 { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://x.test" } },
+                { nodeId: "start", type: "start", config: {} },
+                { nodeId: "frame", type: "group", config: {} },
+                { nodeId: "note", type: "note", config: {} },
               ],
             }
           : undefined,
@@ -424,6 +427,12 @@ describe("BrowserRecordingService.recordAfter", () => {
     const { service } = harness()
     await expect(service.recordAfter({ ...replayRequest, nodeId: "api" })).resolves.toMatchObject({ operation: "record-after", nodeId: "api" })
     await service.stop()
+  })
+
+  it.each([["start"], ["frame"], ["note"]])("refuses %s, which a run never stops after, before replaying anything", async (nodeId) => {
+    const { service, replays } = harness()
+    await expect(service.recordAfter({ ...replayRequest, nodeId })).rejects.toThrow("Steps can only be recorded after a step that runs.")
+    expect(replays).toEqual([])
   })
 
   it("says the step itself is replayed when the replay fails or opens no page", async () => {

@@ -119,14 +119,14 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
 
   rerecord: async (request, frameLabel) => {
     if (!claim(fresh("rerecord", "replaying", request.workflowId, { nodeId: request.nodeId, frameLabel }))) return;
-    await recordAfterReplay(() => browser.rerecordFrom(request), "The steps could not be re-recorded");
+    await recordOnReplay(() => browser.rerecordFrom(request), "The steps could not be re-recorded");
   },
 
   recordAfter: async (request, frameLabel) => {
     // The anchor is known from the start: nothing is taken out first, as a re-record does.
     const fields = { nodeId: request.nodeId, anchorId: request.nodeId, frameLabel };
     if (!claim(fresh("record-after", "replaying", request.workflowId, fields))) return;
-    await recordAfterReplay(() => browser.recordAfter(request), "The steps could not be recorded");
+    await recordOnReplay(() => browser.recordAfter(request), "The steps could not be recorded");
   },
 
   repick: async (request) => {
@@ -162,7 +162,7 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
 }));
 
 /** A re-record's or a record-after's replay, then its recording: the slot moves to `recording` once main has attached. */
-async function recordAfterReplay(begin: () => Promise<BrowserRecordingStatus | null>, failure: string): Promise<void> {
+async function recordOnReplay(begin: () => Promise<BrowserRecordingStatus | null>, failure: string): Promise<void> {
   try {
     const status = await begin();
     // Null: stopped during the replay, and `ended` has already said so.

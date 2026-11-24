@@ -51,6 +51,9 @@ export interface BrowserRecordingDeps {
 
 const ENV_PLACEHOLDER = /\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
+/** Nodes a run never stops after: Start and End run nothing, a frame and a note never run. */
+const NOT_A_STEP: ReadonlySet<unknown> = new Set(["start", "end", "group", "note"])
+
 /** The one operation in progress, and how to end it at whatever stage it has reached. */
 interface Active {
   readonly status: BrowserRecordingStatus
@@ -131,8 +134,7 @@ export class BrowserRecordingService {
    */
   public async recordAfter(input: unknown): Promise<BrowserRecordingStatus | null> {
     const request = this.replayRequest(input)
-    const type = this.browserNode(request).type
-    if (type === "end" || type === "start") throw new ValidationError("Steps can only be recorded after a step that runs.")
+    if (NOT_A_STEP.has(this.browserNode(request).type)) throw new ValidationError("Steps can only be recorded after a step that runs.")
     return this.recordOnReplayedPage(request, "record-after")
   }
 
