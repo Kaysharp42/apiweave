@@ -96,6 +96,7 @@ export const BROWSER_CHANNELS = {
   recordingStatus: "browser:recordingStatus",
   repickElement: "browser:repickElement",
   rerecordFrom: "browser:rerecordFrom",
+  recordAfter: "browser:recordAfter",
 } as const
 
 /** Recorded steps, warnings and the end of a recording, main → renderer (`BrowserRecordingEvent`). */

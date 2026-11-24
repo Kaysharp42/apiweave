@@ -208,6 +208,44 @@ describe("useBrowserRecording placement", () => {
     expect(byId.get("frame-old")?.width).toBe(1200);
   });
 
+  it("inserts a record-after's steps between its step and what followed it, keeping every step", () => {
+    const end: CanvasNode = { id: "end-1", type: "end", position: { x: 0, y: 0 }, data: { label: "End", config: {} } };
+    const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target, type: "custom" });
+    const canvas = createCanvas(
+      [startNode, recordedNode("open", "https://dev.test/"), recordedNode("delete", "https://dev.test/x"), end],
+      [edge("start-1", "open"), edge("open", "delete"), edge("delete", "end-1")],
+    );
+    const first = step("browser-recording-1-1", "https://dev.test/a");
+    const second = step("browser-recording-1-2", "https://dev.test/b");
+    useBrowserRecordingStore.setState({ operation: "record-after", nodeId: "open", anchorId: "open", steps: [first] });
+
+    mountRecording(canvas);
+    act(() => useBrowserRecordingStore.setState({ steps: [first, second] }));
+
+    expect(canvas.nodes().map((node) => node.id)).toEqual(expect.arrayContaining(["open", "delete", first.stepId, second.stepId]));
+    expect(canvas.edges().map((e) => [e.source, e.target])).toEqual(
+      expect.arrayContaining([["start-1", "open"], ["open", first.stepId], [first.stepId, second.stepId], [second.stepId, "delete"], ["delete", "end-1"]]),
+    );
+    expect(canvas.edges()).toHaveLength(5);
+  });
+
+  it("after a reload, puts a record-after's first step after its step rather than after Start", () => {
+    const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target, type: "custom" });
+    const canvas = createCanvas(
+      [startNode, recordedNode("open", "https://dev.test/"), recordedNode("delete", "https://dev.test/x")],
+      [edge("start-1", "open"), edge("open", "delete")],
+    );
+    const first = step("browser-recording-1-1", "https://dev.test/a");
+    // What `subscribeToRecording` restores: the operation and its step, but no anchor.
+    useBrowserRecordingStore.setState({ operation: "record-after", nodeId: "open", anchorId: null, steps: [first] });
+
+    mountRecording(canvas);
+
+    expect(canvas.edges().map((e) => [e.source, e.target])).toEqual(
+      expect.arrayContaining([["start-1", "open"], ["open", first.stepId], [first.stepId, "delete"]]),
+    );
+  });
+
   it("leaves another workflow's canvas alone", () => {
     const recorded = step("browser-recording-1-1", "https://dev.test/");
     useBrowserRecordingStore.setState({ steps: [recorded] });

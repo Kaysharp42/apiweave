@@ -9,24 +9,42 @@ const isBrowser = (node: CanvasNode | undefined): boolean => node?.type === "bro
 /** A plain connection: from a node's single output, not one of a branching node's handles. */
 const isPlain = (edge: CanvasEdge): boolean => edge.sourceHandle == null;
 
-/**
- * Whether some browser step runs before `nodeId`, upstream along its incoming
- * connections. Without one, the replay opens no page to carry on from.
- */
-function hasBrowserStepBefore(graph: CanvasGraph, nodeId: string): boolean {
-  const byId = new Map(graph.nodes.map((node) => [node.id, node] as const));
-  const seen = new Set<string>([nodeId]);
-  const queue = [nodeId];
+/** Every node `from` leads to (forwards) or that leads to it (backwards), `from` excluded. */
+function reachable(graph: CanvasGraph, from: string, direction: "forwards" | "backwards"): Set<string> {
+  const seen = new Set<string>();
+  const queue = [from];
   while (queue.length > 0) {
     const current = queue.shift() as string;
     for (const edge of graph.edges) {
-      if (edge.target !== current || seen.has(edge.source)) continue;
-      if (isBrowser(byId.get(edge.source))) return true;
-      seen.add(edge.source);
-      queue.push(edge.source);
+      const [here, there] = direction === "forwards" ? [edge.source, edge.target] : [edge.target, edge.source];
+      if (here !== current || there === from || seen.has(there)) continue;
+      seen.add(there);
+      queue.push(there);
     }
   }
-  return false;
+  return seen;
+}
+
+/**
+ * The nodes a run passes on its way from Start to `nodeId`: those Start leads
+ * to that lead to it. Null when Start does not lead to it: a run never gets
+ * there, so a replay would never stop there.
+ */
+function pathFromStart(graph: CanvasGraph, nodeId: string): CanvasNode[] | null {
+  const start = graph.nodes.find((node) => node.type === "start");
+  if (start === undefined) return null;
+  const afterStart = reachable(graph, start.id, "forwards");
+  if (!afterStart.has(nodeId)) return null;
+  const before = reachable(graph, nodeId, "backwards");
+  return graph.nodes.filter((node) => afterStart.has(node.id) && before.has(node.id));
+}
+
+/**
+ * Whether a run reaches `nodeId` after some browser step. Without one, the
+ * replay opens no page to carry on from.
+ */
+function hasBrowserStepBefore(graph: CanvasGraph, nodeId: string): boolean {
+  return pathFromStart(graph, nodeId)?.some(isBrowser) ?? false;
 }
 
 /** **Re-pick element**: a browser step that acts on an element, after a step that opens a page. */
@@ -65,6 +83,23 @@ export function canRerecordFrom(graph: CanvasGraph, nodeId: string): boolean {
   if (!isBrowser(node) || soleEntry(graph, nodeId) === undefined) return false;
   if (graph.edges.filter((edge) => edge.source === nodeId).length > 1) return false;
   return hasBrowserStepBefore(graph, nodeId);
+}
+
+/**
+ * **Record after this step**: a node a run reaches from Start and stops after
+ * — not Start, End or a frame — once a browser step up to it, itself
+ * included, has opened a page.
+ * It has no way out, or one plain one that the recorded steps are spliced
+ * into (`placeRecordedStep`): a second way out would make them a parallel
+ * branch, whose steps a run interleaves with the other branch's on its one page.
+ */
+export function canRecordAfter(graph: CanvasGraph, nodeId: string): boolean {
+  const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+  if (node === undefined || node.type === "start" || node.type === "end" || node.type === FRAME_NODE_TYPE) return false;
+  const outgoing = graph.edges.filter((edge) => edge.source === nodeId);
+  if (outgoing.length > 0 && soleExit(graph, nodeId) === undefined) return false;
+  const path = pathFromStart(graph, nodeId);
+  return path !== null && (isBrowser(node) || path.some(isBrowser));
 }
 
 /**

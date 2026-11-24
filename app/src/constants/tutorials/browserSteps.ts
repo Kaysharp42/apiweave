@@ -252,13 +252,15 @@ export const browserStepsChapter: TutorialChapter = {
       chapterId: "browser-steps",
       title: "Fix one browser step",
       summary:
-        "Re-pick element, Re-record from here and Turn into extract from a step's right-click menu, and editing a step by hand.",
+        "Re-pick element, Re-record from here, Record after this step and Turn into extract from a step's right-click menu, and editing a step by hand.",
       outcome:
         "When a page changes, you can repair the one step it broke instead of recording the whole flow again.",
       keywords: [
         "browser",
         "re-pick element",
         "re-record from here",
+        "record after this step",
+        "continue recording",
         "turn into extract",
         "save a value",
         "locator",
@@ -274,12 +276,12 @@ export const browserStepsChapter: TutorialChapter = {
         {
           title: "Open the step's menu",
           instruction:
-            "Right-click a browser step on the canvas. Next to Run from here, the menu offers Re-pick element, Re-record from here and Turn into extract when they apply to that step.",
+            "Right-click a browser step on the canvas. Next to Run from here, the menu offers Re-pick element, Re-record from here, Record after this step and Turn into extract when they apply to that step.",
         },
         {
           title: "Understand the replay",
           instruction:
-            "Re-pick element and Re-record from here save the canvas, then replay the workflow up to the step, not including it, in a visible browser. The toolbar reads Replaying the steps before… with Cancel.",
+            "Re-pick element and Re-record from here save the canvas, then replay the workflow up to the step, not including it, in a visible browser; Record after this step replays the step too. The toolbar reads Replaying the steps… with Cancel.",
           detail:
             "The replay is an ordinary run with the selected environment and its secrets, and it appears in run history. The steps before must pass; if one fails, fix that one first.",
         },
@@ -296,6 +298,13 @@ export const browserStepsChapter: TutorialChapter = {
             "Choose Re-record from here. After the replay, recording starts on the page as it was left, and the toolbar reads Recording — N steps with Stop. Record the new steps and press Stop.",
           detail:
             "The first new step replaces this step and the browser steps after it in a straight line, in one edit that a single Undo restores. The line stops at another kind of step, a step with more than one way out, or a step two connections lead into.",
+        },
+        {
+          title: "Record after this step",
+          instruction:
+            "Choose Record after this step to add steps without replacing any. The replay runs this step too, recording starts on the page it left, and the new steps go between this step and whatever followed it.",
+          detail:
+            "Use it to extend a flow from its last step, or to insert steps in the middle of one. The step must have at most one way out, and not a condition's or an assertion's pass and fail outputs.",
         },
         {
           title: "Turn a step into an extract",

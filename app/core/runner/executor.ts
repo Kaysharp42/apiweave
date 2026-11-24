@@ -411,6 +411,12 @@ export interface ExecuteOptions {
    * left as that node would find it.
    */
   readonly stopBeforeNodeId?: string
+  /**
+   * Run every node up to and including this one, then stop: nothing after it
+   * runs. With a caller-owned `browserSession`, the page is then left as that
+   * node left it.
+   */
+  readonly stopAfterNodeId?: string
 }
 
 /** How every refusal to read a rerun's seeded value starts; the scheduler passes it through to history. */
@@ -618,6 +624,10 @@ export class WorkflowExecutor {
   private readonly ownsBrowserSession: boolean
   /** Set by `stopBeforeNodeId`: the run stops before this node. */
   private stopBeforeNodeId: string | undefined
+  /** Set by `stopAfterNodeId`: the run stops once this node has run. */
+  private stopAfterNodeId: string | undefined
+  /** The run got to its stop node: before it, or once it had run. */
+  private stopReached = false
   /** Loaded on the first rule that needs it (see `prepareRules`); `matches` and `matchesSchema` are synchronous after that. */
   private regex: RegexSandbox | null = null
   /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
@@ -655,6 +665,8 @@ export class WorkflowExecutor {
     this.activeRunId = options.runId ?? "harness"
     this.cancelSignal = options.cancelSignal
     this.stopBeforeNodeId = options.stopBeforeNodeId
+    this.stopAfterNodeId = options.stopAfterNodeId
+    this.stopReached = false
 
     if (workflow.variables) {
       for (const [key, value] of Object.entries(workflow.variables)) {
@@ -755,6 +767,7 @@ export class WorkflowExecutor {
       }
 
       await this.waitForStreamTasks()
+      this.failUnreachedStop(nodes, options.cancelSignal)
       const finalStatus: "passed" | "failed" = this.hasFailures ? "failed" : "passed"
       return this.buildOutput(caseName, startedAt, seed, finalStatus)
     } catch (error) {
@@ -832,6 +845,21 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Fail a run that was to stop at a node and never got there: nothing that ran
+   * leads to it (a step Start does not lead to, a branch not taken, a frame).
+   * Passing would hand over the page wherever the run happened to end, as if it
+   * were the page that node finds or leaves. A run that failed already, or was
+   * cancelled, says so itself.
+   */
+  private failUnreachedStop(nodes: ReadonlyMap<string, WorkflowNode>, cancelSignal: AbortSignal | undefined): void {
+    const stopAt = this.stopBeforeNodeId ?? this.stopAfterNodeId
+    if (stopAt === undefined || this.stopReached || this.hasFailures || cancelSignal?.aborted) return
+    this.hasFailures = true
+    const name = nodes.get(stopAt)?.label || stopAt
+    this.firstErrorMessage = `The run ended without reaching ${name}, where it was to stop: nothing that ran leads to it`
+  }
+
+  /**
    * Wait for a traversal already in flight for `nodeId`, if one exists.
    *
    * Resolves `true` once the caller should stop (someone else is already
@@ -874,7 +902,10 @@ export class WorkflowExecutor {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
-    if (nodeId === this.stopBeforeNodeId) return
+    if (nodeId === this.stopBeforeNodeId) {
+      this.stopReached = true
+      return
+    }
 
     if (node.type === "merge" || node.type === "start") {
       return this.traverseFromNode(node, nodes, edges, cancelSignal)
@@ -950,6 +981,10 @@ export class WorkflowExecutor {
       }
     } else {
       this.updateNodeStatus(nodeId, "passed")
+    }
+    if (nodeId === this.stopAfterNodeId) {
+      this.stopReached = true
+      return
     }
     if (cancelSignal?.aborted) return
 

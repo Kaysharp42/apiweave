@@ -35,5 +35,11 @@ export interface BrowserBridge {
    * steps arrive as `onRecording` events. Null when the user stopped the replay.
    */
   readonly rerecordFrom: (request: BrowserReplayRequest) => Promise<BrowserRecordingStatus | null>
+  /**
+   * Replay the workflow through a step — it runs, nothing after it does — then
+   * record from there: the steps arrive as `onRecording` events. Null when the
+   * user stopped the replay.
+   */
+  readonly recordAfter: (request: BrowserReplayRequest) => Promise<BrowserRecordingStatus | null>
   readonly onRecording: (callback: (event: BrowserRecordingEvent) => void) => () => void
 }

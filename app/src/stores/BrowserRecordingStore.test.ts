@@ -8,7 +8,7 @@ import { useBrowserRecordingStore } from "./BrowserRecordingStore";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() } }));
 vi.mock("../utils/apiweaveClient", () => ({
-  browser: { startRecording: vi.fn(), stopRecording: vi.fn(), recordingStatus: vi.fn(), onRecording: vi.fn(), repickElement: vi.fn(), rerecordFrom: vi.fn() },
+  browser: { startRecording: vi.fn(), stopRecording: vi.fn(), recordingStatus: vi.fn(), onRecording: vi.fn(), repickElement: vi.fn(), rerecordFrom: vi.fn(), recordAfter: vi.fn() },
 }));
 
 const request = { workspaceId: "ws", workflowId: "wf", environmentId: null, startUrl: "https://dev.test/" };
@@ -205,6 +205,45 @@ describe("useBrowserRecordingStore re-pick and re-record", () => {
     emit({ ...step("browser-2-1", "https://dev.test/"), recordingId: "recording-2" });
     emit(ended);
     expect(toast.success).toHaveBeenCalledWith("Recorded 1 step");
+  });
+
+  it("records after a step: its step is the anchor from the start, and nothing is replaced", async () => {
+    vi.mocked(browser.recordAfter).mockImplementation(async () => {
+      emit(replayed);
+      return { recordingId: "recording-2", workspaceId: "ws", workflowId: "wf", operation: "record-after", nodeId: "delete" };
+    });
+    await useBrowserRecordingStore.getState().recordAfter(replayRequest, "Recording today");
+    expect(browser.recordAfter).toHaveBeenCalledWith(replayRequest);
+    expect(useBrowserRecordingStore.getState()).toMatchObject({
+      phase: "recording",
+      operation: "record-after",
+      nodeId: "delete",
+      recordingId: "recording-2",
+      anchorId: "delete",
+      frameId: null,
+      frameLabel: "Recording today",
+    });
+    emit({ ...step("browser-2-1", "https://dev.test/"), recordingId: "recording-2" });
+    emit(ended);
+    expect(toast.success).toHaveBeenCalledWith("Recorded 1 step");
+  });
+
+  it("says the steps are unchanged when a record-after records nothing", async () => {
+    vi.mocked(browser.recordAfter).mockImplementation(async () => {
+      emit(replayed);
+      return { recordingId: "recording-2", workspaceId: "ws", workflowId: "wf", operation: "record-after", nodeId: "delete" };
+    });
+    await useBrowserRecordingStore.getState().recordAfter(replayRequest, "Recording today");
+    emit(ended);
+    expect(toast.info).toHaveBeenCalledWith("Nothing was recorded, so the steps are unchanged");
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("says why a record-after could not start, and frees the slot", async () => {
+    vi.mocked(browser.recordAfter).mockRejectedValue(new Error("No browser step up to this one opens a page"));
+    await useBrowserRecordingStore.getState().recordAfter(replayRequest, "Recording today");
+    expect(useBrowserRecordingStore.getState().phase).toBe("idle");
+    expect(toast.error).toHaveBeenCalledWith("No browser step up to this one opens a page");
   });
 
   it("stops a re-record during its replay, and says the steps are unchanged", async () => {

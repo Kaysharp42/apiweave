@@ -43,6 +43,9 @@ function harness(overrides: Partial<BrowserRecordingDeps> = {}): Harness {
                 { nodeId: "open", type: "browser", config: { action: "navigate", url: "{{env.BASE_URL}}/orders" } },
                 { nodeId: "delete", type: "browser", config: { action: "click", locator: DELETE_BUTTON, dialog: "accept" } },
                 { nodeId: "api", type: "http-request", config: { method: "GET", url: "https://x.test" } },
+                { nodeId: "start", type: "start", config: {} },
+                { nodeId: "frame", type: "group", config: {} },
+                { nodeId: "note", type: "note", config: {} },
               ],
             }
           : undefined,
@@ -208,7 +211,7 @@ describe("BrowserRecordingService.repick", () => {
   it("replays up to the step, lets the user pick, and hands the locator over as an event before the end", async () => {
     const { service, events, replays, closed } = harness()
     await expect(service.repick(replayRequest)).resolves.toBeUndefined()
-    expect(replays).toEqual([{ workspaceId: WORKSPACE, workflowId: WORKFLOW, environmentId: ENVIRONMENT, nodeId: "delete", beforeNodeId: "delete" }])
+    expect(replays).toEqual([{ workspaceId: WORKSPACE, workflowId: WORKFLOW, environmentId: ENVIRONMENT, stop: { beforeNodeId: "delete" } }])
     expect(events.map((event) => event.kind)).toEqual(["replayed", "picked", "ended"])
     expect(events[1]).toEqual({
       kind: "picked",
@@ -399,5 +402,50 @@ describe("BrowserRecordingService.rerecord", () => {
     await expect(service.rerecord({ ...replayRequest, nodeId })).rejects.toThrow(message)
     expect(replays).toEqual([])
     expect(service.status()).toBeNull()
+  })
+})
+
+describe("BrowserRecordingService.recordAfter", () => {
+  it("replays through the step, then records from the page it left under the recording's ids", async () => {
+    const { service, events, attached, replays } = harness()
+    const status = await service.recordAfter(replayRequest)
+    expect(status).toEqual({
+      recordingId: "recording-1700000000000",
+      workspaceId: WORKSPACE,
+      workflowId: WORKFLOW,
+      operation: "record-after",
+      nodeId: "delete",
+    })
+    expect(replays).toEqual([{ workspaceId: WORKSPACE, workflowId: WORKFLOW, environmentId: ENVIRONMENT, stop: { afterNodeId: "delete" } }])
+    expect(attached[0]?.newStepId()).toBe("browser-1700000000000-1")
+    await service.stop()
+    expect(events.map((event) => event.kind)).toEqual(["replayed", "ended"])
+    expect(service.status()).toBeNull()
+  })
+
+  it("records after a node of another kind", async () => {
+    const { service } = harness()
+    await expect(service.recordAfter({ ...replayRequest, nodeId: "api" })).resolves.toMatchObject({ operation: "record-after", nodeId: "api" })
+    await service.stop()
+  })
+
+  it.each([["start"], ["frame"], ["note"]])("refuses %s, which a run never stops after, before replaying anything", async (nodeId) => {
+    const { service, replays } = harness()
+    await expect(service.recordAfter({ ...replayRequest, nodeId })).rejects.toThrow("Steps can only be recorded after a step that runs.")
+    expect(replays).toEqual([])
+  })
+
+  it("says the step itself is replayed when the replay fails or opens no page", async () => {
+    const failed = harness({ replay: async () => ({ kind: "failed", runId: "run-1", status: "failed" }) })
+    await expect(failed.service.recordAfter(replayRequest)).rejects.toThrow(/^The steps up to and including this one did not pass/)
+    const blank = harness({ replay: async () => ({ kind: "no-page" }) })
+    await expect(blank.service.recordAfter(replayRequest)).rejects.toThrow(/No browser step up to this one opens a page/)
+    expect(blank.service.status()).toBeNull()
+  })
+
+  it("shares the one slot with recording", async () => {
+    const { service } = harness()
+    await service.start(request)
+    await expect(service.recordAfter(replayRequest)).rejects.toThrow(/already running/)
   })
 })

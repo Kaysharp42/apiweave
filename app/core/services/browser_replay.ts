@@ -1,7 +1,7 @@
 import type { Page } from "playwright-core"
 import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import { BrowserSession, type BrowserLaunchSettings } from "../runner/browser/session"
-import type { EnqueueRequest } from "../runner/scheduler"
+import type { EnqueueRequest, ReplayStop } from "../runner/scheduler"
 
 /** The run scheduler, as far as a replay needs it. */
 export interface ReplayScheduler {
@@ -14,17 +14,17 @@ export interface ReplayRequest {
   readonly workspaceId: string
   readonly workflowId: string
   readonly environmentId: string | null
-  /** The run stops before this node. */
-  readonly beforeNodeId: string
+  /** Where the run stops: before a node, or once it has run. */
+  readonly stop: ReplayStop
 }
 
 /** Where a replay left the user. */
 export type ReplayOutcome =
-  /** Every step before the node passed; the page is open on the user's screen, and `close` closes its browser. */
+  /** Every step up to where it stops passed; the page is open on the user's screen, and `close` closes its browser. */
   | { readonly kind: "page"; readonly page: Page; readonly close: () => Promise<void> }
   /** The run did not pass (or was cancelled): its browser is closed. */
   | { readonly kind: "failed"; readonly runId: string; readonly status: RunTerminalStatus }
-  /** The run passed, but no browser step before the node opened a page. */
+  /** The run passed, but no browser step up to where it stops opened a page. */
   | { readonly kind: "no-page" }
 
 /**
@@ -45,7 +45,7 @@ export async function replayToNode(
     workspaceId: request.workspaceId,
     workflowId: request.workflowId,
     selectedEnvironmentId: request.environmentId,
-    replay: { beforeNodeId: request.beforeNodeId, session },
+    replay: { stop: request.stop, session },
   })
   const cancel = (): void => void scheduler.cancel(runId)
   signal.addEventListener("abort", cancel, { once: true })

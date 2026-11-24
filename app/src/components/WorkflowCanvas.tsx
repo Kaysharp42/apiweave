@@ -133,7 +133,7 @@ import { isEditableNode } from "../utils/nodeNavigation";
 import { useNodeEditorWalk } from "../hooks/useNodeEditorWalk";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { grpcCallType, reconcileGrpcStreamEdges } from "../utils/grpcStreamEdges";
-import { Circle, Crosshair, Download, Globe, Variable, Wand2 } from "lucide-react";
+import { Circle, CirclePlus, Crosshair, Download, Globe, Variable, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -1685,6 +1685,7 @@ function WorkflowCanvas({
   const browserStepActions = [
     { key: "repick-element", icon: Crosshair, label: "Re-pick element", offered: stepReplay.canRepick, run: stepReplay.repick },
     { key: "rerecord-from-here", icon: Circle, label: "Re-record from here", offered: stepReplay.canRerecord, run: stepReplay.rerecord },
+    { key: "record-after-step", icon: CirclePlus, label: "Record after this step", offered: stepReplay.canRecordAfter, run: stepReplay.recordAfter },
     { key: "turn-into-extract", icon: Download, label: "Turn into extract", offered: turnIntoExtract.canTurn, run: turnIntoExtract.start },
     { key: "make-variable", icon: Variable, label: "Make value a variable", offered: makeStepVariable.canMake, run: makeStepVariable.start },
   ];

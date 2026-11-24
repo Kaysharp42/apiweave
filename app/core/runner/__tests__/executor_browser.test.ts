@@ -213,7 +213,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       step("submit", { action: "click", locator: role("button", "Sign in") }),
       step("greets", { action: "expect-text", locator: role("heading"), text: "Welcome", match: "contains" }),
     ])
-    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
+    const request = { workspaceId, workflowId, environmentId: null, stop: { beforeNodeId: "submit" } }
     const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
     expect(outcome.kind).toBe("page")
     if (outcome.kind !== "page") return
@@ -227,13 +227,32 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(outcome.page.isClosed()).toBe(true)
   })
 
+  it("replays through a step, running it and nothing after it, and leaves the page it led to", async () => {
+    const workflowId = create([
+      ...loginSteps("{{secrets.TEST_PASSWORD}}"),
+      step("submit", { action: "click", locator: role("button", "Sign in") }),
+      step("greets", { action: "expect-text", locator: role("heading"), text: "Nobody", match: "contains", timeoutMs: 500 }),
+    ])
+    const request = { workspaceId, workflowId, environmentId: null, stop: { afterNodeId: "submit" } }
+    const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
+    // "greets" would fail: the replay passing shows it never ran.
+    expect(outcome.kind).toBe("page")
+    if (outcome.kind !== "page") return
+    try {
+      // The click ran: its navigation lands on the dashboard (throws if it never does).
+      await outcome.page.waitForURL(/\/dashboard\?/, { timeout: 5_000 })
+    } finally {
+      await outcome.close()
+    }
+  })
+
   it("closes the replay's browser and says the run failed when a step before fails", async () => {
     const workflowId = create([
       step("open", { action: "navigate", url: `${base}/login` }),
       step("missing", { action: "click", locator: role("button", "Nope"), timeoutMs: 500 }),
       step("submit", { action: "click", locator: role("button", "Sign in") }),
     ])
-    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
+    const request = { workspaceId, workflowId, environmentId: null, stop: { beforeNodeId: "submit" } }
     const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
     expect(outcome).toMatchObject({ kind: "failed", status: "failed" })
   })
@@ -248,7 +267,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     const broken = await run(workflowId)
     expect(broken.failedNodes).toEqual(["submit"])
 
-    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "submit" }
+    const request = { workspaceId, workflowId, environmentId: null, stop: { beforeNodeId: "submit" } }
     const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
     if (outcome.kind !== "page") throw new Error(`replay: ${JSON.stringify(outcome)}`)
     let picked: PickOutcome
@@ -279,7 +298,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
 
   it("reports no page when no browser step runs before the node", async () => {
     const workflowId = create([step("open", { action: "navigate", url: `${base}/login` })])
-    const request = { workspaceId, workflowId, environmentId: null, beforeNodeId: "open" }
+    const request = { workspaceId, workflowId, environmentId: null, stop: { beforeNodeId: "open" } }
     const outcome = await replayToNode(scheduler, { channel: channel!, headless: true }, request, new AbortController().signal)
     expect(outcome).toEqual({ kind: "no-page" })
   })
@@ -582,6 +601,24 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       const page = await session.currentPage()
       expect(page?.url()).toBe(`${base}/dashboard?user=ada`)
       expect(await page?.locator("#status").innerText()).toBe("idle")
+    } finally {
+      await session.close()
+    }
+  })
+
+  it("stops after a node: it runs, and nothing after it does", async () => {
+    const session = new BrowserSession({ channel: channel!, headless: true })
+    try {
+      const executor = new WorkflowExecutor(executorDeps({ browserSession: session }))
+      const graph = chain(
+        step("open", { action: "navigate", url: `${base}/dashboard?user=ada` }),
+        step("delete", { action: "click", locator: role("button", "Delete"), dialog: "accept" }),
+      ) as unknown as WorkflowGraph
+
+      const output = await executor.executeWorkflow(graph, { stopAfterNodeId: "open" })
+
+      expect(output.results.map((stored) => stored.nodeId)).toEqual(["open"])
+      expect(await (await session.currentPage())?.locator("#status").innerText()).toBe("idle")
     } finally {
       await session.close()
     }

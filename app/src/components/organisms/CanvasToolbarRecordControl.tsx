@@ -8,7 +8,7 @@ const QUIET = "h-8 whitespace-nowrap text-text-secondary dark:text-text-secondar
 const ICON = "w-4 h-4 shrink-0";
 const SPINNER = <Loader2 className={`${ICON} animate-spin motion-reduce:animate-none`} />;
 
-/** Replaying the steps before a re-pick or re-record, or waiting for the user's pick: nothing recorded yet. */
+/** Replaying the steps before a re-pick, a re-record or a record-after, or waiting for the user's pick: nothing recorded yet. */
 const isWaiting = (state: CanvasToolbarRecordProps["state"]): boolean => state === "replaying" || state === "picking";
 
 /** Stop pressed on a replay or a pick cancels it rather than ending a recording. */
@@ -18,7 +18,7 @@ const isCancelling = ({ state, stopping }: CanvasToolbarRecordProps): boolean =>
 function statusText({ state, stepCount, showLabel, stopping }: CanvasToolbarRecordProps): string {
   // Stop on a replay or a pick cancels it rather than ending a recording, and nothing was recorded to count.
   if (stopping && state !== "recording") return "Cancelling…";
-  if (state === "replaying") return showLabel ? "Replaying the steps before…" : "Replaying…";
+  if (state === "replaying") return showLabel ? "Replaying the steps…" : "Replaying…";
   if (state === "picking") return showLabel ? "Click the element in the browser" : "Picking…";
   const steps = stepCount === 1 ? "1 step" : `${stepCount} steps`;
   return showLabel ? `Recording — ${steps}` : steps;

@@ -1361,6 +1361,9 @@ export const browser = {
   rerecordFrom: (request: BrowserReplayRequest): Promise<BrowserRecordingStatus | null> =>
     getBrowserBridge()?.rerecordFrom(request).catch(unwrapRemoteError) ??
     browserDesktopOnly(),
+  recordAfter: (request: BrowserReplayRequest): Promise<BrowserRecordingStatus | null> =>
+    getBrowserBridge()?.recordAfter(request).catch(unwrapRemoteError) ??
+    browserDesktopOnly(),
   /** Recording events; a no-op outside the desktop app, where nothing can record. */
   onRecording: (callback: (event: BrowserRecordingEvent) => void): (() => void) =>
     getBrowserBridge()?.onRecording(callback) ?? (() => undefined),

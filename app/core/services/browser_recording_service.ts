@@ -51,6 +51,9 @@ export interface BrowserRecordingDeps {
 
 const ENV_PLACEHOLDER = /\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
+/** Nodes a run never stops after: Start and End run nothing, a frame and a note never run. */
+const NOT_A_STEP: ReadonlySet<unknown> = new Set(["start", "end", "group", "note"])
+
 /** The one operation in progress, and how to end it at whatever stage it has reached. */
 interface Active {
   readonly status: BrowserRecordingStatus
@@ -58,8 +61,8 @@ interface Active {
 }
 
 /**
- * Records a page into browser steps, re-picks a step's element and re-records
- * from a step, for one workflow at a time.
+ * Records a page into browser steps, re-picks a step's element, re-records
+ * from a step and records after one, for one workflow at a time.
  *
  * Privileged, and off the router: it opens a window on the user's screen and
  * sees everything typed into it, so no MCP client may reach it. It holds the
@@ -120,7 +123,29 @@ export class BrowserRecordingService {
   public async rerecord(input: unknown): Promise<BrowserRecordingStatus | null> {
     const request = this.replayRequest(input)
     if (this.browserNode(request).type !== "browser") throw new ValidationError("Only a browser step can be re-recorded from.")
-    return this.afterReplay(request, "rerecord", async ({ page, close, active, values }) => {
+    return this.recordOnReplayedPage(request, "rerecord")
+  }
+
+  /**
+   * Replay the workflow through a step — it runs, nothing after it does — then
+   * record from the page it left. The canvas puts what is recorded after that
+   * step, before whatever followed it. Any node a run can stop after will do,
+   * as long as a browser step up to it opens a page.
+   */
+  public async recordAfter(input: unknown): Promise<BrowserRecordingStatus | null> {
+    const request = this.replayRequest(input)
+    if (NOT_A_STEP.has(this.browserNode(request).type)) throw new ValidationError("Steps can only be recorded after a step that runs.")
+    return this.recordOnReplayedPage(request, "record-after")
+  }
+
+  /** Stop whatever is in progress: cancel the replay, close the picking browser, or end the recording. */
+  public async stop(): Promise<void> {
+    await this.active?.stop()
+  }
+
+  /** Replay to the request's step, then record on the page it left. Null when the user stopped the replay. */
+  private recordOnReplayedPage(request: BrowserReplayRequest, operation: "rerecord" | "record-after"): Promise<BrowserRecordingStatus | null> {
+    return this.afterReplay(request, operation, async ({ page, close, active, values }) => {
       const attach = this.deps.attach ?? ((target: Page, options: RecordingOptions) => BrowserRecording.attach(target, options))
       const publisher = this.publisher(active)
       try {
@@ -144,11 +169,6 @@ export class BrowserRecordingService {
     })
   }
 
-  /** Stop whatever is in progress: cancel the replay, close the picking browser, or end the recording. */
-  public async stop(): Promise<void> {
-    await this.active?.stop()
-  }
-
   /**
    * As the only operation: replay up to the request's step, then hand the page
    * it left to `then`. Null, without calling `then`, when the user stopped it.
@@ -160,7 +180,7 @@ export class BrowserRecordingService {
    */
   private afterReplay<T>(
     request: BrowserReplayRequest,
-    operation: "repick" | "rerecord",
+    operation: "repick" | "rerecord" | "record-after",
     then: (replayed: { page: Page; close: () => Promise<void>; active: Active; values: RecordingValues }) => Promise<T | null>,
   ): Promise<T | null> {
     return this.exclusively(async () => {
@@ -269,29 +289,36 @@ export class BrowserRecordingService {
 
   /**
    * Replay up to the request's step, on the operation `afterReplay` already
-   * made active, so Stop cancels the run. The page it left, or null when the
-   * user stopped it; throws when the steps before failed or opened no page.
-   * Publishing `replayed` is the caller's job, once the page is really theirs.
+   * made active, so Stop cancels the run: through the step for a record-after,
+   * which starts from the page the step leaves, else up to it. The page it
+   * left, or null when the user stopped it; throws when the steps replayed
+   * failed or opened no page. Publishing `replayed` is the caller's job, once
+   * the page is really theirs.
    */
   private async replayToStep(
     active: Active,
     request: BrowserReplayRequest,
     signal: AbortSignal,
   ): Promise<{ page: Page; close: () => Promise<void>; active: Active } | null> {
+    const through = active.status.operation === "record-after"
+    const replayed = through ? "The steps up to and including this one" : "The steps before this one"
     let outcome: ReplayOutcome
     try {
-      outcome = await this.deps.replay({ ...request, beforeNodeId: request.nodeId }, signal)
+      const stop = through ? { afterNodeId: request.nodeId } : { beforeNodeId: request.nodeId }
+      outcome = await this.deps.replay({ workspaceId: request.workspaceId, workflowId: request.workflowId, environmentId: request.environmentId, stop }, signal)
     } catch (error) {
       this.end(active)
-      throw new ValidationError(`The steps before this one could not be replayed: ${messageOf(error)}`)
+      throw new ValidationError(`${replayed} could not be replayed: ${messageOf(error)}`)
     }
     if (outcome.kind !== "page") {
       this.end(active)
       if (outcome.kind === "failed" && outcome.status === "cancelled") return null
       throw new ValidationError(
         outcome.kind === "no-page"
-          ? "No browser step before this one opens a page. Re-pick and re-record start from the page the steps before leave open: use Record instead."
-          : "The steps before this one did not pass, so there is no page to continue from. The run is in the run history: fix the step that failed first.",
+          ? through
+            ? "No browser step up to this one opens a page, so there is no page to record on: use Record instead."
+            : "No browser step before this one opens a page. Re-pick and re-record start from the page the steps before leave open: use Record instead."
+          : `${replayed} did not pass, so there is no page to continue from. The run is in the run history: fix the step that failed first.`,
       )
     }
     active.stop = () => outcome.close()

@@ -37,6 +37,43 @@ describe("WorkflowExecutor", () => {
     })
   })
 
+  describe("stopping at a node", () => {
+    // Start → a → b → End, and a step nothing leads to from Start.
+    const workflow: WorkflowGraph = {
+      nodes: [
+        { nodeId: "start", type: "start" },
+        { nodeId: "a", type: "delay", config: { duration: 0 } },
+        { nodeId: "b", type: "delay", config: { duration: 0 } },
+        { nodeId: "loose", type: "delay", label: "Loose step", config: { duration: 0 } },
+        { nodeId: "end", type: "end" },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "a" },
+        { edgeId: "e2", source: "a", target: "b" },
+        { edgeId: "e3", source: "b", target: "end" },
+      ],
+    }
+
+    it("passes when it gets there, before the node or after it", async () => {
+      const before = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { stopBeforeNodeId: "b" })
+      expect(before.status).toBe("passed")
+      expect(before.nodeStatuses["b"]).toBeUndefined()
+      const after = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { stopAfterNodeId: "a" })
+      expect(after.status).toBe("passed")
+      expect(after.nodeStatuses["a"]).toBe("passed")
+      expect(after.nodeStatuses["b"]).toBeUndefined()
+    })
+
+    it.each([["stopBeforeNodeId"], ["stopAfterNodeId"]] as const)(
+      "fails, naming the node, when the run ends without reaching it (%s)",
+      async (option) => {
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { [option]: "loose" })
+        expect(output.status).toBe("failed")
+        expect(output.failureMessage).toBe("The run ended without reaching Loose step, where it was to stop: nothing that ran leads to it")
+      },
+    )
+  })
+
   describe("variable substitution", () => {
     it("substitutes workflow variables", async () => {
       const workflow: WorkflowGraph = {

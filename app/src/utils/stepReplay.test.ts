@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
-import { canRepick, canRerecordFrom, removeStepsFrom } from "./stepReplay";
+import { canRecordAfter, canRepick, canRerecordFrom, removeStepsFrom } from "./stepReplay";
 
 const node = (id: string, type: string, config: Record<string, unknown> = {}, parentId?: string): CanvasNode => ({
   id,
@@ -53,6 +53,19 @@ describe("canRepick", () => {
     expect(canRepick(graph, "a")).toBe(false);
   });
 
+  it("is not offered on a step Start does not lead to, nor after a page opened off the path to it", () => {
+    const graph = workflow();
+    const loose: CanvasGraph = { nodes: [...graph.nodes, open("draft"), click("x")], edges: [...graph.edges, edge("draft", "x")] };
+    expect(canRepick(loose, "x")).toBe(false);
+    expect(canRerecordFrom(loose, "x")).toBe(false);
+    // A page opened by a step Start does not lead to never opens in a run.
+    const offPath: CanvasGraph = {
+      nodes: [node("start", "start"), node("api", "http-request"), open("draft"), click("x")],
+      edges: [edge("start", "api"), edge("api", "x"), edge("draft", "x")],
+    };
+    expect(canRepick(offPath, "x")).toBe(false);
+  });
+
   it("is not offered when the rest of the step is invalid, since main would refuse the re-pick", () => {
     const graph = workflow();
     const invalid: CanvasGraph = {
@@ -84,6 +97,48 @@ describe("canRerecordFrom", () => {
     // Merged into from two places, or branching out itself.
     expect(canRerecordFrom({ ...branch, edges: [...branch.edges, edge("start", "a")] }, "a")).toBe(false);
     expect(canRerecordFrom({ ...branch, edges: [...branch.edges, edge("a", "end")] }, "a")).toBe(false);
+  });
+});
+
+describe("canRecordAfter", () => {
+  it.each([
+    ["the step that opens the page: it runs in the replay", "open", true],
+    ["a step in the middle of a chain", "a", true],
+    ["an HTTP step after a page is opened", "api", true],
+    ["the last step before End", "c", true],
+    ["Start", "start", false],
+    ["End", "end", false],
+    ["a frame", "frame", false],
+  ])("%s → %s", (_what, nodeId, expected) => {
+    expect(canRecordAfter(workflow(), nodeId)).toBe(expected);
+  });
+
+  it("is offered on a last step with nothing after it", () => {
+    const graph = workflow();
+    expect(canRecordAfter({ ...graph, edges: graph.edges.filter((e) => e.id !== "c-end") }, "c")).toBe(true);
+  });
+
+  it("is not offered before any browser step has opened a page", () => {
+    const graph: CanvasGraph = { nodes: [node("start", "start"), node("api", "http-request"), open("open")], edges: [edge("start", "api"), edge("api", "open")] };
+    expect(canRecordAfter(graph, "api")).toBe(false);
+  });
+
+  it("is not offered on a step Start does not lead to: a run never gets there", () => {
+    const graph = workflow();
+    const loose: CanvasGraph = {
+      nodes: [...graph.nodes, open("draft"), node("draft-api", "http-request")],
+      edges: [...graph.edges, edge("draft", "draft-api")],
+    };
+    expect(canRecordAfter(loose, "draft")).toBe(false);
+    expect(canRecordAfter(loose, "draft-api")).toBe(false);
+    expect(canRecordAfter({ ...graph, edges: graph.edges.filter((e) => e.id !== "start-open") }, "a")).toBe(false);
+  });
+
+  it("is not offered where the new steps would become a parallel branch", () => {
+    const graph = workflow();
+    // Two ways out, or one from a handle.
+    expect(canRecordAfter({ ...graph, edges: [...graph.edges, edge("a", "end")] }, "a")).toBe(false);
+    expect(canRecordAfter({ ...graph, edges: graph.edges.map((e) => (e.id === "a-b" ? edge("a", "b", "pass") : e)) }, "a")).toBe(false);
   });
 });
 
