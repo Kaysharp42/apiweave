@@ -129,10 +129,12 @@ function chainFrom(graph: CanvasGraph, nodeId: string): { chain: string[]; next:
  * before them to what followed them, so the recorded steps can be spliced in
  * between (`placeRecordedStep` with the returned anchor).
  *
- * `frameId` is the frame `nodeId` was in, which the recorded steps go back
- * into: it stays even when this leaves it empty, because they refill it in
- * the same edit. Another frame the replaced steps leave empty goes. Null when
- * `nodeId` cannot be re-recorded from.
+ * `frameId` is the frame `nodeId` was in when the recorder made it, which the
+ * recorded steps go back into: it stays even when this leaves it empty, because
+ * they refill it in the same edit. A frame the user made (a Group) is never
+ * returned, so it goes like any other frame the replaced steps leave empty,
+ * and stays while it holds other nodes. Null `frameId` when there is no such
+ * frame; the whole result is null when `nodeId` cannot be re-recorded from.
  */
 export function removeStepsFrom(
   graph: CanvasGraph,

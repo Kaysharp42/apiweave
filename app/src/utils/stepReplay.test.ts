@@ -180,6 +180,15 @@ describe("removeStepsFrom", () => {
     expect(result?.graph.edges.map((e) => [e.source, e.target])).toEqual([["start", "open"], ["open", "end"]]);
   });
 
+  it("takes out a user-made group the replaced steps leave empty, and keeps one that still holds other nodes", () => {
+    const build = (extra: CanvasNode[]): CanvasGraph => ({
+      nodes: [node("start", "start"), open("open"), node("group-1", "group"), click("a", "group-1"), ...extra, node("end", "end")],
+      edges: [edge("start", "open"), edge("open", "a"), edge("a", "end")],
+    });
+    expect(removeStepsFrom(build([]), "a")?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "end"]);
+    expect(removeStepsFrom(build([click("keep", "group-1")]), "a")?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "group-1", "keep", "end"]);
+  });
+
   it("returns no frame for a frame the user made, whose children are not on the recorder's grid", () => {
     const graph: CanvasGraph = {
       nodes: [node("start", "start"), open("open"), node("group-1", "group"), click("a", "group-1"), node("end", "end")],
