@@ -5,9 +5,10 @@ export interface BrowserRecordingStatus {
   readonly workflowId: string
   /**
    * `record` from a start address; `rerecord` replaces the steps from
-   * `nodeId` on; `repick` picks a new element for `nodeId` and records nothing.
+   * `nodeId` on; `record-after` adds steps after `nodeId`, which stays;
+   * `repick` picks a new element for `nodeId` and records nothing.
    */
-  readonly operation: "record" | "rerecord" | "repick"
-  /** The step a re-record or a re-pick starts from. */
+  readonly operation: "record" | "rerecord" | "record-after" | "repick"
+  /** The step a re-record, a record-after or a re-pick starts from. */
   readonly nodeId?: string
 }

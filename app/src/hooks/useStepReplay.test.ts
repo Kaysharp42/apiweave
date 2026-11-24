@@ -18,6 +18,7 @@ vi.mock("../utils/apiweaveClient", () => ({
     onRecording: vi.fn(),
     repickElement: vi.fn(),
     rerecordFrom: vi.fn(),
+    recordAfter: vi.fn(),
   },
 }));
 
@@ -72,6 +73,20 @@ describe("useStepReplay", () => {
     expect(result.current.canRepick("delete")).toBe(true);
     expect(result.current.canRerecord("delete")).toBe(true);
     expect(result.current.canRepick("open")).toBe(false);
+  });
+
+  it("offers record-after on the step that opens the page and on the steps after it", () => {
+    const { result } = setup();
+    expect(result.current.canRecordAfter("open")).toBe(true);
+    expect(result.current.canRecordAfter("delete")).toBe(true);
+  });
+
+  it("saves first, then records after the step", async () => {
+    vi.mocked(browser.recordAfter).mockResolvedValue(null);
+    const { result, saveWorkflowRef } = setup();
+    act(() => result.current.recordAfter("open"));
+    await waitFor(() => expect(browser.recordAfter).toHaveBeenCalledWith({ workspaceId: "ws", workflowId: "wf", environmentId: "env", nodeId: "open" }));
+    expect(saveWorkflowRef.current).toHaveBeenCalledWith(false);
   });
 
   it("saves first, then puts the picked element on the step and changes nothing else", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
-import { canRepick, canRerecordFrom, removeStepsFrom } from "./stepReplay";
+import { canRecordAfter, canRepick, canRerecordFrom, removeStepsFrom } from "./stepReplay";
 
 const node = (id: string, type: string, config: Record<string, unknown> = {}, parentId?: string): CanvasNode => ({
   id,
@@ -84,6 +84,37 @@ describe("canRerecordFrom", () => {
     // Merged into from two places, or branching out itself.
     expect(canRerecordFrom({ ...branch, edges: [...branch.edges, edge("start", "a")] }, "a")).toBe(false);
     expect(canRerecordFrom({ ...branch, edges: [...branch.edges, edge("a", "end")] }, "a")).toBe(false);
+  });
+});
+
+describe("canRecordAfter", () => {
+  it.each([
+    ["the step that opens the page: it runs in the replay", "open", true],
+    ["a step in the middle of a chain", "a", true],
+    ["an HTTP step after a page is opened", "api", true],
+    ["the last step before End", "c", true],
+    ["Start", "start", false],
+    ["End", "end", false],
+    ["a frame", "frame", false],
+  ])("%s → %s", (_what, nodeId, expected) => {
+    expect(canRecordAfter(workflow(), nodeId)).toBe(expected);
+  });
+
+  it("is offered on a last step with nothing after it", () => {
+    const graph = workflow();
+    expect(canRecordAfter({ ...graph, edges: graph.edges.filter((e) => e.id !== "c-end") }, "c")).toBe(true);
+  });
+
+  it("is not offered before any browser step has opened a page", () => {
+    const graph: CanvasGraph = { nodes: [node("start", "start"), node("api", "http-request"), open("open")], edges: [edge("start", "api"), edge("api", "open")] };
+    expect(canRecordAfter(graph, "api")).toBe(false);
+  });
+
+  it("is not offered where the new steps would become a parallel branch", () => {
+    const graph = workflow();
+    // Two ways out, or one from a handle.
+    expect(canRecordAfter({ ...graph, edges: [...graph.edges, edge("a", "end")] }, "a")).toBe(false);
+    expect(canRecordAfter({ ...graph, edges: graph.edges.map((e) => (e.id === "a-b" ? edge("a", "b", "pass") : e)) }, "a")).toBe(false);
   });
 });
 

@@ -217,11 +217,17 @@ which use the browser's own trust store.
 - **Re-record replaces a straight line of browser steps only.** It replaces
   the step and the browser steps after it until another kind of step, a branch
   or a merge; the steps after that are kept.
-- **Re-pick and re-record need the steps before them to pass.** Both replay the
-  workflow up to the step first, so a failing earlier step has to be fixed, or
-  re-picked, before either can continue.
+- **Re-pick, re-record and record-after need the steps they replay to pass.**
+  Each replays the workflow up to the step first (through it, for **Record
+  after this step**), so a failing earlier step has to be fixed, or re-picked,
+  before any can continue.
+- **Record after this step inserts, and never branches.** A run drives every
+  branch on one page, one step at a time, so a parallel branch of browser
+  steps would act on the page the other branch left; the action is not offered
+  on a step with more than one way out.
 - **Recording is a desktop-app feature.** It is not available over MCP and not in
-  the CLI, and neither are **Re-pick element** and **Re-record from here**.
+  the CLI, and neither are **Re-pick element**, **Re-record from here** and
+  **Record after this step**.
 - **`browser_inspect` has no `url` mode.** It reads the page a workflow run left
   open, so inspecting an address means adding an `Open a page` step and
   inspecting after it. The run it makes is an ordinary run: it sends real

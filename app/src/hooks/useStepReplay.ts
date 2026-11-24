@@ -6,10 +6,11 @@ import { useBrowserRecordingStore } from "../stores/BrowserRecordingStore";
 import type { CanvasNode } from "../types/CanvasNode";
 import type { UseStepReplayParams } from "../types/UseStepReplayParams";
 import type { UseStepReplayResult } from "../types/UseStepReplayResult";
-import { canRepick, canRerecordFrom } from "../utils/stepReplay";
+import { canRecordAfter, canRepick, canRerecordFrom } from "../utils/stepReplay";
 
-const rerecordLabel = (): string =>
-  `Re-recorded ${new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+const stamp = (): string => new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const rerecordLabel = (): string => `Re-recorded ${stamp()}`;
+const recordAfterLabel = (): string => `Recording ${stamp()}`;
 
 /** The node with `locator` in place of its own; everything else about the step stays. */
 function withLocator(node: CanvasNode, locator: BrowserLocator): CanvasNode {
@@ -18,11 +19,12 @@ function withLocator(node: CanvasNode, locator: BrowserLocator): CanvasNode {
 }
 
 /**
- * **Re-pick element** and **Re-record from here** on a browser step. Both
- * save pending edits, then main replays the workflow up to the step in a
- * browser on the user's screen. A re-pick then puts the element the user
- * picks on that step and changes nothing else; a re-record's steps are placed
- * by `useBrowserRecording`, in place of the ones they replace.
+ * **Re-pick element**, **Re-record from here** and **Record after this step**
+ * on a step. Each saves pending edits, then main replays the workflow up to
+ * the step — through it, for a record-after — in a browser on the user's
+ * screen. A re-pick then puts the element the user picks on that step and
+ * changes nothing else; recorded steps are placed by `useBrowserRecording`,
+ * in place of the ones a re-record replaces, or after a record-after's step.
  */
 export function useStepReplay(params: UseStepReplayParams): UseStepReplayResult {
   const { workflowId, workspaceId, environmentId, isHydrated, isRunning, nodesRef, edgesRef, setNodes, saveWorkflowRef } = params;
@@ -95,10 +97,19 @@ export function useStepReplay(params: UseStepReplayParams): UseStepReplayResult 
     [replay],
   );
 
+  const recordAfter = useCallback(
+    (nodeId: string) => {
+      void replay(nodeId, (request) => useBrowserRecordingStore.getState().recordAfter(request, recordAfterLabel()));
+    },
+    [replay],
+  );
+
   return {
     canRepick: (nodeId) => ready && canRepick(graph(), nodeId),
     canRerecord: (nodeId) => ready && canRerecordFrom(graph(), nodeId),
+    canRecordAfter: (nodeId) => ready && canRecordAfter(graph(), nodeId),
     repick,
     rerecord,
+    recordAfter,
   };
 }

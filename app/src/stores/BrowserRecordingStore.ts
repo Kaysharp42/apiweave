@@ -13,15 +13,15 @@ interface BrowserRecordingState {
   readonly phase: RecordingPhase;
   /** Stop has been pressed: the phase stays put until `ended`, so what it interrupted is still known. */
   readonly stopping: boolean;
-  /** What is running: a recording from a start address, a re-record from a step, or a re-pick. */
+  /** What is running: a recording from a start address, a re-record from a step, a record after one, or a re-pick. */
   readonly operation: BrowserRecordingStatus["operation"];
-  /** The step a re-record replaces from, or a re-pick picks for. */
+  /** The step a re-record replaces from, a record-after records after, or a re-pick picks for. */
   readonly nodeId: string | null;
   /** The workflow being recorded into, from the moment the user starts. */
   readonly workflowId: string | null;
   /** Known from the first event or from the start's answer, whichever comes first. */
   readonly recordingId: string | null;
-  /** The node the steps follow. Null after a renderer reload, and for a re-record until its first step: the canvas works it out. */
+  /** The node the steps follow: a record-after's step from the start. Null after a renderer reload, and for a re-record until its first step: the canvas works it out. */
   readonly anchorId: string | null;
   /** The frame the steps go in, once a re-record has put them back in the frame of the step it replaces; null otherwise, and the canvas names one after the recording. */
   readonly frameId: string | null;
@@ -44,6 +44,8 @@ interface BrowserRecordingState {
   start(request: BrowserRecordingRequest, anchorId: string | null, frameLabel: string): Promise<void>;
   /** Replay up to a step, then record from there; the steps replace that step and the ones after it. */
   rerecord(request: BrowserReplayRequest, frameLabel: string): Promise<void>;
+  /** Replay through a step, then record from there; the steps go after that step, which stays. */
+  recordAfter(request: BrowserReplayRequest, frameLabel: string): Promise<void>;
   /** Replay up to a step, then let the user pick its element; it arrives as a `picked` event. */
   repick(request: BrowserReplayRequest): Promise<void>;
   stop(): Promise<void>;
@@ -117,15 +119,14 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
 
   rerecord: async (request, frameLabel) => {
     if (!claim(fresh("rerecord", "replaying", request.workflowId, { nodeId: request.nodeId, frameLabel }))) return;
-    try {
-      const status = await browser.rerecordFrom(request);
-      // Null: stopped during the replay, and `ended` has already said so.
-      const state = get();
-      if (status !== null && state.phase === "replaying" && !state.stopping) set({ phase: "recording", recordingId: status.recordingId });
-    } catch (error) {
-      set({ phase: "idle" });
-      toast.error(messageOf(error, "The steps could not be re-recorded"));
-    }
+    await recordAfterReplay(() => browser.rerecordFrom(request), "The steps could not be re-recorded");
+  },
+
+  recordAfter: async (request, frameLabel) => {
+    // The anchor is known from the start: nothing is taken out first, as a re-record does.
+    const fields = { nodeId: request.nodeId, anchorId: request.nodeId, frameLabel };
+    if (!claim(fresh("record-after", "replaying", request.workflowId, fields))) return;
+    await recordAfterReplay(() => browser.recordAfter(request), "The steps could not be recorded");
   },
 
   repick: async (request) => {
@@ -160,6 +161,21 @@ export const useBrowserRecordingStore = create<BrowserRecordingState>()((set, ge
   },
 }));
 
+/** A re-record's or a record-after's replay, then its recording: the slot moves to `recording` once main has attached. */
+async function recordAfterReplay(begin: () => Promise<BrowserRecordingStatus | null>, failure: string): Promise<void> {
+  try {
+    const status = await begin();
+    // Null: stopped during the replay, and `ended` has already said so.
+    const state = useBrowserRecordingStore.getState();
+    if (status !== null && state.phase === "replaying" && !state.stopping) {
+      useBrowserRecordingStore.setState({ phase: "recording", recordingId: status.recordingId });
+    }
+  } catch (error) {
+    useBrowserRecordingStore.setState({ phase: "idle" });
+    toast.error(messageOf(error, failure));
+  }
+}
+
 /** Take the one slot for a new operation, unless one is already running. */
 function claim(state: Partial<BrowserRecordingState>): boolean {
   if (useBrowserRecordingStore.getState().phase !== "idle") return false;
@@ -168,7 +184,7 @@ function claim(state: Partial<BrowserRecordingState>): boolean {
   return true;
 }
 
-/** What the user hears when a recording or a re-record ends; a re-pick, or one stopped before it recorded, says nothing. */
+/** What the user hears when a recording, a re-record or a record-after ends; a re-pick, or one stopped before it recorded, says nothing. */
 function announceEnd(state: BrowserRecordingState): void {
   if (state.operation === "repick") return;
   // A replay the user did not stop that ended here recorded nothing either.
@@ -176,6 +192,10 @@ function announceEnd(state: BrowserRecordingState): void {
   const count = state.steps.length;
   if (state.operation === "rerecord" && count === 0) {
     toast.info("Nothing was re-recorded, so the steps are unchanged");
+    return;
+  }
+  if (state.operation === "record-after" && count === 0) {
+    toast.info("Nothing was recorded, so the steps are unchanged");
     return;
   }
   toast.success(count === 1 ? "Recorded 1 step" : `Recorded ${count} steps`);

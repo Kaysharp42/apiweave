@@ -1052,6 +1052,7 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(BROWSER_CHANNELS.recordingStatus, requireTrustedSender(() => recordingService.status()))
     ipcMain.handle(BROWSER_CHANNELS.repickElement, requireTrustedSender((request: unknown) => recordingService.repick(request)))
     ipcMain.handle(BROWSER_CHANNELS.rerecordFrom, requireTrustedSender((request: unknown) => recordingService.rerecord(request)))
+    ipcMain.handle(BROWSER_CHANNELS.recordAfter, requireTrustedSender((request: unknown) => recordingService.recordAfter(request)))
 
     // Version history. Off the router like network:* — see registerGitHandlers.
     const hostCli = new HostCliService()

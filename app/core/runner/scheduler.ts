@@ -158,13 +158,18 @@ export interface RunInspection {
 }
 
 /**
- * Re-pick an element or re-record from a step: run the workflow up to a node
- * in a browser the caller owns, so the page it leaves is still open, and
- * still on the user's screen, once the run is over.
+ * Where a replay stops: before a node, which does not run (re-pick, re-record
+ * from it), or after it, which runs while nothing after it does (record after it).
+ */
+export type ReplayStop = { readonly beforeNodeId: string } | { readonly afterNodeId: string }
+
+/**
+ * Re-pick an element, re-record from a step or record after one: run the
+ * workflow up to a node in a browser the caller owns, so the page it leaves is
+ * still open, and still on the user's screen, once the run is over.
  */
 export interface RunReplay {
-  /** The run stops before this node. */
-  readonly beforeNodeId: string
+  readonly stop: ReplayStop
   /** The run's browser. The scheduler never closes it: the caller takes the page over and closes it. */
   readonly session: BrowserSession
 }
@@ -258,7 +263,7 @@ export class RunScheduler {
     if (!workflow) {
       throw new NotFoundError(`workflow ${request.workflowId} not found`)
     }
-    checkStopBefore(request, workflow.nodes)
+    checkStopAt(request, workflow.nodes)
     // Inherit the workflow's stored `selectedEnvironmentId` when the caller
     // omits it (an MCP agent running a workflow without a UI dropdown, or the
     // canvas's Run button before the environment picker has a value). Without
@@ -314,7 +319,12 @@ export class RunScheduler {
    * caller owns and closes. Undefined for an ordinary run: the executor
    * launches and closes one itself.
    */
-  private pageHandOff(runId: string): { readonly inspectSession?: BrowserSession; readonly session?: BrowserSession; readonly stopBeforeNodeId?: string } {
+  private pageHandOff(runId: string): {
+    readonly inspectSession?: BrowserSession
+    readonly session?: BrowserSession
+    readonly stopBeforeNodeId?: string
+    readonly stopAfterNodeId?: string
+  } {
     const inspection = this.runInspections.get(runId)
     if (inspection !== undefined) {
       // Headless whoever asked: nothing is shown to anyone.
@@ -322,7 +332,10 @@ export class RunScheduler {
       return { inspectSession, session: inspectSession, ...(inspection.beforeNodeId !== undefined ? { stopBeforeNodeId: inspection.beforeNodeId } : {}) }
     }
     const replay = this.runReplays.get(runId)
-    return replay === undefined ? {} : { session: replay.session, stopBeforeNodeId: replay.beforeNodeId }
+    if (replay === undefined) return {}
+    return "afterNodeId" in replay.stop
+      ? { session: replay.session, stopAfterNodeId: replay.stop.afterNodeId }
+      : { session: replay.session, stopBeforeNodeId: replay.stop.beforeNodeId }
   }
 
   /** A finished run's per-node results, for a load run to fold before clearing them. */
@@ -428,7 +441,7 @@ export class RunScheduler {
     this.deps.emitProgress?.(runId, { kind: "run.started", runId })
     const inspection = this.runInspections.get(runId)
     // The run's browser outlives the executor when someone reads its page afterwards.
-    const { inspectSession, session: callerSession, stopBeforeNodeId } = this.pageHandOff(runId)
+    const { inspectSession, session: callerSession, stopBeforeNodeId, stopAfterNodeId } = this.pageHandOff(runId)
 
     try {
       const run = this.deps.runs.getById(runId)
@@ -600,6 +613,7 @@ export class RunScheduler {
           ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph, workflow.variables) }
           : {}),
         ...(stopBeforeNodeId !== undefined ? { stopBeforeNodeId } : {}),
+        ...(stopAfterNodeId !== undefined ? { stopAfterNodeId } : {}),
       })
 
       if (inspection !== undefined && inspectSession !== undefined && !controller.signal.aborted) {
@@ -977,14 +991,21 @@ export function requestDestinations(
   return [...destinations]
 }
 
-/** An inspection or a replay stops before a node: it must be in the workflow, and a run does one or the other. */
-function checkStopBefore(request: EnqueueRequest, nodes: readonly { readonly nodeId: string }[]): void {
+/** The node an inspection or a replay stops at, before or after it. */
+function stopNodeId(request: EnqueueRequest): string | undefined {
+  const stop = request.replay?.stop
+  if (stop !== undefined) return "afterNodeId" in stop ? stop.afterNodeId : stop.beforeNodeId
+  return request.inspect?.beforeNodeId
+}
+
+/** An inspection or a replay stops at a node: it must be in the workflow, and a run does one or the other. */
+function checkStopAt(request: EnqueueRequest, nodes: readonly { readonly nodeId: string }[]): void {
   if (request.inspect !== undefined && request.replay !== undefined) {
     throw new ValidationError("A run cannot both inspect its page and hand it over")
   }
-  const stopBefore = request.inspect?.beforeNodeId ?? request.replay?.beforeNodeId
-  if (stopBefore !== undefined && !nodes.some((node) => node.nodeId === stopBefore)) {
-    throw new ValidationError(`node ${stopBefore} is not in workflow ${request.workflowId}`)
+  const stopAt = stopNodeId(request)
+  if (stopAt !== undefined && !nodes.some((node) => node.nodeId === stopAt)) {
+    throw new ValidationError(`node ${stopAt} is not in workflow ${request.workflowId}`)
   }
 }
 

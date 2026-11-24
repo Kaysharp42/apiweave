@@ -68,6 +68,21 @@ export function canRerecordFrom(graph: CanvasGraph, nodeId: string): boolean {
 }
 
 /**
+ * **Record after this step**: a node a run stops after — not Start, End or a
+ * frame — once a browser step up to it, itself included, has opened a page.
+ * It has no way out, or one plain one that the recorded steps are spliced
+ * into (`placeRecordedStep`): a second way out would make them a parallel
+ * branch, whose steps a run interleaves with the other branch's on its one page.
+ */
+export function canRecordAfter(graph: CanvasGraph, nodeId: string): boolean {
+  const node = graph.nodes.find((candidate) => candidate.id === nodeId);
+  if (node === undefined || node.type === "start" || node.type === "end" || node.type === FRAME_NODE_TYPE) return false;
+  const outgoing = graph.edges.filter((edge) => edge.source === nodeId);
+  if (outgoing.length > 0 && soleExit(graph, nodeId) === undefined) return false;
+  return isBrowser(node) || hasBrowserStepBefore(graph, nodeId);
+}
+
+/**
  * The steps a re-record from `nodeId` replaces: it, and each browser step it
  * leads on to in a straight line — one plain connection out, one way in —
  * stopping at the first step of another kind, a branch or a merge. Then what

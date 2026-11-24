@@ -28,15 +28,18 @@ const stepPrefix = (recordingId: string): string => `browser-${recordingId.repla
 
 /**
  * After a renderer reload the store has lost where the steps go. They follow
- * the last step this recording already put on the canvas, else Start.
+ * the last step this recording already put on the canvas, else the step a
+ * record-after records after (`afterId`), else Start.
  */
-function resumedAnchor(nodes: readonly CanvasNode[], recordingId: string): string | null {
+function resumedAnchor(nodes: readonly CanvasNode[], recordingId: string, afterId: string | null): string | null {
   const prefix = stepPrefix(recordingId);
   const last = nodes
     .filter((node) => node.id.startsWith(prefix))
     .sort((a, b) => Number(a.id.slice(prefix.length)) - Number(b.id.slice(prefix.length)))
     .at(-1);
-  return last?.id ?? anchorFor(nodes.map((node) => ({ ...node, selected: false })));
+  if (last !== undefined) return last.id;
+  if (afterId !== null && nodes.some((node) => node.id === afterId)) return afterId;
+  return anchorFor(nodes.map((node) => ({ ...node, selected: false })));
 }
 
 /**
@@ -101,7 +104,8 @@ function planPlacement(
     return { graph, placement: placementIn(store.anchorId, store.frameId, recordingId, store.frameLabel), replaced: null };
   }
   // After a reload: the steps follow this recording's last step, in its frame.
-  const anchorId = resumedAnchor(graph.nodes, recordingId) ?? "";
+  const afterId = store.operation === "record-after" ? store.nodeId : null;
+  const anchorId = resumedAnchor(graph.nodes, recordingId, afterId) ?? "";
   const anchor = graph.nodes.find((node) => node.id === anchorId);
   const frameId = anchor?.type === "browser" && anchorId.startsWith(stepPrefix(recordingId)) ? anchor.parentId : undefined;
   return { graph, placement: placementIn(anchorId, frameId, recordingId, store.frameLabel), replaced: null };

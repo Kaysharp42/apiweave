@@ -31,7 +31,7 @@ describe("CanvasToolbarRecordControl", () => {
   });
 
   it.each([
-    ["replaying", "Replaying the steps before…"],
+    ["replaying", "Replaying the steps…"],
     ["picking", "Click the element in the browser"],
   ] as const)("says what a re-pick or re-record is %s, and cancels it", async (state, text) => {
     const onStop = vi.fn();
