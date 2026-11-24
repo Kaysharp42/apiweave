@@ -1663,9 +1663,10 @@ function WorkflowCanvas({
     setEdges,
   });
 
-  const turnIntoExtract = useTurnIntoExtract({ nodesRef, setNodes });
+  const turnIntoExtract = useTurnIntoExtract({ nodes, nodesRef, setNodes });
 
   const makeStepVariable = useMakeStepVariable({
+    nodes,
     nodesRef,
     setNodes,
     variables: workflowVariables,

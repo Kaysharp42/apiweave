@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { toast } from "sonner";
 import type { JsonValue } from "@shared/types/JsonValue";
 import type { CanvasNode } from "../types/CanvasNode";
+import type { MakeStepVariableChoice } from "../types/MakeStepVariableChoice";
 import { useMakeStepVariable } from "./useMakeStepVariable";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -25,7 +26,9 @@ function setup(variables: Record<string, JsonValue> = {}) {
   const nodesRef = { current: [fill, again, open] };
   const setNodes = vi.fn();
   const setVariable = vi.fn();
-  const { result, rerender } = renderHook(() => useMakeStepVariable({ nodesRef, setNodes, variables, setVariable }));
+  const { result, rerender } = renderHook(() =>
+    useMakeStepVariable({ nodes: nodesRef.current, nodesRef, setNodes, variables, setVariable }),
+  );
   return { nodesRef, setNodes, setVariable, result, rerender };
 }
 
@@ -92,7 +95,8 @@ describe("useMakeStepVariable", () => {
     expect(setVariable).not.toHaveBeenCalled();
     expect(setNodes).not.toHaveBeenCalled();
     expect(nodesRef.current[0]).toBe(fill);
-    expect(toast.error).toHaveBeenCalledWith("client already holds a different value. Pick another name.");
+    // The dialog shows the error itself, next to the name it kept.
+    expect(toast.error).not.toHaveBeenCalled();
     // The dialog stayed open with the typed name: a free name finishes the job.
     act(() => result.current.dialog.onSubmit({ field: "value", name: "clientName", everywhere: true }));
     expect(result.current.dialog.open).toBe(false);
@@ -105,10 +109,26 @@ describe("useMakeStepVariable", () => {
     expect(toast.success).toHaveBeenCalledWith("2 steps now use {{variables.clientName}}");
   });
 
+  it("applies once for a double submit in the same tick", () => {
+    const { nodesRef, setNodes, setVariable, result } = setup();
+    act(() => result.current.start("b1"));
+    const choice: MakeStepVariableChoice = { field: "value", name: "searchClient", everywhere: true };
+    act(() => {
+      result.current.dialog.onSubmit(choice);
+      result.current.dialog.onSubmit(choice);
+    });
+    expect(setNodes).toHaveBeenCalledTimes(1);
+    expect(setVariable).toHaveBeenCalledTimes(1);
+    expect(nodesRef.current[0]?.data.config?.["value"]).toBe("{{variables.searchClient}}");
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it("changes nothing, and says why, when the step no longer holds the value", () => {
     const { nodesRef, setNodes, setVariable, result } = setup();
     act(() => result.current.start("b1"));
     act(() => result.current.dialog.onSubmit({ field: "locator.hasText", name: "filter", everywhere: false }));
+    expect(result.current.dialog.open).toBe(false);
     expect(setVariable).not.toHaveBeenCalled();
     expect(setNodes).not.toHaveBeenCalled();
     expect(nodesRef.current[0]).toBe(fill);
