@@ -92,6 +92,8 @@ describe("useCanvasPendingEdits", () => {
     renderHook(() =>
       useHydration({
         workflow: tab()?.draft ?? tab()?.workflow,
+        nodes: [],
+        edges: [],
         setNodes: (next) => {
           state.nodes = typeof next === "function" ? next(state.nodes) : next;
         },

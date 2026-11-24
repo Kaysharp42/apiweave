@@ -114,7 +114,6 @@ import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
-import { isUntouchedInitialCanvas, shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import {
   describeThrownSaveError,
   readSaveFailure,
@@ -558,8 +557,16 @@ function WorkflowCanvas({
 
   // A draft is what this canvas held, unsaved, when the user switched away
   // from the tab; it wins over the saved workflow until a save clears it.
-  const { isHydrated, hydratedBaselineRef, noteSavedWorkflow } = useHydration({
+  const {
+    isHydrated,
+    hydratedBaselineRef,
+    setHydratedBaseline,
+    canvasMatchesBaseline,
+    noteSavedWorkflow,
+  } = useHydration({
     workflow: draft ?? workflow,
+    nodes,
+    edges,
     setNodes,
     setEdges,
   });
@@ -739,12 +746,12 @@ function WorkflowCanvas({
         // reset its pagination and replaced the visible list on every update.
         useSidebarStore.getState().applyWorkflowChange(source);
       }
-      hydratedBaselineRef.current = {
+      setHydratedBaseline({
         nodeCount: canvasState.nodes.length,
         edgeCount: canvasState.edges.length,
-      };
+      });
     },
-    [workflowId, setNodes, setEdges, updateVariables],
+    [workflowId, setNodes, setEdges, updateVariables, setHydratedBaseline],
   );
 
   const reloadWorkflowFromServer = useCallback(
@@ -1444,13 +1451,7 @@ function WorkflowCanvas({
 
         const nodeCount = workflowPayload.nodes.length;
         const edgeCount = workflowPayload.edges.length;
-        if (
-          silent &&
-          shouldBlockDestructiveAutosave(
-            isUntouchedInitialCanvas(nodesRef.current, initialGraph.nodes),
-            hydratedBaselineRef.current,
-          )
-        ) {
+        if (silent && !canvasMatchesBaseline()) {
           canvasLog.warn("workflow-save-blocked", {
             workflowId,
             reason: "destructive-autosave-protection",
@@ -1792,10 +1793,10 @@ function WorkflowCanvas({
           }),
         );
         const canvasState = workflowToCanvas(savedWorkflow);
-        hydratedBaselineRef.current = {
+        setHydratedBaseline({
           nodeCount: canvasState.nodes.length,
           edgeCount: canvasState.edges.length,
-        };
+        });
         noteSavedWorkflow(savedWorkflow);
         showWorkflow(canvasState, savedWorkflow);
 
