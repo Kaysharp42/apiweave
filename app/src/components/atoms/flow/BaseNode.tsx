@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useId, useRef } from "react";
 import {
   Check,
   ChevronDown,
@@ -6,10 +6,11 @@ import {
   Circle,
   Loader2,
   Minus,
+  MoreHorizontal,
   RotateCw,
   X,
 } from "lucide-react";
-import { NodeActionMenu } from "./NodeActionMenu";
+import { IconButton } from "../IconButton";
 import { NodeHandle } from "./NodeHandle";
 import { NodeRunStrip } from "./NodeRunStrip";
 import useCanvasStore from "../../../stores/CanvasStore";
@@ -165,9 +166,7 @@ export function BaseNode({
   extraHandles = null,
   nodeId,
   collapsible = true,
-  defaultExpanded = false,
   showMenu = true,
-  presetNodeType,
   tileHue,
   typeChip = null,
   restLine,
@@ -178,7 +177,36 @@ export function BaseNode({
   className = "",
   titleExtra = null,
 }: BaseNodeProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  // A node rendered without an id (tests, previews) still needs a stable key
+  // for the UI-only expansion state.
+  const generatedId = useId();
+  const expansionKey = nodeId ?? generatedId;
+
+  const isExpanded = useCanvasStore((state) =>
+    state.expandedNodeIds.has(expansionKey),
+  );
+  const menuOpen = useCanvasStore(
+    (state) => nodeId !== undefined && state.nodeMenu?.nodeId === nodeId,
+  );
+
+  const setIsExpanded = useCallback(
+    (next: React.SetStateAction<boolean>) => {
+      const store = useCanvasStore.getState();
+      const current = store.expandedNodeIds.has(expansionKey);
+      store.setNodeExpanded(
+        expansionKey,
+        typeof next === "function" ? next(current) : next,
+      );
+    },
+    [expansionKey],
+  );
+
+  const menuOpenAtPressRef = useRef(false);
+
+  const openNodeMenuAt = (x: number, y: number) => {
+    if (!nodeId) return;
+    useCanvasStore.getState().openNodeMenu({ nodeId, x, y, collapsible });
+  };
 
   const config = statusConfig[status] ?? statusConfig.idle;
   const running = hasRun(status);
@@ -268,6 +296,13 @@ export function BaseNode({
         // neighbours, and ReactFlow's wrapper is what decides who paints on top.
         // The attribute is the hook that lifts it; see the `:has()` rule there.
         {...(isExpanded && { "data-node-expanded": "true" })}
+        onContextMenu={(event) => {
+          if (!(showMenu && nodeId)) return;
+          event.preventDefault();
+          // ReactFlow has its own node context menu; this node's menu replaces it.
+          event.stopPropagation();
+          openNodeMenuAt(event.clientX, event.clientY);
+        }}
         className={[
           "relative rounded-node",
           selected ? "shadow-glow-select" : "",
@@ -348,26 +383,36 @@ export function BaseNode({
               </span>
 
               {showMenu && nodeId && (
-                <NodeActionMenu
-                  nodeId={nodeId}
-                  collapsible={collapsible}
-                  isExpanded={isExpanded}
-                  presetable={presetNodeType !== undefined}
-                  runnable={presetNodeType !== undefined}
-                  onRunFrom={(id: string) =>
-                    useCanvasStore.getState().runFromNode(id)
-                  }
-                  onDuplicate={(id: string) =>
-                    useCanvasStore.getState().duplicateNode(id)
-                  }
-                  onCopy={(id: string) => useCanvasStore.getState().copyNode(id)}
-                  onSaveAsPreset={(id: string) =>
-                    useCanvasStore.getState().savePresetFromNode(id)
-                  }
-                  onToggleExpand={(nextExpanded: boolean) =>
-                    setIsExpanded(nextExpanded)
-                  }
-                />
+                <IconButton
+                  size="xs"
+                  variant="ghost"
+                  className="nodrag"
+                  title="Node actions"
+                  aria-label="Node actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  // The open menu closes itself on any outside mousedown, which
+                  // lands before this click. Remember whether the press began
+                  // on an open menu so the click closes it rather than
+                  // reopening it — without hiding the press from other
+                  // popovers that also need to close.
+                  onMouseDown={() => {
+                    menuOpenAtPressRef.current = menuOpen;
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const wasOpen = menuOpen || menuOpenAtPressRef.current;
+                    menuOpenAtPressRef.current = false;
+                    if (wasOpen) {
+                      useCanvasStore.getState().closeNodeMenu();
+                      return;
+                    }
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    openNodeMenuAt(rect.left, rect.bottom + 4);
+                  }}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </IconButton>
               )}
 
               {collapsible && (

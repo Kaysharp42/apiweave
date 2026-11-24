@@ -126,11 +126,9 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
       status={status}
       selected={selected}
       nodeId={id}
-      presetNodeType="merge"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}
-      defaultExpanded={false}
       typeChip={typeChip}
       restLine={{ operation: stratDesc }}
       activityLine={{

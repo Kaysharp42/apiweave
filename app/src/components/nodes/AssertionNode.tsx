@@ -368,10 +368,8 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
       status={status}
       selected={selected ?? false}
       nodeId={id}
-      presetNodeType="assertion"
       handleLeft={{ type: "target" }}
       collapsible={true}
-      defaultExpanded={false}
       typeChip={typeChip}
       extraHandles={extraHandles}
       restLine={{

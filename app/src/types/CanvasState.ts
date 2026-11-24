@@ -1,5 +1,6 @@
 import type { CanvasActionType } from "./CanvasActionType";
 import type { CanvasClipboard } from "./CanvasClipboard";
+import type { NodeMenuRequest } from "./NodeMenuRequest";
 
 export interface CanvasState {
   pendingAction: {
@@ -19,6 +20,15 @@ export interface CanvasState {
   pendingHistory: { workflowId: string; runId: string } | null;
   /** A search result asking its workflow's canvas to select and frame a node; read on mount like `pendingHistory`. */
   pendingFocus: { workflowId: string; nodeId: string } | null;
+  /** The node action menu currently open, or null. One at a time. */
+  nodeMenu: NodeMenuRequest | null;
+  openNodeMenu: (request: NodeMenuRequest) => void;
+  closeNodeMenu: () => void;
+  /** Ids of canvas nodes currently expanded. UI-only, never saved with the workflow. */
+  expandedNodeIds: ReadonlySet<string>;
+  setNodeExpanded: (nodeId: string, expanded: boolean) => void;
+  /** Close the node menu and collapse every node — called when a canvas unmounts. */
+  resetCanvasNodeUi: () => void;
   duplicateNode: (nodeId: string) => void;
   copyNode: (nodeId: string) => void;
   pasteNode: () => void;

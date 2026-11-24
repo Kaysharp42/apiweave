@@ -21,7 +21,6 @@ function WebsocketNode({ id, data, selected }: WebsocketNodeProps) {
       status={status}
       selected={selected ?? false}
       nodeId={id}
-      presetNodeType="websocket"
       {...STREAM_NODE_HANDLES}
       collapsible={false}
       typeChip={<span className="rounded-node-chip bg-status-info/10 px-1.5 py-0.5 font-mono text-2xs text-status-info">WS</span>}

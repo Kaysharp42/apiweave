@@ -24,7 +24,6 @@ import { Toast } from "./Toast";
 import { IconSwitch } from "./IconSwitch";
 import { BaseNode } from "./flow/BaseNode";
 import { NodeHandle } from "./flow/NodeHandle";
-import { NodeActionMenu } from "./flow/NodeActionMenu";
 
 function renderInReactFlow(ui: ReactElement) {
   return render(createElement(ReactFlowProvider, null, ui));
@@ -516,7 +515,7 @@ describe("BaseNode", () => {
   it("toggles aria-expanded on the collapse button when clicked", async () => {
     const user = userEvent.setup();
     renderInReactFlow(
-      <BaseNode title="T" defaultExpanded={false} collapsible>
+      <BaseNode title="T" collapsible>
         body
       </BaseNode>,
     );
@@ -562,73 +561,3 @@ describe("NodeHandle", () => {
   });
 });
 
-describe("NodeActionMenu", () => {
-  it("renders nothing when no nodeId is provided", () => {
-    const { container } = renderInReactFlow(
-      <NodeActionMenu nodeId={undefined as unknown as string} />,
-    );
-    expect(container.querySelector('[aria-label="Node actions"]')).toBeNull();
-  });
-
-  it("renders the trigger button when nodeId is provided", () => {
-    renderInReactFlow(<NodeActionMenu nodeId="node-1" />);
-    const trigger = screen.getByRole("button", { name: "Node actions" });
-    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
-    expect(trigger).toHaveAttribute("aria-expanded", "false");
-  });
-
-  it("opens the menu when the trigger is clicked and shows menu items", async () => {
-    const onDuplicate = vi.fn();
-    const onCopy = vi.fn();
-    const user = userEvent.setup();
-    renderInReactFlow(
-      <NodeActionMenu
-        nodeId="node-1"
-        collapsible
-        isExpanded={false}
-        onDuplicate={onDuplicate}
-        onCopy={onCopy}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: "Node actions" }));
-    const menu = screen.getByRole("menu");
-    expect(menu).toBeInTheDocument();
-    // Three items: duplicate, copy, toggle-expand
-    expect(
-      screen.getByRole("menuitem", { name: /duplicate/i }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /copy/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitem", { name: /expand/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("invokes onDuplicate and closes the menu when duplicate is clicked", async () => {
-    const onDuplicate = vi.fn();
-    const user = userEvent.setup();
-    renderInReactFlow(
-      <NodeActionMenu nodeId="node-1" onDuplicate={onDuplicate} />,
-    );
-    await user.click(screen.getByRole("button", { name: "Node actions" }));
-    await user.click(screen.getByRole("menuitem", { name: /duplicate/i }));
-    expect(onDuplicate).toHaveBeenCalledWith("node-1");
-    // Menu closes
-    expect(screen.queryByRole("menu")).toBeNull();
-  });
-
-  it("invokes onToggleExpand with the next expanded state", async () => {
-    const onToggleExpand = vi.fn();
-    const user = userEvent.setup();
-    renderInReactFlow(
-      <NodeActionMenu
-        nodeId="node-1"
-        collapsible
-        isExpanded={false}
-        onToggleExpand={onToggleExpand}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: "Node actions" }));
-    await user.click(screen.getByRole("menuitem", { name: /expand/i }));
-    expect(onToggleExpand).toHaveBeenCalledWith(true);
-  });
-});

@@ -133,7 +133,7 @@ import { isEditableNode } from "../utils/nodeNavigation";
 import { useNodeEditorWalk } from "../hooks/useNodeEditorWalk";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { grpcCallType, reconcileGrpcStreamEdges } from "../utils/grpcStreamEdges";
-import { Circle, Copy, Crosshair, Download, Files, Globe, Play, Variable, Wand2 } from "lucide-react";
+import { Circle, Crosshair, Download, Globe, Variable, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -154,7 +154,7 @@ import { resolveTutorialScope } from "../utils/tutorialScope";
 import { useLocation, useNavigate } from "react-router";
 import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
-import type { StepContextMenuState } from "../types/StepContextMenuState";
+import { buildNodeMenuItems } from "../utils/nodeMenuItems";
 
 // Everything that opens over the canvas is loaded when it opens. The node
 // editor alone pulls in every node-type panel, and the history, JSON, import
@@ -460,7 +460,45 @@ function WorkflowCanvas({
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] =
     useState<CanvasNodeContextMenuState | null>(null);
-  const [stepMenu, setStepMenu] = useState<StepContextMenuState | null>(null);
+  // The node action menu is global state because both of its triggers (the
+  // node's ⋯ button and its right-click) live inside BaseNode, which cannot
+  // reach this canvas's graph. Every mounted canvas subscribes; the one that
+  // owns the node renders it.
+  const nodeMenu = useCanvasStore((state) => state.nodeMenu);
+  const menuNodeExpanded = useCanvasStore(
+    (state) =>
+      state.nodeMenu !== null &&
+      state.expandedNodeIds.has(state.nodeMenu.nodeId),
+  );
+  const closeNodeMenu = useCanvasStore((state) => state.closeNodeMenu);
+
+  // ContextMenu closes on a document mousedown, but ReactFlow's d3 drag (nodes)
+  // and zoom (pane) stop that event's propagation, so a press on the graph
+  // never reaches the document. Catch it on the way down instead. Mousedown,
+  // not pointerdown: the ⋯ button reads "was my menu open" in its own
+  // mousedown, which must run in the same dispatch, before a re-render.
+  const closeNodeMenuOnCanvasPress = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      // The menu is portalled to <body> but still bubbles through this element
+      // in React's tree; a press on its own items must not close it.
+      // `globalThis.Node`: this file's `Node` is ReactFlow's, not the DOM's.
+      const target = event.target;
+      if (!(target instanceof globalThis.Node)) return;
+      if (!event.currentTarget.contains(target)) return;
+      if (useCanvasStore.getState().nodeMenu === null) return;
+      useCanvasStore.getState().closeNodeMenu();
+    },
+    [],
+  );
+
+  // Menu and expansion are UI-only and global; leaving them behind would open
+  // the next workflow with this one's menu or expanded rows.
+  useEffect(() => {
+    return () => {
+      useCanvasStore.getState().resetCanvasNodeUi();
+    };
+  }, []);
+
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
   // CanvasStore) because only the canvas can resolve a nodeId to its live
@@ -914,20 +952,11 @@ function WorkflowCanvas({
     setNodeContextMenu(null);
   }, []);
 
-  // A step's right-click menu: rerun from it, or the node actions its own menu has.
-  const onNodeContextMenu = useCallback(
-    (event: React.MouseEvent, node: CanvasNode) => {
-      if (asPresetNodeType(node.type) === null) return;
-      event.preventDefault();
-      setNodeContextMenu(null);
-      setStepMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
-    },
-    [],
-  );
-
   const onPaneContextMenu = useCallback(
     (event: MouseEvent | React.MouseEvent) => {
       event.preventDefault();
+      // The pane menu and a node's menu are alternatives, never both.
+      useCanvasStore.getState().closeNodeMenu();
       if (lockedRef.current) return;
       const instance = reactFlowInstanceRef.current;
       if (!instance) return;
@@ -1660,6 +1689,15 @@ function WorkflowCanvas({
     { key: "make-variable", icon: Variable, label: "Make value a variable", offered: makeStepVariable.canMake, run: makeStepVariable.start },
   ];
 
+  // The request is global (the trigger sits inside a node); only the canvas
+  // holding that node resolves it and renders the menu.
+  const menuNode =
+    nodeMenu === null
+      ? null
+      : (nodes.find((node) => node.id === nodeMenu.nodeId) ?? null);
+  const menuNodeRunnable =
+    menuNode !== null && asPresetNodeType(menuNode.type) !== null;
+
   const canvasTipContext = useMemo(() => {
     const selection = selectedIds(nodes);
     const selected = nodes.filter((node) => selection.has(node.id));
@@ -2011,6 +2049,7 @@ function WorkflowCanvas({
       className={`w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300 ${isOpeningViewApplied ? "" : "*:opacity-0 *:pointer-events-none"}`}
       aria-label="Workflow canvas"
       aria-busy={!isOpeningViewApplied}
+      onMouseDownCapture={closeNodeMenuOnCanvasPress}
     >
       {/* Removed: a second, static 32px line grid drawn over this one. It was
           pinned to the viewport rather than the canvas, so it did not move
@@ -2033,7 +2072,6 @@ function WorkflowCanvas({
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
-        onNodeContextMenu={onNodeContextMenu}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
@@ -2239,38 +2277,54 @@ function WorkflowCanvas({
         />
       )}
 
-      {stepMenu && (
+      {nodeMenu && menuNode && (
         <ContextMenu
-          x={stepMenu.x}
-          y={stepMenu.y}
-          label="Step actions"
-          onClose={() => setStepMenu(null)}
-          items={[
-            {
-              key: "run-from",
-              icon: Play,
-              label: "Run from here",
-              onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
+          // A menu moving to another node is a new menu: remount so focus
+          // lands on its first row again.
+          key={nodeMenu.nodeId}
+          x={nodeMenu.x}
+          y={nodeMenu.y}
+          label="Node actions"
+          onClose={closeNodeMenu}
+          items={buildNodeMenuItems({
+            // The same narrow type drives both: only a step has something to
+            // run and a config to keep.
+            runnable: menuNodeRunnable,
+            presetable: menuNodeRunnable,
+            collapsible: nodeMenu.collapsible,
+            isExpanded: menuNodeExpanded,
+            stepActions: browserStepActions
+              .filter((action) => action.offered(menuNode.id))
+              .map(({ key, icon, label, run }) => ({
+                key,
+                icon,
+                label,
+                onSelect: () => run(menuNode.id),
+              })),
+            shortcuts: {
+              duplicate: shortcutLabel("duplicate"),
+              copy: shortcutLabel("copy"),
+              delete: shortcutLabel("delete"),
             },
-            ...browserStepActions
-              .filter((action) => action.offered(stepMenu.nodeId))
-              .map(({ key, icon, label, run }) => ({ key, icon, label, onSelect: () => run(stepMenu.nodeId) })),
-            {
-              key: "duplicate",
-              icon: Files,
-              label: "Duplicate",
-              shortcut: shortcutLabel("duplicate"),
-              separated: true,
-              onSelect: () => useCanvasStore.getState().duplicateNode(stepMenu.nodeId),
+            onRunFrom: () =>
+              useCanvasStore.getState().runFromNode(menuNode.id),
+            onDuplicate: () =>
+              useCanvasStore.getState().duplicateNode(menuNode.id),
+            onCopy: () => useCanvasStore.getState().copyNode(menuNode.id),
+            onSavePreset: () =>
+              useCanvasStore.getState().savePresetFromNode(menuNode.id),
+            onToggleExpand: () =>
+              useCanvasStore
+                .getState()
+                .setNodeExpanded(menuNode.id, !menuNodeExpanded),
+            // Through ReactFlow, like the Delete key: `onBeforeDelete` frees a
+            // frame's members and `handleNodesChange` removes the edges.
+            onDelete: () => {
+              void reactFlowInstanceRef.current?.deleteElements({
+                nodes: [{ id: menuNode.id }],
+              });
             },
-            {
-              key: "copy",
-              icon: Copy,
-              label: "Copy",
-              shortcut: shortcutLabel("copy"),
-              onSelect: () => useCanvasStore.getState().copyNode(stepMenu.nodeId),
-            },
-          ]}
+          })}
         />
       )}
 

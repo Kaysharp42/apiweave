@@ -368,11 +368,9 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
       status={status}
       selected={selected}
       nodeId={id}
-      presetNodeType="workflow"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}
-      defaultExpanded={false}
       typeChip={
         <MappingChip inputCount={inputCount} outputCount={outputCount} />
       }

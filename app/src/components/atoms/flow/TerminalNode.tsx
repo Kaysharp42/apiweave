@@ -72,7 +72,7 @@ export function TerminalNode({
       handleLeft={handleLeft}
       handleRight={handleRight}
       collapsible={true}
-      defaultExpanded={false}
+      showMenu={false}
       restLine={line}
       activityLine={line}
       resultSummary={line}

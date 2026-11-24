@@ -59,11 +59,9 @@ function BrowserNode({ id, data, selected }: BrowserNodeProps) {
       status={status}
       selected={selected ?? false}
       nodeId={id}
-      presetNodeType="browser"
       handleLeft={{ type: "target" }}
       handleRight={{ type: "source" }}
       collapsible={true}
-      defaultExpanded={false}
       typeChip={
         <>
           {needsSecret && (

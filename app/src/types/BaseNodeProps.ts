@@ -1,7 +1,6 @@
 import type { ReactNode, Dispatch, SetStateAction } from "react";
 import type { NodeStatus } from "./NodeStatus";
 import type { NodeHandleConfig } from "./NodeHandleConfig";
-import type { NodePresetNodeType } from "./NodePresetNodeType";
 import type { NodeRunLine } from "./NodeRunLine";
 import type { NodeMetric } from "./NodeMetric";
 import type { NodeProgress } from "./NodeProgress";
@@ -25,15 +24,7 @@ export interface BaseNodeProps {
   extraHandles?: ReactNode;
   nodeId?: string;
   collapsible?: boolean;
-  defaultExpanded?: boolean;
   showMenu?: boolean;
-  /**
-   * Set by node components whose config can be saved to the workspace preset
-   * library; omitted by `start`/`end`, which have no config. Presence alone
-   * drives the "Save as preset" action-menu item — the canvas re-reads the real
-   * type and config from the graph when the action fires.
-   */
-  presetNodeType?: NodePresetNodeType;
   /**
    * The node type's hue, as a token reference — `"var(--aw-method-post)"`.
    * Tints the icon tile at 12% and colours the icon at full strength. Hues come
