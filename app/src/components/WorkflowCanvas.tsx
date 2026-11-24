@@ -114,7 +114,7 @@ import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
-import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
+import { isUntouchedInitialCanvas, shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import {
   describeThrownSaveError,
   readSaveFailure,
@@ -1447,8 +1447,7 @@ function WorkflowCanvas({
         if (
           silent &&
           shouldBlockDestructiveAutosave(
-            workflowPayload.nodes,
-            workflowPayload.edges,
+            isUntouchedInitialCanvas(nodesRef.current, initialGraph.nodes),
             hydratedBaselineRef.current,
           )
         ) {

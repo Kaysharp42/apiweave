@@ -1,53 +1,54 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
+import type { Node } from "@xyflow/react";
+import { graphToCanvas } from "../adapters/workflowCanvas";
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
 import {
-  isDefaultStartOnlyGraph,
+  isUntouchedInitialCanvas,
   shouldBlockDestructiveAutosave,
 } from "./workflowSaveSafety.ts";
 
-test("isDefaultStartOnlyGraph returns true for canonical default graph", () => {
-  const nodes = [
-    {
-      nodeId: "start-1",
-      type: "start",
-      label: "Start",
-      position: { x: 250, y: 50 },
-      config: {},
-    },
+const initial = graphToCanvas(initialWorkflowGraph());
+const largerBaseline = { nodeCount: 14, edgeCount: 13 };
+
+test("the initial canvas is untouched, also after React Flow measures or drags a node", () => {
+  assert.equal(isUntouchedInitialCanvas(initial.nodes, initial.nodes), true);
+
+  const measuredAndMoved: Node[] = initial.nodes.map((node) => ({
+    ...node,
+    position: { x: node.position.x + 40, y: node.position.y },
+    measured: { width: 120, height: 40 },
+  }));
+  assert.equal(isUntouchedInitialCanvas(measuredAndMoved, initial.nodes), true);
+});
+
+test("a hydrated Start→End canvas is not the initial canvas", () => {
+  // Same shape as the blank graph, but built by hydration: fresh data objects.
+  const hydrated = graphToCanvas(initialWorkflowGraph()).nodes;
+  assert.equal(isUntouchedInitialCanvas(hydrated, initial.nodes), false);
+  assert.equal(isUntouchedInitialCanvas([], initial.nodes), false);
+});
+
+test("a canvas with a node the user added is not the initial canvas", () => {
+  const edited: Node[] = [
+    ...initial.nodes,
+    { id: "http-1", position: { x: 0, y: 0 }, data: {} },
   ];
-  const edges: unknown[] = [];
-
-  assert.equal(isDefaultStartOnlyGraph(nodes, edges), true);
+  assert.equal(isUntouchedInitialCanvas(edited, initial.nodes), false);
 });
 
-test("isDefaultStartOnlyGraph returns false for larger graph", () => {
-  const nodes = [
-    { nodeId: "start-1", type: "start" },
-    { nodeId: "http-1", type: "http-request" },
-  ];
-  const edges = [{ edgeId: "e-1", source: "start-1", target: "http-1" }];
-
-  assert.equal(isDefaultStartOnlyGraph(nodes, edges), false);
+test("blocks the untouched initial canvas against a larger baseline", () => {
+  assert.equal(shouldBlockDestructiveAutosave(true, largerBaseline), true);
 });
 
-test("shouldBlockDestructiveAutosave blocks when baseline is larger and payload is default", () => {
-  const payloadNodes = [{ nodeId: "start-1", type: "start" }];
-  const payloadEdges: unknown[] = [];
-  const baseline = { nodeCount: 14, edgeCount: 13 };
+test("allows a user-edited canvas even when it is back to Start→End", () => {
+  assert.equal(shouldBlockDestructiveAutosave(false, largerBaseline), false);
+});
 
+test("allows the initial canvas over a blank or missing baseline", () => {
   assert.equal(
-    shouldBlockDestructiveAutosave(payloadNodes, payloadEdges, baseline),
-    true,
-  );
-});
-
-test("shouldBlockDestructiveAutosave allows default graph for new workflows", () => {
-  const payloadNodes = [{ nodeId: "start-1", type: "start" }];
-  const payloadEdges: unknown[] = [];
-  const baseline = { nodeCount: 1, edgeCount: 0 };
-
-  assert.equal(
-    shouldBlockDestructiveAutosave(payloadNodes, payloadEdges, baseline),
+    shouldBlockDestructiveAutosave(true, { nodeCount: 2, edgeCount: 1 }),
     false,
   );
+  assert.equal(shouldBlockDestructiveAutosave(true, null), false);
 });

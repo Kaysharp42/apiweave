@@ -1,39 +1,44 @@
-interface BaselineGraph {
-  nodeCount?: number;
-  edgeCount?: number;
-}
+import type { Node } from "@xyflow/react";
+import { initialWorkflowGraph } from "@shared/graph/initial_workflow_graph";
+import type { HydratedBaseline } from "../types/HydratedBaseline";
 
-interface AutosaveWorkflowNode {
-  type?: string;
-  nodeId?: string;
-  id?: string;
-}
+const blankGraph = initialWorkflowGraph();
 
-export function isDefaultStartOnlyGraph(
-  nodes: unknown[] | null | undefined,
-  edges: unknown[] | null | undefined,
+/**
+ * Whether the canvas still shows the graph it was created with, before any
+ * workflow was hydrated onto it.
+ *
+ * The graph's *shape* cannot tell: every blank workflow is Start → End, and a
+ * user can delete their way back to exactly that. What cannot be reproduced by
+ * editing is the object identity of what the canvas started with. Hydration
+ * and every edit that rebuilds a node give it a fresh `data` object, while
+ * React Flow's own measuring and the user dragging a node only copy the node
+ * and keep `data`. So a canvas whose nodes all still carry the initial `data`
+ * objects has never been hydrated.
+ */
+export function isUntouchedInitialCanvas(
+  canvasNodes: readonly Node[],
+  initialNodes: readonly Node[],
 ): boolean {
-  if (!Array.isArray(nodes) || !Array.isArray(edges)) return false;
-  if (nodes.length !== 1 || edges.length !== 0) return false;
-
-  const node = (nodes[0] ?? {}) as AutosaveWorkflowNode;
-  const nodeId = node.nodeId ?? node.id;
-
-  return node.type === "start" && nodeId === "start-1";
+  if (canvasNodes.length === 0) return false;
+  const initialData = new Set(initialNodes.map((node) => node.data));
+  return canvasNodes.every((node) => initialData.has(node.data));
 }
 
+/**
+ * An autosave must never replace a workflow the canvas has not caught up with.
+ * Hydration records its baseline the moment it queues the workflow, but the
+ * canvas's own state — which the save reads — lags a render behind. In that
+ * window the save would write the blank initial graph over the real one.
+ */
 export function shouldBlockDestructiveAutosave(
-  nodes: unknown[] | null | undefined,
-  edges: unknown[] | null | undefined,
-  baseline: BaselineGraph | null,
+  canvasIsUntouchedInitial: boolean,
+  baseline: HydratedBaseline | null,
 ): boolean {
-  if (!baseline) return false;
+  if (!baseline || !canvasIsUntouchedInitial) return false;
 
-  const baselineNodeCount = Number(baseline.nodeCount ?? 0);
-  const baselineEdgeCount = Number(baseline.edgeCount ?? 0);
-  const baselineHadLargerGraph = baselineNodeCount > 1 || baselineEdgeCount > 0;
-
-  if (!baselineHadLargerGraph) return false;
-
-  return isDefaultStartOnlyGraph(nodes, edges);
+  return (
+    baseline.nodeCount > blankGraph.nodes.length ||
+    baseline.edgeCount > blankGraph.edges.length
+  );
 }
