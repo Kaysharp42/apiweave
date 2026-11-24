@@ -3,6 +3,7 @@ import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
 import { FRAME_NODE_TYPE } from "./canvasGroups";
+import { isRecordingFrame } from "./recordedSteps";
 
 const isBrowser = (node: CanvasNode | undefined): boolean => node?.type === "browser";
 
@@ -142,7 +143,7 @@ export function removeStepsFrom(
   const { chain, next } = chainFrom(graph, nodeId);
   const removed = new Set(chain);
   const originFrame = graph.nodes.find((node) => node.id === nodeId)?.parentId;
-  const frameId = graph.nodes.some((node) => node.id === originFrame && node.type === FRAME_NODE_TYPE) ? (originFrame ?? null) : null;
+  const frameId = graph.nodes.some((node) => node.id === originFrame && isRecordingFrame(node)) ? (originFrame ?? null) : null;
   const frames = new Set(graph.nodes.filter((node) => removed.has(node.id) && node.parentId != null).map((node) => node.parentId as string));
   const remaining = graph.nodes.filter((node) => !removed.has(node.id));
   const emptied = new Set(

@@ -16,6 +16,15 @@ const FRAME_OFFSET_Y = 200;
 /** How far right of a recording's frame, at its widest, an End it adds goes. */
 const END_GAP_X = 80;
 
+/**
+ * Whether a frame is one the recorder made (`frame-recording-<stamp>`). A frame
+ * the user made with Group holds children at arbitrary positions, which the
+ * grid placement would land a new step on top of.
+ */
+export function isRecordingFrame(node: CanvasNode): boolean {
+  return node.type === FRAME_NODE_TYPE && node.id.startsWith("frame-recording-");
+}
+
 /** The step's generated title on the canvas: the action and what it acts on, e.g. "Fill Email". */
 export function recordedStepLabel(config: unknown): string {
   return browserStepLabel(config);
