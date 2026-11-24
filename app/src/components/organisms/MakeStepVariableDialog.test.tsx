@@ -54,4 +54,35 @@ describe("MakeStepVariableDialog", () => {
     fireEvent.keyDown(screen.getByLabelText("Variable name"), { key: "Enter" });
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  it("keeps the typed name and shows the error when a variable takes the name while the dialog is open", () => {
+    const onSubmit = vi.fn();
+    const { rerender } = render(
+      <MakeStepVariableDialog open node={pick} nodes={[pick]} variables={{}} onClose={vi.fn()} onSubmit={onSubmit} />,
+    );
+    fireEvent.change(screen.getByLabelText("Variable name"), { target: { value: "client" } });
+    // A variable named client gains a different value while the dialog is open.
+    rerender(<MakeStepVariableDialog open node={pick} nodes={[pick]} variables={{ client: "Ada" }} onClose={vi.fn()} onSubmit={onSubmit} />);
+    expect(screen.getByLabelText<HTMLInputElement>("Variable name").value).toBe("client");
+    expect(screen.getByText("client already holds a different value. Pick another name.")).toBeTruthy();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Make variable" }).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByLabelText("Variable name"), { key: "Enter" });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("closes itself when the literal it is open for is taken away", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <MakeStepVariableDialog open node={typed} nodes={[typed]} variables={{}} onClose={onClose} onSubmit={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "Make variable" })).toBeTruthy();
+    // The chosen literal (the typed text, the first of two) becomes a
+    // placeholder; the step keeps its other literal, but not this one.
+    const templated: CanvasNode = {
+      ...typed,
+      data: { config: { action: "fill", locator: { kind: "label", value: "Search" }, value: "{{variables.term}}" } },
+    };
+    rerender(<MakeStepVariableDialog open node={templated} nodes={[templated]} variables={{}} onClose={onClose} onSubmit={vi.fn()} />);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

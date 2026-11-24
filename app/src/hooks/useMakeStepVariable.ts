@@ -15,18 +15,20 @@ import { canMakeStepVariable, makeStepVariable, stepVariableNameError } from "..
  */
 export function useMakeStepVariable({ nodesRef, setNodes, variables, setVariable }: UseMakeStepVariableParams): UseMakeStepVariableResult {
   const target = useStepMenuTarget(nodesRef, canMakeStepVariable);
-  const { take } = target;
+  const { close, nodeId } = target;
 
   const onSubmit = useCallback(
     (choice: MakeStepVariableChoice) => {
-      const id = take();
-      if (id === null) return;
-      const made = makeStepVariable(nodesRef.current, id, choice);
+      if (nodeId === null) return;
+      const made = makeStepVariable(nodesRef.current, nodeId, choice);
       if (made === null) {
+        // The dialog closes itself on the same fact — its literal is gone.
         toast.error("That value is no longer in the step, so nothing was replaced.");
         return;
       }
       // The name was valid when the dialog opened; the variables may have changed since.
+      // The dialog stays open and shows this error itself, so the typed name
+      // is kept and can be fixed in place.
       const nameError = stepVariableNameError(choice.name, made.value, variables);
       if (nameError !== undefined) {
         toast.error(nameError);
@@ -36,13 +38,14 @@ export function useMakeStepVariable({ nodesRef, setNodes, variables, setVariable
       // A save reads the ref: set it first, so Ctrl+S right after keeps the change.
       nodesRef.current = made.nodes;
       setNodes(made.nodes);
+      close();
       toast.success(
         made.steps > 1
           ? `${made.steps} steps now use {{variables.${choice.name}}}`
           : `The step now uses {{variables.${choice.name}}}`,
       );
     },
-    [take, nodesRef, setNodes, variables, setVariable],
+    [nodeId, close, nodesRef, setNodes, variables, setVariable],
   );
 
   return {

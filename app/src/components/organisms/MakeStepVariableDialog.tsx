@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { CheckboxOption } from "../molecules/CheckboxOption";
@@ -23,6 +23,15 @@ export function MakeStepVariableDialog({ open, node, nodes, variables, onClose, 
 
   const draft = stepVariableDraft(nodes, node, field, name, variables);
   const { literal, error, others } = draft;
+
+  // The literal this opening is for can be taken away while the dialog is
+  // open — an agent edit, a live update, a recorder update templating the
+  // field. Close rather than sit hidden on a choice that no longer exists:
+  // releasing the target is what lets the menu open the dialog again.
+  const literalGone = open && literal === undefined;
+  useEffect(() => {
+    if (literalGone) onClose();
+  }, [literalGone, onClose]);
 
   const choose = (next: StepLiteralField): void => {
     setField(next);
