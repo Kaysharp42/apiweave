@@ -6,10 +6,6 @@ import type { BrowserLocator } from "@shared/types/BrowserLocator";
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult";
 import type { BrowserStepDraft } from "../types/BrowserStepDraft";
 
-// The panel's action table lives in shared/browser: the write path names an
-// unlabelled browser node from it, so an authored step reads like a recorded one.
-export { BROWSER_ACTIONS };
-
 const MODIFIERS: readonly BrowserStepDraft["modifiers"][number][] = ["Alt", "Control", "ControlOrMeta", "Meta", "Shift"];
 
 /** Actions that act on an element and so need a locator. */
