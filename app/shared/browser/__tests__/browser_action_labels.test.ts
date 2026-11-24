@@ -10,6 +10,8 @@ describe("browserStepLabel", () => {
     ["navigate to a bare base URL", { action: "navigate", url: "{{env.BASE_URL}}" }, "Open BASE_URL"],
     ["navigate with a query and fragment", { action: "navigate", url: "https://x.test/a?b#c" }, "Open /a"],
     ["expect a placeholder address", { action: "expect-url", url: "{{variables.site}}/cart" }, "Expect URL /cart"],
+    ["navigate to a secret-named host", { action: "navigate", url: "{{secrets.BASE}}/login" }, "Open /login"],
+    ["navigate to a bare secret-named host", { action: "navigate", url: "{{secrets.BASE}}" }, "Open BASE"],
     ["navigate to a site root", { action: "navigate", url: "https://shop.example.test/" }, "Open shop.example.test"],
     ["navigate to a bare host", { action: "navigate", url: "https://shop.example.test" }, "Open shop.example.test"],
     ["click a button", { action: "click", locator: { kind: "role", role: "button", name: "Continuer" } }, "Click Continuer"],

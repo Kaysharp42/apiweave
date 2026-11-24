@@ -34,7 +34,7 @@ export function browserActionLabel(action: string): string {
 /** The longest target name a generated label carries before it is cut with an ellipsis. */
 const NAME_MAX = 32
 
-const PLACEHOLDER_NAME_RE = /\{\{\s*(?:variables|env)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const PLACEHOLDER_NAME_RE = /\{\{\s*(?:variables|env|secrets)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
