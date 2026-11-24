@@ -6,6 +6,10 @@ const email = { kind: "role", role: "textbox", name: "Email" }
 describe("browserStepLabel", () => {
   it.each([
     ["navigate to a path", { action: "navigate", url: "{{env.BASE_URL}}/login" }, "Open /login"],
+    ["navigate to the environment's base URL", { action: "navigate", url: "{{env.BASE_URL}}/" }, "Open BASE_URL"],
+    ["navigate to a bare base URL", { action: "navigate", url: "{{env.BASE_URL}}" }, "Open BASE_URL"],
+    ["navigate with a query and fragment", { action: "navigate", url: "https://x.test/a?b#c" }, "Open /a"],
+    ["expect a placeholder address", { action: "expect-url", url: "{{variables.site}}/cart" }, "Expect URL /cart"],
     ["navigate to a site root", { action: "navigate", url: "https://shop.example.test/" }, "Open shop.example.test"],
     ["navigate to a bare host", { action: "navigate", url: "https://shop.example.test" }, "Open shop.example.test"],
     ["click a button", { action: "click", locator: { kind: "role", role: "button", name: "Continuer" } }, "Click Continuer"],

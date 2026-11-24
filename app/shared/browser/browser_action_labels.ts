@@ -77,7 +77,7 @@ function targetName(locator: unknown): string {
  */
 function pageName(url: unknown): string {
   if (typeof url !== "string") return ""
-  const bare = url.split(/[?#]/, 1)[0]!.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^[^@/]*@/, "")
+  const bare = url.replace(PLACEHOLDER_NAME_RE, "$1").split(/[?#]/, 1)[0]!.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^[^@/]*@/, "")
   const slash = bare.indexOf("/")
   const path = slash === -1 ? "" : bare.slice(slash)
   return shortened(path === "" || path === "/" ? bare.slice(0, slash === -1 ? undefined : slash) : path)
