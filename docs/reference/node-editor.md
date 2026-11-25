@@ -96,12 +96,12 @@ The branch picker renders inline (absolutely positioned under the button), not i
 
 ```ts
 // browser step: browserStepSummary, the same line the canvas card shows
-{ label: "Click", detail: "click getByRole('button', { name: 'Save' })" }
+{ label: "Click Save", detail: "click getByRole('button', { name: 'Save' })" }
 // request: METHOD url
 { label: "Get user", detail: "GET /users/{{variables.id}}" }
 ```
 
-The button always reads **Previous**/**Next**. Recorded browser steps are mostly all named "Click", so a button titled with the destination reads as an action. The destination goes in the tooltip and the picker rows.
+The button always reads **Previous**/**Next**. A button titled with the destination would read as an action, so the destination goes in the tooltip and the picker rows.
 
 **Previous** pops the walked trail (`trailAfterStep`). With an empty trail, `previousStepsFor` follows incoming edges, so a Merge offers each of its inputs. When the editor closes after a walk, the canvas calls `selectAndFrame` on the node it ended on.
 

@@ -23,7 +23,7 @@
 
 ## Workflow
 
-A workflow is a graph of connected nodes that you build on the canvas. Workflows start with a Start node, run through the nodes you added, and end at one or more End nodes. A run selects exactly one environment; that environment is the source of the variables and the scope of the secret lookup.
+A workflow is a graph of connected nodes that you build on the canvas. Workflows start with a Start node, run through the nodes you added, and end at one or more End nodes. A new workflow is created already connected Start → End. A run selects exactly one environment; that environment is the source of the variables and the scope of the secret lookup.
 
 ```text
 [ Start ] -> [ HTTP Request ] -> [ Assertion ] -> [ End ]

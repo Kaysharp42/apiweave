@@ -40,9 +40,9 @@ Workflows are members of a project. A workflow can be inside one project at a ti
 ## Building a Workflow
 
 1. Open the workflows list from the sidebar.
-2. Click **New Workflow**. A Start node is placed for you.
+2. Click **New Workflow**. A **Start** node and an **End** node are placed and connected, so every new workflow is already a complete Start → End graph.
 3. Open the **Add Nodes** panel (the plus button at the bottom-right of the canvas) and drag nodes onto the canvas.
-4. Connect nodes by dragging from the output handle of one node to the input handle of the next. A connection that leads back to an earlier node is refused: workflows have no loops.
+4. Connect nodes by dragging from the output handle of one node to the input handle of the next. A connection that leads back to an earlier node is refused: workflows have no loops. A new workflow's direct Start → End edge stays where it is, so delete it once you route nodes between them, or a run can reach End without passing through them.
 5. Double-click any node to open its editor, or use the inline body for quick edits. Changes auto-save after 700ms.
 6. Pick the environment for the run from the canvas toolbar.
 7. Click **Run** to execute the full graph.
@@ -564,6 +564,8 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
 | **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |
 
+Right-clicking a node and its **⋯** button open the same action menu: **Run from here**, the browser-step actions when the node is a browser step, **Duplicate**, **Copy**, **Save as preset**, **Expand**/**Collapse** and **Delete**. Start and End nodes have no menu from either.
+
 ### Unsaved changes
 
 A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off in **Settings → Canvas → Auto-save**, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes and quitting ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close or the quit. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
@@ -572,7 +574,7 @@ Every save is checked against the revision the canvas loaded. If the workflow ch
 
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
-To rerun only part of a workflow after fixing a step, use **Run from here** on a step (its node menu, or right-click it) or **Rerun failed branches** from the arrow beside **Run** or a failed run in History. The steps upstream are not sent again: their results and variables from an earlier run are reused. See [Rerun from a node, or rerun failed branches](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
+To rerun only part of a workflow after fixing a step, use **Run from here** on a step (its **⋯** button or a right-click open the same menu) or **Rerun failed branches** from the arrow beside **Run** or a failed run in History. The steps upstream are not sent again: their results and variables from an earlier run are reused. See [Rerun from a node, or rerun failed branches](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
 
 Failure handling is per node. By default a failed node stops the run along its path; other parallel branches still finish, and the run is marked failed. Turn on a node's **Continue on failure** (in its Settings tab) to let the run carry on past that node; the run is still marked failed.
 
@@ -602,7 +604,9 @@ labelled with that change — *Before canvas edits*, *Before agent Claude Code*,
   every 700 ms, and a version per save would bury the useful ones);
 - always before an agent, an import or a restore changes the
   workflow, and before the first canvas save after one of those;
-- never twice in a row with the same content.
+- never twice in a row with the same content, and never for a save that
+  changes nothing: an unchanged save creates no version, moves no revision and
+  notifies no other reader, so an agent's next edit is not refused as stale.
 
 Each workflow keeps its newest 50 versions, none older than 90 days. Versions are
 deleted with their workflow.

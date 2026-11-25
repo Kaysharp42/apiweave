@@ -413,23 +413,32 @@ payload without leaving the agent; secret-shaped values still come back
 withheld. A `browser` node's evidence is its `browser` section: the action,
 page address and title, the expected and actual values, Playwright's message,
 the masked accessibility (ARIA) snapshot as a windowable preview, and
-`hasScreenshot`. That section never carries the image itself; `screenshot: true`
-with one `nodeId` returns the stored JPEG as image content.
+`hasScreenshot`. The snapshot is scoped at read time with `scope` (`auto` by
+default: the open dialog, else the page's main content, else the whole page;
+`dialog`, `main` and `page` name one), then windowed with `start`, `end` and
+`maxBytes`, and the section reports the applied scope. That section never
+carries the image itself; `screenshot: true` with exactly one entry in
+`nodeIds` returns the stored JPEG as image content.
 
 ### Browser
 
 - `browser_inspect` (write) — run a workflow headless up to a browser step
   (`beforeNodeId`) or to its end, and return the page that run left open:
   address, title and the masked ARIA snapshot to pick role and label locators
-  from. It records a run like `runs_create`, waits for the user's approval when
-  it would send secrets, and is then limited to the hosts they approved
+  from. The snapshot is scoped with `scope` (`auto` by default: the open
+  dialog, else the main content, else the whole page; `dialog`, `main` and
+  `page` name one) and windowed with `maxBytes`, `start` and `end`. It records
+  a run like `runs_create`, waits for the user's approval when it would send
+  secrets, and is then limited to the hosts they approved
   (`deniedByUser: true` when they refuse or do not answer: tell them, do not
-  retry). The wait is bounded (`waitMs`, default 10 s, max 30 s): on deadline
-  it returns `terminal: false` with the run id, which another call with `runId`
-  resumes without starting a run or asking for a second approval; a timeout or
+  retry). The wait
+  is bounded (`waitMs`, default 10 s, max 30 s): on deadline it returns
+  `terminal: false` with the run id, which another call with `runId` resumes
+  without starting a run or asking for a second approval; a timeout or
   disconnect never cancels the run. There is no `url` argument: add a
   `navigate` step and inspect after it. `screenshot: true` adds a JPEG of the
-  viewport as image content.
+  viewport as image content. A `browser` node written without a label is named
+  after its action, the same name the recorder gives it.
 
 ### Guides
 
@@ -539,11 +548,11 @@ Run tools return operational metadata suitable for an agent to monitor a run:
 - Run, workspace, workflow, and selected-environment IDs.
 - Current and terminal status.
 - Start/completion timestamps and duration.
-- Failed node IDs.
+- Failed node IDs, and for a failed browser step its action, page address and title, its own error, and a pointer to its evidence.
 - Per-node status, HTTP status code, timing, and a `hasError` flag.
 - Assertion outcome without the assertion message or actual value.
 - Referenced secret names and safe resolved/scope metadata.
-- Resume lineage and record revision.
+- Resume lineage and `workflowRev`, the workflow revision the run actually executed (`null` while it waits to start), comparable with `workflows_get`'s `rev`.
 
 Run responses intentionally omit raw request/response and variable content —
 except `runs_getNodeResult`, which returns one node's stored request/response,
@@ -999,7 +1008,7 @@ sentence in the `start-here` guide telling it to query `graphify-out/` with
   `runs_getNodeResult` for one node's stored request/response, or a browser
   step's page evidence (secret-shaped values still come back redacted). A
   screenshot is the one image a run read carries: ask for it with
-  `screenshot: true` and a single `nodeId`.
+  `screenshot: true` and a single entry in `nodeIds`.
 - **A config value comes back as `<SECRET>`:** Intentional — the structure is
   intact, the credential value is withheld. It is why an agent cannot re-apply
   an existing preset; drag it onto the canvas in the desktop app instead.

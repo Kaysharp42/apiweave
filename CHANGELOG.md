@@ -9,10 +9,25 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] — 2026-11-25
 
 ### Added
 
+- **Record after any step.** A browser step's action menu offers **Record after
+  this step**. It replays the workflow through that step, records from the page
+  the step left, and inserts the new steps between it and whatever followed, so
+  a flow can be extended from its last step or added to in the middle without
+  replacing anything. The whole insert is one undo, and it is never added as a
+  parallel branch: a run drives every branch on one page. See
+  [Browser Steps](docs/features/browser-steps.md#fixing-one-step).
+- **Make a browser step's value a workflow variable.** A step that holds a
+  literal — a fill's text, a selected option, an expected text or value, or the
+  text that finds its element — offers **Make value a variable**. Choose the
+  literal, name the variable, and optionally replace the same value in other
+  steps; later steps read `{{variables.NAME}}`. A variable already holding the
+  value is reused, a fill that looks like a password is never offered, and
+  **Undo** takes the rewrite back. See
+  [Browser Steps](docs/features/browser-steps.md#recording-steps).
 - **Expand a browser step on the canvas to see its result.** A browser node
   now has the expand chevron the HTTP node has. Expanded, it shows the page
   the last run left behind: the screenshot, the page address, the error, and
@@ -22,6 +37,60 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **See a browser step's screenshot full size.** In the node editor's result
   pane, click the screenshot to open it in a dialog fitted to the window.
   Escape closes it and leaves you in the editor.
+- **Outcome checks and sturdier locators while recording.** After each click or
+  key press that changes the page, the recorder adds the check that proves it:
+  the new path, or the alert, status message, dialog or heading that appeared.
+  When Playwright's recorder would write a raw selector or CSS picked by
+  position, the recorder prefers the element's role and name, label or exact
+  text when that finds the same single element. See
+  [Browser Steps](docs/features/browser-steps.md#recording-steps).
+- **Recorded steps are named after what they act on.** A recording titles its
+  steps **Fill Email**, **Click Continuer**, **Open /login** or
+  **Expect Total visible**, and a placeholder in that title reads as its
+  variable's or secret's name. A title you rename stays yours.
+- **New workflows start as Start → End.** Every creation path now places the
+  two boundary nodes and the edge between them, so a new workflow is already a
+  complete graph and whatever you add after Start lands before End. See
+  [Workflows and Nodes](docs/features/workflows-and-nodes.md#building-a-workflow).
+
+### Changed
+
+- **Every node has one action menu.** Right-click and the **⋯** button open the
+  same menu — **Run from here**, the browser-step actions, **Duplicate**,
+  **Copy**, **Save as preset**, **Expand**/**Collapse** and **Delete** — instead
+  of two menus with different actions. Start and End have no menu from either.
+- **Re-recording stays in its recording frame.** **Re-record from here** now
+  puts the new steps back into the recording frame the replaced step was in,
+  keeps the frame's name, and adds an End when the workflow has none. A group
+  you made yourself is never written into: the new steps get a fresh
+  `Re-recorded …` frame, and your group goes only if the replacement leaves it
+  empty. See
+  [Browser Steps](docs/features/browser-steps.md#fixing-one-step).
+- **Step titles name variables and secrets, not placeholders.** A title built
+  from an element's name shows `client` or `TEST_PASSWORD` rather than
+  `{{variables.client}}` or `{{secrets.TEST_PASSWORD}}`.
+- **For coding agents, browser snapshots are scoped and runs name their
+  revision.** A browser snapshot from `runs_getNodeResult`, `browser_inspect`
+  or `workflows_debugContext` now covers the open dialog, else the page's main
+  content, by default (`scope: "auto"`); `dialog`, `main` and `page` request one
+  explicitly. Run reads report `workflowRev`, the revision the run actually
+  executed, and a failed browser step in a run summary names its action, page
+  address and title with a pointer to its evidence. See
+  [MCP Integration](docs/features/mcp-integration.md#browser).
+
+### Fixed
+
+- A browser step reports **was not found** only when the element never matched;
+  when it matched but never became ready, the error says so.
+- Saving a workflow with no changes is now a no-op: it creates no version, moves
+  no revision and notifies no other reader, so an agent's next edit is not
+  refused as stale.
+- A browser step an agent creates without a label is now named after its action
+  instead of keeping no name.
+- A browser step keeps the best screenshot and page address it captured while
+  the page finishes loading, instead of replacing them with an empty read.
+- A new Start → End workflow is no longer overwritten by the placeholder canvas
+  while the canvas is still loading.
 
 ## [1.1.1] — 2026-11-20
 
