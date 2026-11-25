@@ -9,8 +9,8 @@ import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { BrowserLocatorEditor } from "../molecules/BrowserLocatorEditor";
 import { MissingSecretNotice } from "../molecules/MissingSecretNotice";
 import { secretNameOf } from "./SecretNameField";
+import { BROWSER_ACTIONS } from "@shared/browser/browser_action_labels";
 import {
-  BROWSER_ACTIONS,
   actionNeedsLocator,
   configFromDraft,
   draftFromConfig,

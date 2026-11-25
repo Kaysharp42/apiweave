@@ -13,7 +13,7 @@ import type { UseBrowserRecordingResult } from "../types/UseBrowserRecordingResu
 import { isFrameNode } from "../utils/canvasGroups";
 import { resolveInheritedVariables } from "../utils/environmentInheritance";
 import { isRecordControlDisabled, recordingControlView } from "../utils/recordingControl";
-import { placeRecordedStep } from "../utils/recordedSteps";
+import { isRecordingFrame, placeRecordedStep, recordingFrameId } from "../utils/recordedSteps";
 import { removeStepsFrom } from "../utils/stepReplay";
 
 /** The selected node when exactly one is selected, else Start: where a recording's steps go after. */
@@ -78,7 +78,7 @@ function pendingSteps(
 
 /** The steps go in `frameId` when one is known, else in a frame named after the recording. */
 function placementIn(anchorId: string, frameId: string | null | undefined, recordingId: string, frameLabel: string): RecordingPlacement {
-  return { anchorId, frameId: frameId ?? `frame-${recordingId}`, frameLabel };
+  return { anchorId, frameId: frameId ?? recordingFrameId(recordingId), frameLabel };
 }
 
 /**
@@ -107,7 +107,8 @@ function planPlacement(
   const afterId = store.operation === "record-after" ? store.nodeId : null;
   const anchorId = resumedAnchor(graph.nodes, recordingId, afterId) ?? "";
   const anchor = graph.nodes.find((node) => node.id === anchorId);
-  const frameId = anchor?.type === "browser" && anchorId.startsWith(stepPrefix(recordingId)) ? anchor.parentId : undefined;
+  const parent = anchor?.type === "browser" && anchorId.startsWith(stepPrefix(recordingId)) ? graph.nodes.find((node) => node.id === anchor.parentId) : undefined;
+  const frameId = parent !== undefined && isRecordingFrame(parent) ? parent.id : undefined;
   return { graph, placement: placementIn(anchorId, frameId, recordingId, store.frameLabel), replaced: null };
 }
 

@@ -25,11 +25,11 @@ const edge = (source: string, target: string, sourceHandle?: string): CanvasEdge
 function workflow(): CanvasGraph {
   return {
     nodes: [
-      node("frame", "group"),
+      node("frame-recording-1", "group"),
       node("start", "start"),
-      open("open", "frame"),
-      click("a", "frame"),
-      click("b", "frame"),
+      open("open", "frame-recording-1"),
+      click("a", "frame-recording-1"),
+      click("b", "frame-recording-1"),
       node("api", "http-request"),
       click("c"),
       node("end", "end"),
@@ -108,7 +108,7 @@ describe("canRecordAfter", () => {
     ["the last step before End", "c", true],
     ["Start", "start", false],
     ["End", "end", false],
-    ["a frame", "frame", false],
+    ["a frame", "frame-recording-1", false],
   ])("%s → %s", (_what, nodeId, expected) => {
     expect(canRecordAfter(workflow(), nodeId)).toBe(expected);
   });
@@ -146,7 +146,7 @@ describe("removeStepsFrom", () => {
   it("takes out the step and the browser steps after it up to another kind of step, and joins the gap", () => {
     const result = removeStepsFrom(workflow(), "a");
     expect(result?.anchorId).toBe("open");
-    expect(result?.graph.nodes.map((n) => n.id)).toEqual(["frame", "start", "open", "api", "c", "end"]);
+    expect(result?.graph.nodes.map((n) => n.id)).toEqual(["frame-recording-1", "start", "open", "api", "c", "end"]);
     expect(result?.graph.edges.map((e) => [e.source, e.target])).toEqual([
       ["start", "open"],
       ["api", "c"],
@@ -156,7 +156,7 @@ describe("removeStepsFrom", () => {
   });
 
   it("returns the frame the step was in, for the new steps to go back into", () => {
-    expect(removeStepsFrom(workflow(), "a")?.frameId).toBe("frame");
+    expect(removeStepsFrom(workflow(), "a")?.frameId).toBe("frame-recording-1");
     expect(removeStepsFrom(workflow(), "c")?.frameId).toBeNull();
   });
 
@@ -165,19 +165,36 @@ describe("removeStepsFrom", () => {
       nodes: [
         node("start", "start"),
         open("open"),
-        node("frame", "group"),
+        node("frame-recording-1", "group"),
         node("later", "group"),
-        click("a", "frame"),
-        click("b", "frame"),
+        click("a", "frame-recording-1"),
+        click("b", "frame-recording-1"),
         click("c", "later"),
         node("end", "end"),
       ],
       edges: [edge("start", "open"), edge("open", "a"), edge("a", "b"), edge("b", "c"), edge("c", "end")],
     };
     const result = removeStepsFrom(graph, "a");
-    expect(result?.frameId).toBe("frame");
-    expect(result?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "frame", "end"]);
+    expect(result?.frameId).toBe("frame-recording-1");
+    expect(result?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "frame-recording-1", "end"]);
     expect(result?.graph.edges.map((e) => [e.source, e.target])).toEqual([["start", "open"], ["open", "end"]]);
+  });
+
+  it("takes out a user-made group the replaced steps leave empty, and keeps one that still holds other nodes", () => {
+    const build = (extra: CanvasNode[]): CanvasGraph => ({
+      nodes: [node("start", "start"), open("open"), node("group-1", "group"), click("a", "group-1"), ...extra, node("end", "end")],
+      edges: [edge("start", "open"), edge("open", "a"), edge("a", "end")],
+    });
+    expect(removeStepsFrom(build([]), "a")?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "end"]);
+    expect(removeStepsFrom(build([click("keep", "group-1")]), "a")?.graph.nodes.map((n) => n.id)).toEqual(["start", "open", "group-1", "keep", "end"]);
+  });
+
+  it("returns no frame for a frame the user made, whose children are not on the recorder's grid", () => {
+    const graph: CanvasGraph = {
+      nodes: [node("start", "start"), open("open"), node("group-1", "group"), click("a", "group-1"), node("end", "end")],
+      edges: [edge("start", "open"), edge("open", "a"), edge("a", "end")],
+    };
+    expect(removeStepsFrom(graph, "a")?.frameId).toBeNull();
   });
 
   it("returns no frame when the step's frame is not on the canvas", () => {

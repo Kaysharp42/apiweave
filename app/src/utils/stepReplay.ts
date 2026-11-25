@@ -3,6 +3,7 @@ import type { CanvasEdge } from "../types/CanvasEdge";
 import type { CanvasGraph } from "../types/CanvasGraph";
 import type { CanvasNode } from "../types/CanvasNode";
 import { FRAME_NODE_TYPE } from "./canvasGroups";
+import { isRecordingFrame } from "./recordedSteps";
 
 const isBrowser = (node: CanvasNode | undefined): boolean => node?.type === "browser";
 
@@ -128,10 +129,12 @@ function chainFrom(graph: CanvasGraph, nodeId: string): { chain: string[]; next:
  * before them to what followed them, so the recorded steps can be spliced in
  * between (`placeRecordedStep` with the returned anchor).
  *
- * `frameId` is the frame `nodeId` was in, which the recorded steps go back
- * into: it stays even when this leaves it empty, because they refill it in
- * the same edit. Another frame the replaced steps leave empty goes. Null when
- * `nodeId` cannot be re-recorded from.
+ * `frameId` is the frame `nodeId` was in when the recorder made it, which the
+ * recorded steps go back into: it stays even when this leaves it empty, because
+ * they refill it in the same edit. A frame the user made (a Group) is never
+ * returned, so it goes like any other frame the replaced steps leave empty,
+ * and stays while it holds other nodes. Null `frameId` when there is no such
+ * frame; the whole result is null when `nodeId` cannot be re-recorded from.
  */
 export function removeStepsFrom(
   graph: CanvasGraph,
@@ -142,7 +145,7 @@ export function removeStepsFrom(
   const { chain, next } = chainFrom(graph, nodeId);
   const removed = new Set(chain);
   const originFrame = graph.nodes.find((node) => node.id === nodeId)?.parentId;
-  const frameId = graph.nodes.some((node) => node.id === originFrame && node.type === FRAME_NODE_TYPE) ? (originFrame ?? null) : null;
+  const frameId = graph.nodes.some((node) => node.id === originFrame && isRecordingFrame(node)) ? (originFrame ?? null) : null;
   const frames = new Set(graph.nodes.filter((node) => removed.has(node.id) && node.parentId != null).map((node) => node.parentId as string));
   const remaining = graph.nodes.filter((node) => !removed.has(node.id));
   const emptied = new Set(

@@ -147,11 +147,11 @@ describe("useBrowserRecording placement", () => {
       id,
       type: "browser",
       position: { x: 0, y: 0 },
-      parentId: "frame-old",
+      parentId: "frame-recording-old",
       extent: "parent",
       data: { label: id, config: action === "navigate" ? { action, url: "https://dev.test/" } : { action, locator: { kind: "css", value: `#${id}` } } },
     });
-    const frame: CanvasNode = { id: "frame-old", type: "group", position: { x: 0, y: 0 }, data: { label: "Recording", config: {} } };
+    const frame: CanvasNode = { id: "frame-recording-old", type: "group", position: { x: 0, y: 0 }, data: { label: "Recording", config: {} } };
     const end: CanvasNode = { id: "end-1", type: "end", position: { x: 0, y: 0 }, data: { label: "End", config: {} } };
     const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target });
     const canvas = createCanvas(
@@ -165,23 +165,23 @@ describe("useBrowserRecording placement", () => {
 
     expect(canvas.setNodes).toHaveBeenCalledTimes(1);
     // Back into the frame the replaced steps were in: no second frame.
-    expect(canvas.nodes().map((node) => node.id).sort()).toEqual(["browser-recording-1-1", "end-1", "frame-old", "open", "start-1"].sort());
-    expect(canvas.nodes().find((node) => node.id === "browser-recording-1-1")?.parentId).toBe("frame-old");
-    expect(canvas.nodes().find((node) => node.id === "frame-old")?.data.label).toBe("Recording");
+    expect(canvas.nodes().map((node) => node.id).sort()).toEqual(["browser-recording-1-1", "end-1", "frame-recording-old", "open", "start-1"].sort());
+    expect(canvas.nodes().find((node) => node.id === "browser-recording-1-1")?.parentId).toBe("frame-recording-old");
+    expect(canvas.nodes().find((node) => node.id === "frame-recording-old")?.data.label).toBe("Recording");
     expect(canvas.edges().map((e) => [e.source, e.target])).toEqual(
       expect.arrayContaining([["start-1", "open"], ["open", "browser-recording-1-1"], ["browser-recording-1-1", "end-1"]]),
     );
     expect(canvas.edges()).toHaveLength(3);
-    expect(useBrowserRecordingStore.getState()).toMatchObject({ anchorId: "open", frameId: "frame-old" });
+    expect(useBrowserRecordingStore.getState()).toMatchObject({ anchorId: "open", frameId: "frame-recording-old" });
   });
 
   it("keeps a re-record's later steps in the same frame, next to the step before them", () => {
-    const frame: CanvasNode = { id: "frame-old", type: "group", position: { x: 0, y: 0 }, width: 1200, height: 300, data: { label: "Recording", config: {} } };
+    const frame: CanvasNode = { id: "frame-recording-old", type: "group", position: { x: 0, y: 0 }, width: 1200, height: 300, data: { label: "Recording", config: {} } };
     const at = (id: string, x: number, config: Record<string, unknown>): CanvasNode => ({
       id,
       type: "browser",
       position: { x, y: 64 },
-      parentId: "frame-old",
+      parentId: "frame-recording-old",
       extent: "parent",
       data: { label: id, config },
     });
@@ -198,14 +198,46 @@ describe("useBrowserRecording placement", () => {
     act(() => useBrowserRecordingStore.setState({ steps: [first, second] }));
 
     const byId = new Map(canvas.nodes().map((node) => [node.id, node] as const));
-    expect(canvas.nodes().filter((node) => node.type === "group").map((node) => node.id)).toEqual(["frame-old"]);
-    expect(byId.get("frame-old")?.data.label).toBe("Recording");
+    expect(canvas.nodes().filter((node) => node.type === "group").map((node) => node.id)).toEqual(["frame-recording-old"]);
+    expect(byId.get("frame-recording-old")?.data.label).toBe("Recording");
     // `open` keeps its cell; the new steps take the replaced step's cell, then the next one.
     expect(byId.get("open")?.position).toEqual({ x: 28, y: 64 });
-    expect(byId.get(first.stepId)).toMatchObject({ parentId: "frame-old", position: { x: 348, y: 64 } });
-    expect(byId.get(second.stepId)).toMatchObject({ parentId: "frame-old", position: { x: 668, y: 64 } });
+    expect(byId.get(first.stepId)).toMatchObject({ parentId: "frame-recording-old", position: { x: 348, y: 64 } });
+    expect(byId.get(second.stepId)).toMatchObject({ parentId: "frame-recording-old", position: { x: 668, y: 64 } });
     // The user's frame size is never shrunk to fit.
-    expect(byId.get("frame-old")?.width).toBe(1200);
+    expect(byId.get("frame-recording-old")?.width).toBe(1200);
+  });
+
+  it("puts a re-record from inside a user-made group in a new recording frame, clear of the group's children", () => {
+    const group: CanvasNode = { id: "group-1", type: "group", position: { x: 40, y: 40 }, width: 600, height: 300, data: { label: "Group", config: {} } };
+    const inGroup = (id: string, x: number, config: Record<string, unknown>): CanvasNode => ({
+      id,
+      type: "browser",
+      position: { x, y: 60 },
+      parentId: "group-1",
+      extent: "parent",
+      data: { label: id, config },
+    });
+    const edge = (source: string, target: string): CanvasEdge => ({ id: `${source}-${target}`, source, target });
+    const canvas = createCanvas(
+      [group, startNode, inGroup("open", 28 + 160, { action: "navigate", url: "https://dev.test/" }), inGroup("delete", 400, { action: "click", locator: { kind: "css", value: "#delete" } })],
+      [edge("start-1", "open"), edge("open", "delete")],
+    );
+    const recorded = { stepId: "browser-recording-1-1", config: { action: "click" as const, locator: { kind: "css" as const, value: "#remove" } } };
+    useBrowserRecordingStore.setState({ operation: "rerecord", nodeId: "delete", anchorId: null, frameId: null, frameLabel: "Re-recorded today", steps: [recorded] });
+
+    mountRecording(canvas);
+
+    const byId = new Map(canvas.nodes().map((node) => [node.id, node] as const));
+    expect(byId.get(recorded.stepId)?.parentId).toBe(frameId);
+    expect(byId.get(frameId)?.type).toBe("group");
+    expect(byId.get("open")?.parentId).toBe("group-1");
+    expect(byId.has("delete")).toBe(false);
+    // The new frame starts below the anchor, so the step is not on `open`.
+    const open = byId.get("open")!;
+    const newFrame = byId.get(frameId)!;
+    const step = byId.get(recorded.stepId)!;
+    expect(newFrame.position.y + step.position.y).toBeGreaterThan(group.position.y + open.position.y + 150);
   });
 
   it("inserts a record-after's steps between its step and what followed it, keeping every step", () => {
