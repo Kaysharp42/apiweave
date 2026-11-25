@@ -17,7 +17,7 @@ const open: CanvasNode = { id: "b2", type: "browser", position: { x: 0, y: 0 }, 
 function setup() {
   const nodesRef = { current: [total, open] };
   const setNodes = vi.fn();
-  const { result } = renderHook(() => useTurnIntoExtract({ nodesRef, setNodes }));
+  const { result } = renderHook(() => useTurnIntoExtract({ nodes: nodesRef.current, nodesRef, setNodes }));
   return { nodesRef, setNodes, result };
 }
 

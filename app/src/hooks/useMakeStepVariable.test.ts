@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { toast } from "sonner";
 import type { JsonValue } from "@shared/types/JsonValue";
 import type { CanvasNode } from "../types/CanvasNode";
+import type { MakeStepVariableChoice } from "../types/MakeStepVariableChoice";
 import { useMakeStepVariable } from "./useMakeStepVariable";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -25,8 +26,10 @@ function setup(variables: Record<string, JsonValue> = {}) {
   const nodesRef = { current: [fill, again, open] };
   const setNodes = vi.fn();
   const setVariable = vi.fn();
-  const { result } = renderHook(() => useMakeStepVariable({ nodesRef, setNodes, variables, setVariable }));
-  return { nodesRef, setNodes, setVariable, result };
+  const { result, rerender } = renderHook(() =>
+    useMakeStepVariable({ nodes: nodesRef.current, nodesRef, setNodes, variables, setVariable }),
+  );
+  return { nodesRef, setNodes, setVariable, result, rerender };
 }
 
 describe("useMakeStepVariable", () => {
@@ -56,6 +59,25 @@ describe("useMakeStepVariable", () => {
     expect(toast.success).toHaveBeenCalledWith("2 steps now use {{variables.searchClient}}");
   });
 
+  it("releases the target when its step loses every literal, so the action opens it again", () => {
+    const { nodesRef, result, rerender } = setup();
+    act(() => result.current.start("b1"));
+    expect(result.current.dialog.open).toBe(true);
+    // An edit templates both of the step's literals while the dialog is open.
+    nodesRef.current = nodesRef.current.map((each) =>
+      each.id === "b1"
+        ? { ...each, data: { ...each.data, config: { action: "fill", locator: { kind: "label", value: "{{variables.term}}" }, value: "{{variables.term}}" } } }
+        : each,
+    );
+    rerender();
+    expect(result.current.dialog).toMatchObject({ open: false, nodeId: null });
+    // The literals return (an undo, say): the action opens a fresh dialog.
+    nodesRef.current = [fill, again, open];
+    rerender();
+    act(() => result.current.start("b1"));
+    expect(result.current.dialog).toMatchObject({ open: true, nodeId: "b1", node: fill });
+  });
+
   it("reuses a variable already holding the value without writing it again", () => {
     const { nodesRef, setVariable, result } = setup({ client: "ahm" });
     act(() => result.current.start("b1"));
@@ -65,20 +87,48 @@ describe("useMakeStepVariable", () => {
     expect(nodesRef.current[1]).toBe(again);
   });
 
-  it("changes nothing, and says why, for a name that started holding a different value", () => {
+  it("keeps the dialog open for a name that started holding a different value, and completes when it is fixed", () => {
     const { nodesRef, setNodes, setVariable, result } = setup({ client: "zed" });
     act(() => result.current.start("b1"));
     act(() => result.current.dialog.onSubmit({ field: "value", name: "client", everywhere: true }));
+    expect(result.current.dialog.open).toBe(true);
     expect(setVariable).not.toHaveBeenCalled();
     expect(setNodes).not.toHaveBeenCalled();
     expect(nodesRef.current[0]).toBe(fill);
-    expect(toast.error).toHaveBeenCalledWith("client already holds a different value. Pick another name.");
+    // The dialog shows the error itself, next to the name it kept.
+    expect(toast.error).not.toHaveBeenCalled();
+    // The dialog stayed open with the typed name: a free name finishes the job.
+    act(() => result.current.dialog.onSubmit({ field: "value", name: "clientName", everywhere: true }));
+    expect(result.current.dialog.open).toBe(false);
+    expect(setVariable).toHaveBeenCalledWith("clientName", "ahm");
+    expect(nodesRef.current.map((node) => node.data.config?.["value"])).toEqual([
+      "{{variables.clientName}}",
+      "{{variables.clientName}}",
+      undefined,
+    ]);
+    expect(toast.success).toHaveBeenCalledWith("2 steps now use {{variables.clientName}}");
+  });
+
+  it("applies once for a double submit in the same tick", () => {
+    const { nodesRef, setNodes, setVariable, result } = setup();
+    act(() => result.current.start("b1"));
+    const choice: MakeStepVariableChoice = { field: "value", name: "searchClient", everywhere: true };
+    act(() => {
+      result.current.dialog.onSubmit(choice);
+      result.current.dialog.onSubmit(choice);
+    });
+    expect(setNodes).toHaveBeenCalledTimes(1);
+    expect(setVariable).toHaveBeenCalledTimes(1);
+    expect(nodesRef.current[0]?.data.config?.["value"]).toBe("{{variables.searchClient}}");
+    expect(toast.success).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("changes nothing, and says why, when the step no longer holds the value", () => {
     const { nodesRef, setNodes, setVariable, result } = setup();
     act(() => result.current.start("b1"));
     act(() => result.current.dialog.onSubmit({ field: "locator.hasText", name: "filter", everywhere: false }));
+    expect(result.current.dialog.open).toBe(false);
     expect(setVariable).not.toHaveBeenCalled();
     expect(setNodes).not.toHaveBeenCalled();
     expect(nodesRef.current[0]).toBe(fill);

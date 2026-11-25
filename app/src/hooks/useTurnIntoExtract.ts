@@ -16,8 +16,8 @@ function variableNameFrom(typed: string): string {
  * extract mode, so this is how a recorded step becomes one. The change goes
  * through `setNodes` like any edit: auto-save keeps it, undo takes it back.
  */
-export function useTurnIntoExtract({ nodesRef, setNodes }: UseTurnIntoExtractParams): UseTurnIntoExtractResult {
-  const target = useStepMenuTarget(nodesRef, canTurnIntoExtract);
+export function useTurnIntoExtract({ nodes, nodesRef, setNodes }: UseTurnIntoExtractParams): UseTurnIntoExtractResult {
+  const target = useStepMenuTarget(nodes, canTurnIntoExtract);
   const { take } = target;
 
   const onSubmit = useCallback(
