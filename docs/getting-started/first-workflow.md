@@ -10,10 +10,10 @@
 
 ## Build and Run in Five Steps
 
-1. Click **New Workflow** from the sidebar or the empty-state button. A **Start** node is placed for you.
+1. Click **New Workflow** from the sidebar or the empty-state button. A **Start** node and an **End** node are placed and connected.
 2. Open the **Add Nodes** panel (the plus button at the bottom-right of the canvas) and drag a **GET Request** from the HTTP Requests section onto the canvas. Set its URL to `https://httpbin.org/get` (a public, auth-free endpoint that always returns 200). Drag from the Start node's output handle to the request's input handle to connect them.
 3. Drag an **Assertion** (Validation section) onto the canvas and connect the request's output to the Assertion's input. Configure a rule: source `status`, operator `equals`, expected value `200`.
-4. Drag an **End** (Control Flow section) onto the canvas and connect the Assertion's **pass** output to it.
+4. Connect the Assertion's **pass** output to the existing **End** node, then delete the direct Start → End edge (select it and press Delete) so a run has to go through the request.
 5. Click **Run**. This endpoint needs no environment, so you can leave the toolbar's environment selector empty. Within a second or two the request and the Assertion turn green. Click a node to see its response body and assertion result.
 
 The app auto-saves your workflow about 700ms after the last edit, so the database already has the latest version when you run.

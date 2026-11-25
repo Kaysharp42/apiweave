@@ -216,7 +216,10 @@ which use the browser's own trust store.
   moved by a range bump.
 - **Re-record replaces a straight line of browser steps only.** It replaces
   the step and the browser steps after it until another kind of step, a branch
-  or a merge; the steps after that are kept.
+  or a merge; the steps after that are kept. The new steps go back into the
+  recording frame the replaced step was in; a step in a group you made gets a
+  fresh `Re-recorded …` frame, and the group goes if the replacement leaves it
+  empty.
 - **Re-pick, re-record and record-after need the steps they replay to pass.**
   Each replays the workflow up to the step first (through it, for **Record
   after this step**), so a failing earlier step has to be fixed, or re-picked,

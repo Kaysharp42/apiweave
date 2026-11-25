@@ -39,7 +39,7 @@ export const firstStepsChapter: TutorialChapter = {
           instruction:
             "In the left sidebar, click New Workflow (or press Ctrl+N). In the prompt, type a name such as First workflow and click Create.",
           detail:
-            "The workflow opens in its own tab with a single Start node already on the canvas. Start is the entry point every run begins from.",
+            "The workflow opens in its own tab with Start and End already on the canvas, connected to each other. Start is the entry point every run begins from, and End marks a path complete.",
         },
         {
           title: "Add an HTTP Request node",
@@ -49,18 +49,18 @@ export const firstStepsChapter: TutorialChapter = {
             "The palette groups nodes under HTTP Requests, Streaming, Control Flow, Validation, Annotations and Layout.",
         },
         {
-          title: "Add an Assertion node and an End node",
+          title: "Add an Assertion node",
           instruction:
-            "With Add Nodes still open, drag an Assertion node from Validation, then drag an End node from Control Flow. You now have Start, GET Request, Assertion and End on the canvas.",
+            "With Add Nodes still open, drag an Assertion node from Validation onto the canvas. The End node is already there, connected straight to Start.",
           detail:
-            "End marks a path as complete. A workflow needs at least one End node.",
+            "End marks a path as complete. A workflow needs at least one End node, and a new workflow already has one.",
         },
         {
-          title: "Connect all three edges",
+          title: "Connect the nodes and remove the direct edge",
           instruction:
-            "Drag from Start's output handle to the GET Request's input handle. Drag from GET Request's output handle to the Assertion's input handle. Drag from the Assertion's pass handle to the End node's input handle.",
+            "Drag from Start's output handle to the GET Request's input handle, then from GET Request's output to the Assertion's input, then from the Assertion's pass handle to the End node's input. Finally select the direct Start → End edge and press Delete.",
           detail:
-            "That is three edges: Start → GET, GET → Assertion, Assertion (pass) → End. A node with no incoming edge is never reached, so if Start is not wired to GET the run will not call the API. The Assertion's fail handle can stay unwired — the run records the failure and ends that branch.",
+            "That leaves three edges: Start → GET, GET → Assertion, Assertion (pass) → End. The direct Start → End edge is what a new workflow starts with; leaving it in lets a run reach End without calling the API. The Assertion's fail handle can stay unwired — the run records the failure and ends that branch.",
         },
         {
           title: "Point the request at a public endpoint",

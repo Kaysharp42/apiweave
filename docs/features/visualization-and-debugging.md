@@ -232,9 +232,9 @@ earlier run stored for them.
 
 ### Where to find it
 
-- **Run from here**: a step's **⋯** node menu, or right-click the step. Runs
-  that step and everything downstream of it, reusing the **latest run** of the
-  workflow for everything upstream.
+- **Run from here**: a step's action menu — its **⋯** button, or right-clicking
+  it, which open the same menu. Runs that step and everything downstream of it,
+  reusing the **latest run** of the workflow for everything upstream.
 - **Rerun failed branches**: the arrow beside **Run** on the toolbar, and the
   rerun icon on a failed run in **Run history**. Reruns every step the run
   failed, and everything downstream of them, reusing that run for the rest. The

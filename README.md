@@ -57,10 +57,10 @@ sequenceDiagram
 
 A workflow can also drive a web page. A **browser step** is one action in a real Chrome, Edge or Playwright Chromium: open a page, click, type, choose an option, check that text, a value or the address matches, or save a value into a variable. Browser steps sit on the same canvas as your requests, so one run can create an order through the API, sign in to the dev site and check that the order shows up.
 
-- **Recorded, not hand-written.** Click **Record** in the canvas toolbar and use the page. Each action arrives on the canvas as a step while you work, and the recorder toolbar's checks become expect steps.
+- **Recorded, not hand-written.** Click **Record** in the canvas toolbar and use the page. Each action arrives on the canvas as a step while you work, named after what it acts on, and the recorder adds the check that proves each click changed the page.
 - **No credential in the workflow.** A typed value that matches an environment variable or a secret is saved as `{{env.NAME}}` or `{{secrets.NAME}}`. A password that matches no secret gets a **needs secret** badge and a **Save as secret** button, and the typed value is discarded.
-- **Fix one step, not the whole recording.** Right-click a step to **Re-pick element**, **Re-record from here**, **Record after this step** or **Turn into extract**.
-- **Evidence for every step.** Each step keeps the page address, its accessibility tree and a screenshot with password fields painted over. `apiweave run --evidence-dir` writes them to disk for CI, and agents read them over MCP. `browser_inspect` shows an agent the real page, so it picks locators instead of guessing them.
+- **Fix one step, not the whole recording.** Right-click a step, or use its **⋯** button, to **Re-pick element**, **Re-record from here**, **Record after this step**, **Turn into extract** or **Make value a variable**.
+- **Evidence for every step.** Expand a step on the canvas to see the page the run left behind, or open its screenshot full size. Each step keeps the page address, its accessibility tree and a screenshot with password fields painted over. `apiweave run --evidence-dir` writes them to disk for CI, and agents read them over MCP. `browser_inspect` shows an agent the real page, so it picks locators instead of guessing them.
 
 See [Browser Steps](docs/features/browser-steps.md).
 

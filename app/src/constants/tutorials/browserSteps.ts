@@ -65,7 +65,7 @@ export const browserStepsChapter: TutorialChapter = {
           instruction:
             "Click and type through the flow in the browser window. The toolbar reads Recording — N steps, and each action arrives as one step in a new frame named Recording <date and time>.",
           detail:
-            "A page load becomes Open a page, a click becomes Click, typing becomes Type into a field (one step per field), and ticks, options, hover and key presses get their own steps. Clicking into a field before typing is not a step of its own.",
+            "A page load becomes Open a page, a click becomes Click, typing becomes Type into a field (one step per field), and ticks, options, hover and key presses get their own steps. The step is titled after what it acts on, such as Fill Email, Click Continuer or Open /login, and a placeholder in that title reads as its variable or secret name. Clicking into a field before typing is not a step of its own.",
         },
         {
           title: "Let the recording add checks",
@@ -213,7 +213,7 @@ export const browserStepsChapter: TutorialChapter = {
       example: {
         caption: "API and page checks in one run",
         language: "text",
-        code: "[ Start ] -> [ POST /orders ]  extract orderId = response.body.id\n          -> [ Open a page: {{env.BASE_URL}}/login ] -> [ Type into a field: Email ]\n          -> [ Type into a field: Password ] -> [ Click: Sign in ]\n          -> [ Check text: {{variables.orderId}} ] -> [ End ]\n\nOpen any browser step afterwards: Page title, Page address, Screenshot,\nPage structure (accessibility tree), and Expected and found for a check.",
+        code: "[ Start ] -> [ POST /orders ]  extract orderId = response.body.id\n          -> [ Open /login ] -> [ Fill Email ] -> [ Fill Password ]\n          -> [ Click Sign in ] -> [ Expect orderId text ] -> [ End ]\n\nOpen any browser step afterwards: Page title, Page address, Screenshot,\nPage structure (accessibility tree), and Expected and found for a check.",
       },
       expectedResult:
         "The run sends the request, drives the page in one browser, and every browser step shows its own page address, screenshot and accessibility tree, passed or failed.",
@@ -252,7 +252,7 @@ export const browserStepsChapter: TutorialChapter = {
       chapterId: "browser-steps",
       title: "Fix one browser step",
       summary:
-        "Re-pick element, Re-record from here, Record after this step and Turn into extract from a step's right-click menu, and editing a step by hand.",
+        "Re-pick element, Re-record from here, Record after this step, Turn into extract and Make value a variable from a step's action menu, and editing a step by hand.",
       outcome:
         "When a page changes, you can repair the one step it broke instead of recording the whole flow again.",
       keywords: [
@@ -262,6 +262,7 @@ export const browserStepsChapter: TutorialChapter = {
         "record after this step",
         "continue recording",
         "turn into extract",
+        "make value a variable",
         "save a value",
         "locator",
         "replay",
@@ -276,7 +277,7 @@ export const browserStepsChapter: TutorialChapter = {
         {
           title: "Open the step's menu",
           instruction:
-            "Right-click a browser step on the canvas. Next to Run from here, the menu offers Re-pick element, Re-record from here, Record after this step and Turn into extract when they apply to that step.",
+            "Right-click a browser step on the canvas, or click its ⋯ button; both open the same menu. Next to Run from here, it offers Re-pick element, Re-record from here, Record after this step, Turn into extract and Make value a variable when they apply to that step.",
         },
         {
           title: "Understand the replay",
@@ -312,6 +313,13 @@ export const browserStepsChapter: TutorialChapter = {
             "Choose Turn into extract on a step that acts on an element, enter a variable name (one is suggested from the element's name), and confirm. The step becomes Save a value.",
           detail:
             "A form field is read for its value and any other element for its text. A step that ticks or unticks a checkbox, or is already an extract, does not offer it. Later steps and requests read the value as {{variables.NAME}}.",
+        },
+        {
+          title: "Make a value a variable",
+          instruction:
+            "Choose Make value a variable on a step that holds a literal. Pick the value if the step has several, name the variable, and leave Also replace the same value in N other steps on if those steps should use it too.",
+          detail:
+            "The literal moves into a workflow variable and the step reads it as {{variables.NAME}}, so you can try other data without editing the step. A variable already holding the value is reused. Value fields and locator fields are separate: a fill typing Search never rewrites the button named Search. A fill whose element looks like a password field is never offered.",
         },
         {
           title: "Edit a step by hand",
