@@ -114,7 +114,6 @@ import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
-import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import {
   describeThrownSaveError,
   readSaveFailure,
@@ -558,8 +557,16 @@ function WorkflowCanvas({
 
   // A draft is what this canvas held, unsaved, when the user switched away
   // from the tab; it wins over the saved workflow until a save clears it.
-  const { isHydrated, hydratedBaselineRef, noteSavedWorkflow } = useHydration({
+  const {
+    isHydrated,
+    hydratedBaselineRef,
+    setHydratedBaseline,
+    canvasMatchesBaseline,
+    noteSavedWorkflow,
+  } = useHydration({
     workflow: draft ?? workflow,
+    nodes,
+    edges,
     setNodes,
     setEdges,
   });
@@ -739,12 +746,12 @@ function WorkflowCanvas({
         // reset its pagination and replaced the visible list on every update.
         useSidebarStore.getState().applyWorkflowChange(source);
       }
-      hydratedBaselineRef.current = {
+      setHydratedBaseline({
         nodeCount: canvasState.nodes.length,
         edgeCount: canvasState.edges.length,
-      };
+      });
     },
-    [workflowId, setNodes, setEdges, updateVariables],
+    [workflowId, setNodes, setEdges, updateVariables, setHydratedBaseline],
   );
 
   const reloadWorkflowFromServer = useCallback(
@@ -1444,14 +1451,7 @@ function WorkflowCanvas({
 
         const nodeCount = workflowPayload.nodes.length;
         const edgeCount = workflowPayload.edges.length;
-        if (
-          silent &&
-          shouldBlockDestructiveAutosave(
-            workflowPayload.nodes,
-            workflowPayload.edges,
-            hydratedBaselineRef.current,
-          )
-        ) {
+        if (silent && !canvasMatchesBaseline()) {
           canvasLog.warn("workflow-save-blocked", {
             workflowId,
             reason: "destructive-autosave-protection",
@@ -1524,6 +1524,9 @@ function WorkflowCanvas({
           return false;
         }
         baseRevisionRef.current = savedWorkflow.rev;
+        // A direct write, not `setHydratedBaseline`: this graph came from the
+        // committed canvas, so there is no pending commit to wait for, and
+        // raising the "canvas behind baseline" flag here would stall autosave.
         hydratedBaselineRef.current = { nodeCount, edgeCount };
         // This echo is our own graph coming back. Claim it before the tab
         // store hands it to `useHydration`, or the canvas re-hydrates from
@@ -1793,10 +1796,10 @@ function WorkflowCanvas({
           }),
         );
         const canvasState = workflowToCanvas(savedWorkflow);
-        hydratedBaselineRef.current = {
+        setHydratedBaseline({
           nodeCount: canvasState.nodes.length,
           edgeCount: canvasState.edges.length,
-        };
+        });
         noteSavedWorkflow(savedWorkflow);
         showWorkflow(canvasState, savedWorkflow);
 

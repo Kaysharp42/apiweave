@@ -61,6 +61,9 @@ function workflowContentSignature(workflow: Workflow): string {
 
 interface UseHydrationParams {
   workflow: Workflow | null | undefined;
+  /** The canvas's committed state, to learn when it has caught up with a hydration. */
+  nodes: Node<WorkflowCanvasNodeData>[];
+  edges: Edge<WorkflowCanvasEdgeData>[];
   setNodes: React.Dispatch<
     React.SetStateAction<Node<WorkflowCanvasNodeData>[]>
   >;
@@ -72,17 +75,53 @@ interface UseHydrationParams {
 interface UseHydrationReturn {
   isHydrated: boolean;
   hydratedBaselineRef: React.MutableRefObject<HydratedBaseline | null>;
+  /**
+   * Record the graph just handed to `setNodes`/`setEdges` as the baseline.
+   * Call it only right after queuing new node/edge arrays: it holds silent
+   * saves back until the next commit of `nodes`/`edges`.
+   */
+  setHydratedBaseline: (baseline: HydratedBaseline) => void;
+  /**
+   * False from the moment a baseline is set until the canvas commits the graph
+   * it describes. An autosave in that window reads the previous canvas state
+   * (`nodesRef` follows commits, not `setNodes` calls) and would write it over
+   * the workflow the baseline describes.
+   */
+  canvasMatchesBaseline: () => boolean;
   noteSavedWorkflow: (savedWorkflow: Workflow) => void;
 }
 
 export function useHydration({
   workflow,
+  nodes,
+  edges,
   setNodes,
   setEdges,
 }: UseHydrationParams): UseHydrationReturn {
   const [isHydrated, setIsHydrated] = useState(false);
   const hydratedBaselineRef = useRef<HydratedBaseline | null>(null);
   const lastContentSigRef = useRef<string | null>(null);
+  const canvasBehindBaselineRef = useRef(false);
+
+  const setHydratedBaseline = useCallback((baseline: HydratedBaseline) => {
+    hydratedBaselineRef.current = baseline;
+    canvasBehindBaselineRef.current = true;
+  }, []);
+
+  const canvasMatchesBaseline = useCallback(
+    () => !canvasBehindBaselineRef.current,
+    [],
+  );
+
+  // Every call that sets a baseline has just queued `setNodes`/`setEdges` with
+  // new arrays, and React applies queued updates in the next render, so the
+  // next commit that changes `nodes` or `edges` is the one carrying that graph.
+  // This effect must stay declared before the hydration effect: when both run
+  // in one commit, the commit that triggered hydration is not the one that
+  // shows it, and the flag the hydration effect sets afterwards must survive.
+  useEffect(() => {
+    canvasBehindBaselineRef.current = false;
+  }, [nodes, edges]);
 
   useEffect(() => {
     if (
@@ -112,11 +151,11 @@ export function useHydration({
     );
     setEdges(loadedEdges);
     setIsHydrated(true);
-    hydratedBaselineRef.current = {
+    setHydratedBaseline({
       nodeCount: loadedNodes.length,
       edgeCount: loadedEdges.length,
-    };
-  }, [workflow, setNodes, setEdges]);
+    });
+  }, [workflow, setNodes, setEdges, setHydratedBaseline]);
 
   /**
    * Record the workflow a save just echoed back as content the canvas already
@@ -131,5 +170,11 @@ export function useHydration({
     lastContentSigRef.current = workflowContentSignature(savedWorkflow);
   }, []);
 
-  return { isHydrated, hydratedBaselineRef, noteSavedWorkflow };
+  return {
+    isHydrated,
+    hydratedBaselineRef,
+    setHydratedBaseline,
+    canvasMatchesBaseline,
+    noteSavedWorkflow,
+  };
 }
