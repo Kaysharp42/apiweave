@@ -75,6 +75,17 @@ Environment values are plain text. Do not put secrets there; use the `secrets.*`
 {{variables.cartId}}
 ```
 
+A variable that holds an object or an array is read field by field with a dot path, with `[index]` for array elements (zero-based):
+
+```text
+{{variables.case.title}}
+{{variables.ids[0]}}
+{{variables.cars[0].brand}}
+{{variables.a.b[1].c}}
+```
+
+The same path grammar works after `env.*` and `data.*`. An index past the end of the array does not resolve, and nested arrays (`[0][1]`) cannot be addressed.
+
 Workflow variables persist for the duration of the run. After each completed node, the Variables panel shows the current value of every variable, including those written by extractors. See [Variables and Extractors](../features/variables-and-extractors.md) for how to add, edit, and delete variables.
 
 ## Previous Node Result
@@ -114,11 +125,12 @@ Secret values are submitted through a Libsodium sealed box encrypted against the
 
 ## Data Rows
 
-`data.*` reads the current row of a [data-driven run](../features/data-driven-runs.md): a run started with **Run with data** in the app or `apiweave run --iteration-data` in CI, once per row of a CSV or JSON file. The key is the column name, and a dot path reads into a nested JSON value:
+`data.*` reads the current row of a [data-driven run](../features/data-driven-runs.md): a run started with **Run with data** in the app or `apiweave run --iteration-data` in CI, once per row of a CSV or JSON file. The key is the column name, and a dot path (with `[index]` for arrays) reads into a nested JSON value:
 
 ```text
 {{env.BASE_URL}}/users/{{data.user}}
 {{data.address.city}}
+{{data.tags[0]}}
 ```
 
 Outside a data-driven run, or for a column the row does not have, the placeholder stays unresolved. Data values are not masked; keep credentials in `secrets.*`.

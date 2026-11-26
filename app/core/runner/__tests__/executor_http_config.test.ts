@@ -458,6 +458,16 @@ describe("WorkflowExecutor — placeholder resolution and auth (characterization
     )
   })
 
+  it("refuses a masked variable read through an array index", async () => {
+    const { executor, captured } = captureExecutor()
+    const output = await executor.executeWorkflow(
+      singleHttpNodeWorkflow({ method: "GET", url: "http://localhost/a", headers: [{ key: "X-T", value: "{{variables.tokens[0].value}}", active: true }] }),
+      { resume: { scope: new Set(["http_1", "end"]), results: [], maskedVariables: ["tokens"] } },
+    )
+    expect(captured).toHaveLength(0)
+    expect(output.results.find((r) => r.nodeId === "http_1")?.error).toContain("{{variables.tokens}} was masked in the source run.")
+  })
+
   it("refuses a secret in the URL", async () => {
     const { executor, captured } = captureExecutor()
     const output = await executor.executeWorkflow(

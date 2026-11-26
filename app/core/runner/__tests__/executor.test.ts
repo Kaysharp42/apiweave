@@ -202,6 +202,66 @@ describe("WorkflowExecutor", () => {
       }
     })
 
+    it("walks array indexes in variables, env and data placeholders, leaving one past the end unresolved", async () => {
+      const { createServer } = await import("node:http")
+      const seen: { url: string; brand: string; body: string }[] = []
+      const server = createServer((request, response) => {
+        let body = ""
+        request.on("data", (chunk: Buffer) => (body += chunk.toString()))
+        request.on("end", () => {
+          seen.push({ url: request.url ?? "", brand: String(request.headers["x-brand"]), body })
+          response.end("{}")
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "http_1",
+              type: "http-request",
+              config: {
+                method: "POST",
+                url: `http://127.0.0.1:${port}/{{variables.ids[1]}}/{{env.REGIONS[0]}}/{{data.rows[0].code}}`,
+                headers: [{ key: "X-Brand", value: "{{variables.cars[0].brand}}" }],
+                body: '{"deep":"{{variables.a.b[1].c}}","whole":{{variables.cars[1]}},"past":"{{variables.ids[5]}}"}',
+                bodyType: "json",
+              },
+            },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "end" },
+          ],
+          variables: {
+            ids: ["first", "second"],
+            cars: [{ brand: "Northwind" }, { brand: "Southwind", seats: 4 }],
+            a: { b: [{ c: "x" }, { c: "y" }] },
+          },
+        }
+
+        const output = await new WorkflowExecutor({
+          ...makeDeps(),
+          environmentVariables: { REGIONS: ["north", "south"] },
+          data: { rows: [{ code: "r1" }] },
+        }).executeWorkflow(workflow)
+
+        expect(seen).toEqual([
+          {
+            url: "/second/north/r1",
+            brand: "Northwind",
+            body: '{"deep":"y","whole":{"brand":"Southwind","seats":4},"past":"{{variables.ids[5]}}"}',
+          },
+        ])
+        expect(output.results.find((r) => r.nodeId === "http_1")?.unresolvedPlaceholders).toEqual(["variables.ids[5]"])
+      } finally {
+        server.close()
+      }
+    })
+
     // An unresolved `{{env.BASE_URL}}` in the URL never reaches the network — it
     // fails `validateUrl`'s parse and throws before a response exists, landing in
     // the catch branch rather than the 401 case above. That branch must report
@@ -1356,6 +1416,21 @@ describe("WorkflowExecutor", () => {
         )
         expect(output.status).toBe("passed")
         expect(output.extractedVariables).toMatchObject({ record, count: 3, flag: false, list: [1, 2] })
+      })
+
+      it("passes an array element by index, and fails the call on an index past the end", async () => {
+        const cars = [{ brand: "Northwind" }, { brand: "Southwind" }]
+        const { output } = await callWith(
+          { car: "{{variables.cars[1]}}", brand: "{{variables.cars[0].brand}}" },
+          { cars },
+          { car: "car", brand: "brand" },
+        )
+        expect(output.status).toBe("passed")
+        expect(output.extractedVariables).toMatchObject({ car: { brand: "Southwind" }, brand: "Northwind" })
+
+        const { output: past, result } = await callWith({ car: "{{variables.cars[2]}}" }, { cars }, {})
+        expect(past.status).toBe("failed")
+        expect(result?.error).toBe("inputMapping.car: {{variables.cars[2]}} is not set in the caller")
       })
 
       it("keeps a mixed template as text", async () => {

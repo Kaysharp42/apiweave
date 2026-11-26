@@ -48,7 +48,7 @@ import type { JsonrpcBody } from "@shared/types/JsonrpcBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS } from "@shared/zod-schemas/WorkflowCallForEachSchema"
-import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { isQueryPath, readDotPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findSoapFault } from "@shared/extractors/xmlDocument"
 import type { SoapBody } from "@shared/types/SoapBody"
 import type { SoapFault } from "@shared/types/SoapFault"
@@ -289,6 +289,12 @@ function substituteJsonTemplate(text: string, resolve: (match: string, rawPath: 
  */
 function placeholderText(value: unknown): string {
   return typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)
+}
+
+/** `{{nodeId.response.body.id}}` split into the node id and the path into its result (`""` for the whole result). */
+function splitNodePath(varPath: string): { readonly nodeId: string; readonly path: string } {
+  const dot = varPath.indexOf(".")
+  return dot === -1 ? { nodeId: varPath, path: "" } : { nodeId: varPath.slice(0, dot), path: varPath.slice(dot + 1) }
 }
 
 function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean {
@@ -3204,48 +3210,23 @@ export class WorkflowExecutor {
   private resolvePlaceholderValue(varPath: string): unknown {
     const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
     if (scope) return this.readScopedValue(scope[1]!, scope[2]!)
-    const firstPart = varPath.split(".")[0]!
-    const nodeResult = this.results.get(firstPart)
-    return nodeResult ? this.readRawPath(nodeResult, varPath.split(".").slice(1)) : undefined
+    const { nodeId, path } = splitNodePath(varPath)
+    const nodeResult = this.results.get(nodeId)
+    return nodeResult ? readDotPath(nodeResult, path) : undefined
   }
 
-  /** Walk a scope map (`env`, `variables`, `data`) by dotted path, returning the raw value. */
+  /**
+   * The raw value `path` (`case.title`, `items[0].id`) addresses in a scope
+   * map (`env`, `variables`, `data`), or undefined. A variable masked in a
+   * rerun's source run and not set since is refused, not read.
+   */
   private readScopedValue(scopeName: string, path: string): unknown {
-    const name = path.split(".")[0]!
+    const name = /^[^.[]*/.exec(path)![0]
     if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
       throw new Error(`${RERUN_REFUSED} {{variables.${name}}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
     }
-    let value: unknown =
-      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
-    for (const part of path.split(".")) {
-      if (typeof value !== "object" || value === null) return undefined
-      value = (value as Record<string, unknown>)[part]
-    }
-    return value
-  }
-
-  /** Walk an object/array by dotted path, returning the raw value (not stringified). */
-  private readRawPath(value: unknown, pathParts: readonly string[]): unknown {
-    let current: unknown = value
-    for (const part of pathParts) {
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        const index = Number.parseInt(arrayMatch[2]!, 10)
-        if (typeof current === "object" && current !== null && key in current) {
-          current = (current as Record<string, unknown>)[key]
-          if (Array.isArray(current) && index >= 0 && index < current.length) current = current[index]
-          else return undefined
-        } else {
-          return undefined
-        }
-      } else if (typeof current === "object" && current !== null) {
-        current = (current as Record<string, unknown>)[part]
-      } else {
-        return undefined
-      }
-    }
-    return current
+    const root = scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
+    return readDotPath(root, path)
   }
 
   /**
@@ -3342,14 +3323,17 @@ export class WorkflowExecutor {
 
       // Environment variables, workflow variables, the iteration's data row
       const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
-      if (scope) return this.resolveScopedPlaceholder(scope[1]!, scope[2]!, match)
+      if (scope) {
+        const value = this.readScopedValue(scope[1]!, scope[2]!)
+        return value !== undefined && value !== null ? placeholderText(value) : match
+      }
 
       if (varPath.startsWith("prev")) return this.resolvePrevPlaceholder(varPath, match)
 
       // Direct node ID access
-      const firstPart = varPath.split(".")[0]!
-      const nodeResult = this.results.get(firstPart)
-      return nodeResult ? this.readResult(firstPart, nodeResult, varPath.split(".").slice(1), match) : match
+      const { nodeId, path } = splitNodePath(varPath)
+      const nodeResult = this.results.get(nodeId)
+      return nodeResult ? this.readResult(nodeId, nodeResult, path, match) : match
     }
 
     return options.json ? substituteJsonTemplate(text, resolve) : text.replace(PLACEHOLDER_RE, resolve)
@@ -3370,21 +3354,6 @@ export class WorkflowExecutor {
     return String(func(...paramList))
   }
 
-  /** `{{env.…}}`, `{{variables.…}}` or `{{data.…}}`: `path` walked from the named scope. */
-  private resolveScopedPlaceholder(scopeName: string, path: string, match: string): string {
-    const name = path.split(".")[0]!
-    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
-      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
-    }
-    let value: unknown =
-      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
-    for (const part of path.split(".")) {
-      if (typeof value !== "object" || value === null) return match
-      value = (value as Record<string, unknown>)[part]
-    }
-    return value !== undefined && value !== null ? placeholderText(value) : match
-  }
-
   /** `{{prev.…}}` reads the last result (a rerun entry's own predecessor); `{{prev[i].…}}` the i-th of the merged branches, else of all results. */
   private resolvePrevPlaceholder(varPath: string, match: string): string {
     const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
@@ -3392,12 +3361,14 @@ export class WorkflowExecutor {
       const branchIndex = Number.parseInt(indexMatch[1]!, 10)
       const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
       const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
-      return entry ? this.readResult(entry[0], entry[1], indexMatch[2]!.split("."), match) : match
+      return entry ? this.readResult(entry[0], entry[1], indexMatch[2]!, match) : match
     }
 
+    const path = varPath.slice(5)
+    if (path === "") return match
     const entryPrev = this.entryPrev.getStore()
     const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
-    return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
+    return last ? this.readResult(last[0], last[1], path, match) : match
   }
 
   /**
@@ -3405,8 +3376,9 @@ export class WorkflowExecutor {
    * the stored copy, so a value that was masked or cut short there is refused
    * rather than sent as `<SECRET>` or as half a body.
    */
-  private readResult(nodeId: string, result: NodeResult, pathParts: string[], match: string): string {
-    const text = this.resolveDottedPath(result, pathParts, match)
+  private readResult(nodeId: string, result: NodeResult, path: string, match: string): string {
+    const value = readDotPath(result, path)
+    const text = value !== undefined && value !== null ? placeholderText(value) : match
     if (!this.seededNodeIds.has(nodeId)) return text
     if (result.response?.truncated === true) {
       throw new Error(`${RERUN_REFUSED} ${match} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
@@ -3415,32 +3387,6 @@ export class WorkflowExecutor {
       throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
     }
     return text
-  }
-
-  private resolveDottedPath(value: unknown, pathParts: string[], fallback: string): string {
-    let current: unknown = value
-    for (const part of pathParts) {
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        const index = Number.parseInt(arrayMatch[2]!, 10)
-        if (typeof current === "object" && current !== null && key in current) {
-          current = (current as Record<string, unknown>)[key]
-          if (Array.isArray(current) && index >= 0 && index < current.length) {
-            current = current[index]
-          } else {
-            return fallback
-          }
-        } else {
-          return fallback
-        }
-      } else if (typeof current === "object" && current !== null) {
-        current = (current as Record<string, unknown>)[part]
-      } else {
-        return fallback
-      }
-    }
-    return current !== undefined && current !== null ? placeholderText(current) : fallback
   }
 
   // -------------------- Extraction --------------------
@@ -3491,35 +3437,9 @@ export class WorkflowExecutor {
     return resolution.failureReason === null ? resolution.value : undefined
   }
 
+  /** `path` read from `obj`; an empty path or a missing object reads undefined. */
   private getNestedValue(obj: unknown, path: string): unknown {
-    if (!obj || !path) return undefined
-    const parts = path.split(".")
-    let value: unknown = obj
-    for (let index = 0; index < parts.length; index++) {
-      const part = parts[index]!
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        const index = Number.parseInt(arrayMatch[2]!, 10)
-        if (typeof value === "object" && value !== null && key in value) {
-          value = (value as Record<string, unknown>)[key]
-          if (Array.isArray(value) && index >= 0 && index < value.length) {
-            value = value[index]
-          } else {
-            return undefined
-          }
-        } else {
-          return undefined
-        }
-      } else if (typeof value === "object" && value !== null) {
-        value = (value as Record<string, unknown>)[part]
-      } else {
-        return undefined
-      }
-      if (value === undefined) return undefined
-      if (value === null && index < parts.length - 1) return undefined
-    }
-    return value
+    return !obj || !path ? undefined : readDotPath(obj, path)
   }
 
   // -------------------- Key-value field normalization --------------------

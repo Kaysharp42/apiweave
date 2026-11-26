@@ -153,6 +153,19 @@ export function resolveExtractorPath(data: unknown, path: string): ExtractorReso
 }
 
 /**
+ * The value a dot-grammar `path` addresses under `data` — `case.title`,
+ * `items[0].id` — or undefined when it does not resolve (a missing key, an
+ * index past the end, a step into a non-object). An empty path is `data`
+ * itself. This is the one walker behind every `{{…}}` placeholder path, so a
+ * placeholder and an extractor agree on what a path addresses.
+ */
+export function readDotPath(data: unknown, path: string): unknown {
+  if (path === "") return data
+  const resolution = resolveDotPath(data, path)
+  return resolution.failureReason === null ? resolution.value : undefined
+}
+
+/**
  * Walks a dot-grammar `path` over `data`.
  */
 function resolveDotPath(data: unknown, path: string): ExtractorResolution {
