@@ -126,7 +126,7 @@ const patchInput = z
     upsertEdges: z
       .array(WorkflowEdgeSchema)
       .optional()
-      .describe("Edges to add or replace, matched by edgeId. Use this to fix a sourceHandle without resending the graph."),
+      .describe("Edges to add or replace, matched by edgeId: a new connection needs a new edgeId, and reusing one replaces that edge, including its source and target. Use this to fix a sourceHandle without resending the graph. Two edges joining the same nodes through the same handles are rejected (sourceHandle or targetHandle must differ)."),
     removeEdgeIds: z.array(z.string().min(1)).optional().describe("edgeIds to delete."),
     setVariables: z
       .record(z.string(), JsonValueSchema)

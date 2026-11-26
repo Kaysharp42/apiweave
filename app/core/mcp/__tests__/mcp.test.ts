@@ -1141,6 +1141,27 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     expect(textOf(assertion as { content: Array<{ type: string; text?: string }> })).toContain("response.body")
     await client.close()
   })
+
+  /**
+   * FB-004. Reusing an edgeId replaces the stored edge, endpoints included —
+   * that is what the service does, but an agent that read "matched by edgeId"
+   * as "re-point this connection" could not have known. Both surfaces it reads
+   * say so: the field description in the tool schema and the authoring guide.
+   */
+  it("says that a new connection needs a new edgeId, and a reused one replaces that edge", async () => {
+    const client = await connectClient()
+    const tools = (await client.listTools()).tools
+    const patchSchema = JSON.stringify(tools.find((tool) => tool.name === "workflows_patch")?.inputSchema)
+    expect(patchSchema).toContain("a new connection needs a new edgeId")
+    expect(patchSchema).toContain("reusing one replaces that edge, including its source and target")
+
+    const authoring = MCP_GUIDES.find((guide) => guide.slug === "workflow-authoring")?.text ?? ""
+    expect(authoring).toContain("reusing one replaces that edge, including its source and target")
+    // FB-005: the shape a chain has, and how to re-check it after removals.
+    expect(authoring).toContain("has one edge fewer than")
+    expect(authoring).toContain("read the outline back")
+    await client.close()
+  })
 })
 
 describe("MCP graph writes — mistakes surface statically, before any live request", () => {
