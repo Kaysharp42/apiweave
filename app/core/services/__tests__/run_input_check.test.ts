@@ -148,6 +148,13 @@ describe("RunInputChecker", () => {
     ])
   })
 
+  it("reads an indexed env path as its root variable, as the runner resolves it", async () => {
+    const env = environments.create({ workspaceId, name: "Dev", variables: { HOSTS: ["http://a", "http://b"] } })
+    const id = workflow("w", [http("a", { url: "{{env.HOSTS[1]}}/x", body: "{{ env.MISSING[0].url }}" })])
+    const missing = (await checker().check(workspaceId, id, env.environmentId)).missing
+    expect(missing.map((input) => input.name)).toEqual(["MISSING"])
+  })
+
   it("ignores placeholders the runner would not resolve as a secret", async () => {
     const id = workflow("w", [http("a", { url: "{{secrets.not-a-name}}", body: "{{variables.x}} {{data.y}} {{prev.response.body}}" })])
     expect((await checker().check(workspaceId, id, null)).missing).toEqual([])
