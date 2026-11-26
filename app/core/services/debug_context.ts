@@ -75,8 +75,8 @@ export class DebugContextService {
 
     const resultsByNode = new Map((run?.results ?? []).map((result) => [result.nodeId, result]))
     const failureSummary = summarizeFailures(workflow, run, resultsByNode)
-    const callers = await this.workflows.listCallers(request.workspaceId, request.workflowId)
-    const callerVariableNames = callerSuppliedVariableNames(callers.flatMap((caller) => caller.nodes), request.workflowId)
+    const callers = await this.workflows.listCallers(request.workspaceId, workflowId)
+    const callerVariableNames = callerSuppliedVariableNames(callers.flatMap((caller) => caller.nodes), workflowId)
     const diagnosis = compactDiagnosis(workflow, callerVariableNames, run, request.issueLimit ?? DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT)
 
     const requested = dedupe(request.nodeIds ?? [])
