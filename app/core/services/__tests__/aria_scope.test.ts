@@ -153,7 +153,39 @@ describe("scopeAriaSnapshot", () => {
   it("picks the first main when the page has several, and the first main also wins inside auto when no dialog is open", () => {
     const two = ["- main [ref=e1]:", '  - textbox "Search"', "- main [ref=e2]:", '  - button "Second"'].join("\n")
     expect(scopeAriaSnapshot(two, "main")).toEqual({ text: '- main [ref=e1]:\n  - textbox "Search"', applied: "main" })
-    expect(scopeAriaSnapshot(two, "auto")).toEqual({ text: '- main [ref=e1]:\n  - textbox "Search"', applied: "main" })
+    // The second main is content the first one left out, so auto says so.
+    expect(scopeAriaSnapshot(two, "auto")).toEqual({
+      text: '- main [ref=e1]:\n  - textbox "Search"',
+      applied: "main",
+      note: 'Content outside the main landmark is also on the page; scope "page" shows it.',
+    })
+  })
+
+  it("says when auto's main landmark is not the whole page, so scope \"page\" is one call away", () => {
+    // The common trap FB-041 names: an overlay or banner outside `main`, with
+    // no dialog role anywhere, so auto silently reads the landmark only.
+    const withBanner = [
+      "- banner [ref=e1]:",
+      '  - link "Shop"',
+      "- main [ref=e2]:",
+      '  - button "Continue"',
+    ].join("\n")
+    expect(scopeAriaSnapshot(withBanner, "auto")).toEqual({
+      text: '- main [ref=e2]:\n  - button "Continue"',
+      applied: "main",
+      note: 'Content outside the main landmark is also on the page; scope "page" shows it.',
+    })
+    // Naming a scope is a choice: only auto explains what it chose against.
+    expect(scopeAriaSnapshot(withBanner, "main").note).toBeUndefined()
+    // Nothing outside the landmark: nothing to explain.
+    const onlyMain = ["- main [ref=e1]:", '  - button "Continue"'].join("\n")
+    expect(scopeAriaSnapshot(onlyMain, "auto")).toEqual({ text: '- main [ref=e1]:\n  - button "Continue"', applied: "main" })
+    // The truncation marker is the stored snapshot's own fact, stated by its
+    // own note; it is not counted as page content outside the landmark.
+    const cut = ["- main [ref=e1]:", '  - button "Continue"', "… (truncated)"].join("\n")
+    expect(scopeAriaSnapshot(cut, "auto").note).toBe(
+      'The stored ARIA snapshot was truncated when it was captured, so a dialog or later content may be missing; scope "page" shows what was kept.',
+    )
   })
 
   it("keeps a nested dialog's deeper subtree, including non-item lines indented under it", () => {
@@ -184,7 +216,12 @@ describe("scopeAriaSnapshot", () => {
       "- main [ref=e2]:",
       '  - button "Continue"',
     ].join("\n")
-    expect(scopeAriaSnapshot(decoy, "auto")).toEqual({ text: '- main [ref=e2]:\n  - button "Continue"', applied: "main" })
+    // The generic block ahead of the landmark is outside it, so auto says so.
+    expect(scopeAriaSnapshot(decoy, "auto")).toEqual({
+      text: '- main [ref=e2]:\n  - button "Continue"',
+      applied: "main",
+      note: 'Content outside the main landmark is also on the page; scope "page" shows it.',
+    })
     // A single-quoted key (a name holding escaped quotes) still names its role;
     // the extraction keeps the line verbatim once dedented.
     const quoted = '  - \'dialog "Step 2: \\"go\\" #1" [ref=e3]\':\n    - button "OK"'

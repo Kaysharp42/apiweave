@@ -208,7 +208,9 @@ describe("RunScheduler", () => {
         nodeId: "http_1",
         status: "failed",
         error: "Request configuration invalid",
-        request: { url: "ftp://169.254.169.254/auth?<REDACTED>" },
+        // The secret-named parameter is withheld by name; a plain one would
+        // have stayed legible.
+        request: { url: "ftp://169.254.169.254/auth?token=<REDACTED>" },
       })
       expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
     })
@@ -284,11 +286,11 @@ describe("RunScheduler", () => {
 
       const persistedRun = runs.getById(runId)
       // BASE_URL comes from the child (override wins); REGION is inherited from the base
-      // untouched. The query string is redacted, same as the sibling
-      // test above — assert on the path, which still proves both resolutions happened.
+      // untouched. A plain parameter stays legible in the stored request URL,
+      // so this now proves both resolutions directly.
       expect(persistedRun?.results[0]).toMatchObject({
         nodeId: "http_1",
-        request: { url: "ftp://169.254.169.254/child-override?<REDACTED>" },
+        request: { url: "ftp://169.254.169.254/child-override?region=eu" },
       })
     })
 

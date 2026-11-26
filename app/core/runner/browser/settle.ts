@@ -16,18 +16,24 @@ export interface SettledPage {
    * caller captures as it would have without settling.
    */
   readonly ariaSnapshot?: string
+  /**
+   * True only when two reads `intervalMs` apart agreed. False when the cap ran
+   * out on a page that was still changing — or on one no read could settle —
+   * so the caller can say its evidence may be a moment of a moving page.
+   */
+  readonly settled: boolean
 }
 
 /**
  * Wait until the page stops changing, at most `maxMs` of wall clock, and
- * return the last snapshot read. A step passes as soon as its own action is
- * done, but a click that signs in navigates a moment later, and a page fills
- * in once its data arrives: read at once, evidence would show the page
- * before either. Settled means two ARIA snapshots `intervalMs` apart agree,
- * so a stable page costs one interval: a caller that settles after every
- * step passes a short one. An empty read is a read that ran out of budget,
- * not a page with nothing on it: it never agrees with anything, so a page
- * that keeps returning nothing is waited out rather than called settled —
+ * return whether it did plus the last snapshot read. A step passes as soon as
+ * its own action is done, but a click that signs in navigates a moment later,
+ * and a page fills in once its data arrives: read at once, evidence would show
+ * the page before either. Settled means two ARIA snapshots `intervalMs` apart
+ * agree, so a stable page costs one interval: a caller that settles after
+ * every step passes a short one. An empty read is a read that ran out of
+ * budget, not a page with nothing on it: it never agrees with anything, so a
+ * page that keeps returning nothing is waited out rather than called settled —
  * unless it has closed, since a closed page will never say more and waiting
  * for it only spends the cap.
  * Every call is bounded by what is left of the deadline, so a slow load or a
@@ -46,12 +52,13 @@ export async function settle(page: Page, maxMs: number, intervalMs: number = SET
       const budget = left()
       return within(page.locator("body").ariaSnapshot({ timeout: Math.min(READ_TIMEOUT_MS, budget) }), Math.min(READ_MAX_MS, budget), "")
     }
-    /** The last read, unless no read could be taken: an empty snapshot is no evidence to reuse. */
-    const latest = (snapshot: string): SettledPage => (snapshot === "" ? {} : { ariaSnapshot: snapshot })
+    /** The last read and whether two agreed, unless no read could be taken: an empty snapshot is no evidence to reuse. */
+    const latest = (snapshot: string, settled: boolean): SettledPage =>
+      snapshot === "" ? { settled: false } : { ariaSnapshot: snapshot, settled }
     let previous = await read()
     while (deadline > Date.now()) {
       await page.waitForTimeout(Math.min(intervalMs, left())).catch(() => undefined)
-      if (deadline <= Date.now()) return latest(previous)
+      if (deadline <= Date.now()) return latest(previous, false)
       const budget = left()
       await within(page.waitForLoadState("load", { timeout: budget }), budget, undefined)
       const next = await read()
@@ -59,14 +66,14 @@ export async function settle(page: Page, maxMs: number, intervalMs: number = SET
       // one already read nor agrees with it. A page that closed under it has
       // nothing more to say, and waiting cannot change that, so stop there.
       if (next === "") {
-        if (page.isClosed()) return latest(previous)
+        if (page.isClosed()) return latest(previous, false)
         continue
       }
-      if (next === previous) return latest(previous)
+      if (next === previous) return latest(previous, true)
       previous = next
     }
-    return latest(previous)
+    return latest(previous, false)
   } catch {
-    return {}
+    return { settled: false }
   }
 }

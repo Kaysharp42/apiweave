@@ -1093,6 +1093,11 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     expect(authoring.text).toContain("Re-pick element")
     expect(authoring.text).toContain("Turn into extract")
     expect(authoring.text).toContain("removeNodeIds")
+    // What a scoped snapshot left out is named, a still-changing page says so
+    // in its own evidence, and inspection replays side effects.
+    expect(authoring.text).toContain("scopeNote")
+    expect(authoring.text).toContain("The page was still changing")
+    expect(authoring.text).toContain("replays side effects")
     await client.close()
   })
 

@@ -158,14 +158,33 @@ const getInput = idInput.extend({
 })
 const diagnoseInput = idInput.extend({ runId: z.string().min(1).optional() }).strict()
 
-const debugContextInput = z.object({
-  workspaceId: ws,
-  workflowId: z.string().min(1),
-  runId: z.string().min(1).optional().describe("Inspect this run. Omitted selects the latest failed run; the chosen policy is stated in runSelection."),
-  nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Extra nodes to detail beyond the failures, in priority order after them. Unknown ids are reported in missingNodeIds."),
-  issueLimit: z.number().int().min(1).max(DEBUG_CONTEXT_MAX_ISSUE_LIMIT).optional().describe("Run-correlated diagnosis items inline (default 20, max 50). Totals always describe every issue; the rest arrive via nextReads."),
-  errorBytes: z.number().int().min(1).max(DEBUG_CONTEXT_MAX_ERROR_BYTES).optional().describe("Error characters kept per evidence entry (default 2048, max 8192). Cut errors are marked errorTruncated with a runs_getNodeResult selector for more."),
-}).strict()
+const debugContextInput = z
+  .object({
+    workspaceId: ws,
+    workflowId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Inspect this workflow. Omitted when a runId is given: the run's own workflow is inspected then."),
+    runId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Inspect this run — alone, the workflow it belongs to is inspected; with a workflowId, the run must belong to that workflow. Omitted selects the latest failed run; the chosen policy is stated in runSelection."),
+    nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Extra nodes to detail beyond the failures, in priority order after them. Unknown ids are reported in missingNodeIds."),
+    issueLimit: z.number().int().min(1).max(DEBUG_CONTEXT_MAX_ISSUE_LIMIT).optional().describe("Run-correlated diagnosis items inline (default 20, max 50). Totals always describe every issue; the rest arrive via nextReads."),
+    errorBytes: z.number().int().min(1).max(DEBUG_CONTEXT_MAX_ERROR_BYTES).optional().describe("Error characters kept per evidence entry (default 2048, max 8192). Cut errors are marked errorTruncated with a runs_getNodeResult selector for more."),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.workflowId === undefined && value.runId === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["runId"],
+        message: "Pass a workflowId, or a runId to debug the workflow that run belongs to.",
+      })
+    }
+  })
 
 const searchInput = z.object({
   workspaceId: ws,
@@ -286,7 +305,7 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
     output: WorkflowDebugContextSchema,
     handle: (i) => debugContext.debugContext({
       workspaceId: i.workspaceId,
-      workflowId: i.workflowId,
+      ...(i.workflowId !== undefined ? { workflowId: i.workflowId } : {}),
       ...(i.runId !== undefined ? { runId: i.runId } : {}),
       ...(i.nodeIds !== undefined ? { nodeIds: i.nodeIds } : {}),
       ...(i.issueLimit !== undefined ? { issueLimit: i.issueLimit } : {}),

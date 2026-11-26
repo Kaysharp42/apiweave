@@ -1292,7 +1292,9 @@ export class WorkflowExecutor {
    * it gets the fuller wait `browser_inspect` gives a page a run left open.
    * A failed step has usually waited its own timeout out already, so the
    * fuller cap costs nothing on a page that is stable by then: it bites only
-   * when the page is genuinely still moving, which is when it matters.
+   * when the page is genuinely still moving, which is when it matters — and
+   * when the cap runs out anyway, the step's `evidenceNote` says the page was
+   * still changing when its evidence was taken.
    */
   private static readonly PASSED_SETTLE_MS = 1_000
   private static readonly PASSED_SETTLE_INTERVAL_MS = 150
@@ -1300,7 +1302,9 @@ export class WorkflowExecutor {
 
   /**
    * A step's ARIA snapshot and stored screenshot, pass or fail, or a note
-   * saying what is missing. Taken of the page as settled, not as the step's
+   * saying what is missing — including that the page was still moving when
+   * its evidence was taken, so a click that starts a slow change does not
+   * look like a no-op. Taken of the page as settled, not as the step's
    * action left it, and never able to fail the step it documents.
    */
   private async browserEvidence(
@@ -1332,7 +1336,13 @@ export class WorkflowExecutor {
       this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}),
       { screenshot: true, ...(settled.ariaSnapshot !== undefined ? { ariaSnapshot: settled.ariaSnapshot } : {}) },
     )
-    const notes = evidence.note !== undefined ? [evidence.note] : []
+    const notes: string[] = []
+    // The settle cap ran out on a page that was still changing: what follows
+    // is one moment of a moving page, and the reader must not take it for the
+    // page the step produced. (A failed step's own timeout usually waited out
+    // the change already; this fires most on a passed step's short settle.)
+    if (!settled.settled) notes.push("The page was still changing when its evidence was taken.")
+    if (evidence.note !== undefined) notes.push(evidence.note)
     let screenshotArtifactId: string | undefined
     if (evidence.screenshot !== undefined && this.deps.saveArtifact !== undefined) {
       try {

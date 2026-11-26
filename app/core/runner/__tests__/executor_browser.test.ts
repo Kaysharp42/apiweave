@@ -345,7 +345,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       action: "expect-text",
       expected: "Welcome ada@example.com",
       actual: "Welcome ada@example.com",
-      url: `${base}/dashboard?<REDACTED>`,
+      // A plain routing parameter stays legible, so the evidence says whose
+      // dashboard this was; only secret-named parameters are withheld.
+      url: `${base}/dashboard?user=ada%40example.com`,
       title: "Dashboard",
       // A passed step keeps its evidence too: the fifth browser step's screenshot.
       screenshotArtifactId: "artifact-5",
@@ -417,6 +419,20 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
   })
 
+  it("keeps a plain parameter in a step's evidence URL and withholds a secret-named one", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/dashboard?user=ada&token=literal-ticket-9` }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
+    // The plain parameter says whose dashboard the evidence is of; the
+    // secret-named one is withheld by name, not by cutting the whole query.
+    expect(result(stored, "open")?.browser?.url).toBe(`${base}/dashboard?user=ada&token=<REDACTED>`)
+    expect(JSON.stringify(stored)).not.toContain("literal-ticket-9")
+  })
+
   it("takes no evidence of a step that passed when the run is cancelled while its page settles", async () => {
     let release: () => void = () => undefined
     const held = new Promise<void>((resolve) => {
@@ -469,6 +485,14 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     // outlast the churn, and the check then reads the arrived page itself.
     expect(failed.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
     expect(failed.browser?.ariaSnapshot).toContain('heading "Arrived"')
+    // FB-043: the passed navigate's own settle ran out while the page was
+    // still moving, and its evidence says so — a click that starts a slow
+    // change no longer looks like a no-op. (The navigate's 1s settle window
+    // lies wholly inside the 3s churn, so this is deterministic; the failed
+    // step's fuller settle is not asserted either way.)
+    expect(result(stored, "open")?.browser?.evidenceNote).toBe(
+      "The page was still changing when its evidence was taken.",
+    )
   })
 
   it("answers a confirm() only when the step says so", async () => {

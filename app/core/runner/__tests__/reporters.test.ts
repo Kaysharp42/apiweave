@@ -118,7 +118,9 @@ const FAILED_RUN = makeRun({
   results: [
     result("http_1", {
       duration: 250,
-      request: { method: "GET", url: "https://api.example.com/users?<REDACTED>" },
+      // The stored shape a run leaves: a plain parameter legible, a
+      // secret-named one withheld by name.
+      request: { method: "GET", url: "https://api.example.com/users?page=2&token=<REDACTED>" },
       response: { statusCode: 200, headers: { "set-cookie": "sid=abc" }, body: { token: "server-issued" } },
     }),
     result("check", {
@@ -297,7 +299,7 @@ describe("buildHtmlReport", () => {
     const html = buildHtmlReport({ kind: "run", run: FAILED_RUN, workflow: WORKFLOW })
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true)
     expect(html).not.toMatch(/<script|<link|src=|https?:\/\/(?!api\.example\.com)/)
-    expect(html).toContain("GET https://api.example.com/users?&lt;REDACTED&gt;")
+    expect(html).toContain("GET https://api.example.com/users?page=2&amp;token=&lt;REDACTED&gt;")
     expect(html).toContain("Status 200")
     expect(html).toContain("Rule 2: prev body.items.length gt — fail (comparison-failed)")
   })

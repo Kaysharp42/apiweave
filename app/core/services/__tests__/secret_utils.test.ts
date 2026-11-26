@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   findRedactedPlaceholders,
   isSyncSensitiveKey,
+  redactUrlForRunHistory,
   sanitizeAgentReadValue,
   sanitizeExportValue,
   sanitizeUrlWithReferences,
@@ -414,5 +415,51 @@ describe("vault storage fields and extractor values", () => {
     expect(
       sanitizeExportValue({ extractors: { token: "response.body.token", bad: "Bearer abc.123" } }),
     ).toEqual({ extractors: { token: "response.body.token", bad: "<SECRET>" } })
+  })
+})
+
+describe("redactUrlForRunHistory — what a stored run URL keeps", () => {
+  it("keeps plain routing parameters, so evidence says which page it was", () => {
+    expect(redactUrlForRunHistory("https://app.test/orders?status=open&page=2")).toBe(
+      "https://app.test/orders?status=open&page=2",
+    )
+  })
+
+  it("redacts a secret-named parameter value while keeping its name and its plain neighbours", () => {
+    expect(redactUrlForRunHistory("https://app.test/orders?user=ada&token=literal-ticket-9&tab=all")).toBe(
+      "https://app.test/orders?user=ada&token=<REDACTED>&tab=all",
+    )
+  })
+
+  it("redacts a credential-looking value under an innocuous name", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
+    expect(redactUrlForRunHistory(`https://app.test/orders?ref=${jwt}`)).toBe(
+      "https://app.test/orders?ref=<REDACTED>",
+    )
+  })
+
+  it("strips userinfo and drops the fragment, as the redaction guide promises", () => {
+    expect(redactUrlForRunHistory("https://ada:hunter2@app.test/v1#access_token=abc123")).toBe(
+      "https://app.test/v1",
+    )
+  })
+
+  it("keeps a masked value the run's masker already wrote, legible in path and query alike", () => {
+    // The masker replaces a resolved secret's own text with <SECRET> before a
+    // URL is redacted; the redactor must not percent-encode that placeholder
+    // out of legibility, and must not treat it as credential material.
+    expect(redactUrlForRunHistory("https://app.test/s/<SECRET>/orders?next=<SECRET>&tab=all")).toBe(
+      "https://app.test/s/<SECRET>/orders?next=<SECRET>&tab=all",
+    )
+    // A redaction elsewhere forces the URL's round-trip, and the masked value
+    // and the blank both come back legible, not percent-encoded.
+    expect(redactUrlForRunHistory("https://app.test/s/<SECRET>/orders?next=<SECRET>&token=literal-ticket-9")).toBe(
+      "https://app.test/s/<SECRET>/orders?next=<SECRET>&token=<REDACTED>",
+    )
+  })
+
+  it("leaves a URL it cannot parse, or one with nothing to withhold, byte-for-byte", () => {
+    expect(redactUrlForRunHistory("about:blank")).toBe("about:blank")
+    expect(redactUrlForRunHistory("not a url")).toBe("not a url")
   })
 })

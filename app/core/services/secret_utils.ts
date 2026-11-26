@@ -739,6 +739,31 @@ function redactUrlQueryParams(
   return queryChanged
 }
 
+/** The blank a stored run URL substitutes for a withheld parameter value. */
+const RUN_HISTORY_URL_BLANK = "<REDACTED>"
+
+/**
+ * A URL as run history keeps it — the one redaction every captured evidence
+ * URL (a browser step's page, an inspected page, a request's metadata) goes
+ * through, on top of the run's own secret-value masker.
+ *
+ * Same rule as every other URL this module redacts: plain parameters stay
+ * legible so the evidence still says which page it was, while userinfo, the
+ * fragment, secret-named parameters and credential-looking values are
+ * withheld (the guide's "losing only embedded userinfo, a fragment, and
+ * secret-named query parameters"). A `<SECRET>` the masker already wrote —
+ * and the `<REDACTED>` blank itself — survive legible: the URL parser
+ * percent-encodes their angle brackets on the round-trip a redaction forces,
+ * so they are decoded back.
+ */
+export function redactUrlForRunHistory(value: string): string {
+  const redacted = sanitizeUrlWithReferences(value, RUN_HISTORY_URL_BLANK, isSecretKey)
+  if (redacted === value) return value
+  return redacted
+    .replaceAll(encodeURIComponent(RUN_HISTORY_URL_BLANK), RUN_HISTORY_URL_BLANK)
+    .replaceAll(encodeURIComponent(SECRET_PLACEHOLDER), SECRET_PLACEHOLDER)
+}
+
 /**
  * Deep export/read sanitizer for arbitrary workflow-shaped JSON (node configs,
  * `nodeTemplates`, full workflow/project payloads). Unlike {@link sanitizeVariablesForExport}

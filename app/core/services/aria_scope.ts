@@ -6,7 +6,8 @@ import type { AriaScope } from "@shared/types/AriaScope"
  * actually applied (`"auto"` is resolved to one of the three), and an optional
  * note saying what the preview does not show — the requested scope was absent
  * and the whole page was returned, `"auto"` chose a dialog while other content
- * exists, or the stored snapshot was cut before this extraction.
+ * exists, `"auto"` chose the main landmark while content sits outside it, or
+ * the stored snapshot was cut before this extraction.
  */
 export interface ScopedAriaSnapshot {
   readonly text: string
@@ -46,10 +47,11 @@ interface SnapshotLine {
  *
  * A requested scope the page does not have falls back to the whole page, and
  * `note` says so. `note` also says what a chosen scope leaves out: when `auto`
- * picks a dialog but another dialog or the main landmark exists outside it, and
- * when the stored snapshot was truncated before the extraction's end. Never
- * throws: anything unparseable reads as "no dialog, no main", which is the
- * whole page — with a note.
+ * picks a dialog but another dialog or the main landmark exists outside it,
+ * when `auto` picks the main landmark but content exists outside it (a
+ * banner, an overlay without a dialog role), and when the stored snapshot was
+ * truncated before the extraction's end. Never throws: anything unparseable
+ * reads as "no dialog, no main", which is the whole page — with a note.
  */
 export function scopeAriaSnapshot(snapshot: string, scope: AriaScope = "auto"): ScopedAriaSnapshot {
   try {
@@ -106,10 +108,12 @@ interface ScopeNoteInput {
 
 /**
  * What the extracted text does not show, in as few words as it takes: an
- * `auto` dialog may be one of several, and a truncated stored snapshot may have
- * lost the dialog (usually at the end of the body) that the scope was looking
- * for. Both notes join the extraction's own fallback note.
+ * `auto` dialog may be one of several, an `auto` main landmark may not be the
+ * whole page (the banner and overlays outside it), and a truncated stored
+ * snapshot may have lost the dialog (usually at the end of the body) that the
+ * scope was looking for. All notes join the extraction's own fallback note.
  */
+// fallow-ignore-next-line complexity -- three independent facts a scope can leave out
 function scopeNote(input: ScopeNoteInput): string | undefined {
   const notes: string[] = []
   if (input.extracted.note !== undefined) notes.push(input.extracted.note)
@@ -118,12 +122,32 @@ function scopeNote(input: ScopeNoteInput): string | undefined {
     const landmark = input.main !== undefined && !insideSubtree(input.lines, input.dialog, input.main)
     if (dialogs > 0 || landmark) notes.push(otherContentNote(dialogs, landmark))
   }
+  if (input.requested === "auto" && input.extracted.applied === "main" && input.main !== undefined
+    && contentOutsideMain(input.lines, input.main)) {
+    notes.push('Content outside the main landmark is also on the page; scope "page" shows it.')
+  }
   if (isTruncated(input.snapshot) && !input.extracted.text.includes(TRUNCATION_MARKER)) notes.push(TRUNCATED_NOTE)
   return notes.length === 0 ? undefined : notes.join(" ")
 }
 
 function isTruncated(snapshot: string): boolean {
   return snapshot.endsWith(TRUNCATION_MARKER)
+}
+
+/**
+ * Whether any page content sits outside the chosen `main` subtree. Blank lines
+ * are layout, not content, and the truncation marker is the stored snapshot's
+ * own fact — its note already says what was cut, so it must not double as
+ * "content outside the landmark".
+ */
+function contentOutsideMain(lines: readonly SnapshotLine[], main: SnapshotLine): boolean {
+  const start = lines.indexOf(main)
+  const end = subtreeEnd(lines, main)
+  return lines.some((line, index) => {
+    if (index >= start && index < end) return false
+    const trimmed = line.raw.trim()
+    return trimmed !== "" && trimmed !== TRUNCATION_MARKER
+  })
 }
 
 /** Dialogs outside the chosen one's subtree: the consent banner `auto` skipped, or an ancestor dialog. */

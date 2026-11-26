@@ -22,7 +22,7 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVariables, withBrowserChainStart, type ResumeSeed } from "./resume"
-import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
+import { extractSecretRefsFromString, redactUrlForRunHistory, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
 import { BROWSER_STEP_PREFIX, BrowserSession, type BrowserLaunchSettings } from "./browser/session"
@@ -1058,15 +1058,11 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
   if (request === null || typeof request !== "object" || Array.isArray(request)) return request ?? null
   const url = request["url"]
   if (typeof url !== "string") return request
-  try {
-    const parsed = new URL(url)
-    // The URL parser percent-encodes a masked path segment; keep it legible.
-    const pathname = parsed.pathname.replaceAll(encodeURIComponent(SECRET_PLACEHOLDER), SECRET_PLACEHOLDER)
-    const safeUrl = `${parsed.protocol}//${parsed.host}${pathname}${parsed.search ? "?<REDACTED>" : ""}`
-    return { ...request, url: safeUrl }
-  } catch {
-    return { ...request, url: "<URL>" }
-  }
+  // Per parameter, on top of the masker that already ran: plain parameters
+  // stay legible so the evidence still says which page it was, while
+  // userinfo, the fragment, secret-named and credential-looking parameters
+  // are withheld.
+  return { ...request, url: redactUrlForRunHistory(url) }
 }
 
 const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [

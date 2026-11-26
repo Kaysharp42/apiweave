@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { AGENT_RUN_DENIED_ERROR, type EnqueueRequest } from "../../runner/scheduler"
@@ -281,7 +281,7 @@ describe("RunService.inspectBrowser", () => {
     expect(runs.getById(inspection.runId)?.status).toBe("running")
   })
 
-  it("continues an inspection with its runId, and refuses the runId once read", async () => {
+  it("continues an inspection with its runId, and the finished page stays readable by it", async () => {
     const trigger = new FakeTrigger(runs, { hold: true })
     const runService = service(trigger)
     const first = await runService.inspectBrowser(workspaceId, request(workflowId, 10))
@@ -300,10 +300,38 @@ describe("RunService.inspectBrowser", () => {
       page: { url: PAGE.url, title: "Sign in" },
     })
 
-    // The page is held once: a screenshot must not be handed out twice.
-    await expect(
-      runService.inspectBrowser(workspaceId, { runId: first.runId, screenshot: false, maxBytes: 16_384 }),
-    ).rejects.toMatchObject({ name: "NotFoundError", message: expect.stringMatching(/browser_inspect with a workflowId/) })
+    // D2: a terminal read does not consume the page. A later read — the same
+    // caller reading again, or a second one — gets the same kept page until
+    // it expires, not a refusal.
+    const third = await runService.inspectBrowser(workspaceId, { runId: first.runId, screenshot: false, maxBytes: 16_384 })
+    expect(third).toMatchObject({
+      runId: first.runId,
+      terminal: true,
+      status: "completed",
+      page: { url: PAGE.url, title: "Sign in", ariaSnapshot: { preview: PAGE.ariaSnapshot } },
+    })
+  })
+
+  it("drops a kept page once its TTL runs out, and says to inspect again", async () => {
+    vi.useFakeTimers()
+    try {
+      const runService = service(new FakeTrigger(runs, { page: PAGE }))
+      const inspection = await runService.inspectBrowser(workspaceId, request(workflowId))
+      expect(inspection.terminal).toBe(true)
+
+      // Ten minutes after its last read the page is gone, run row and all.
+      vi.setSystemTime(Date.now() + 11 * 60_000)
+      await expect(
+        runService.inspectBrowser(workspaceId, { runId: inspection.runId, screenshot: false, maxBytes: 16_384 }),
+      ).rejects.toMatchObject({
+        name: "NotFoundError",
+        message:
+          `run ${inspection.runId} is not a browser inspection whose page is still kept: its page has expired `
+          + "(kept for 10 minutes after its last read). Call browser_inspect with a workflowId to inspect again.",
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("refuses a run that was not an inspection", async () => {

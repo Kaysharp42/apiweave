@@ -292,8 +292,11 @@ workflow headless and returns the page it ends on — URL, title and the masked
 ARIA snapshot — which is where the next step starts. The snapshot is scoped
 (\`scope\`, default \`"auto"\`): the open dialog when the page has one, else the
 main landmark, else the whole page — the part a locator lives in, not the
-banner and navigation that open every snapshot. \`maxBytes\`/\`start\`/\`end\`
-window the scoped text; the response's \`scope\` and \`totalBytes\` say what was
+banner and navigation that open every snapshot. When the applied scope left
+content out — another dialog, or anything outside the main landmark — the
+response's \`scopeNote\` says so; \`scope: "page"\` shows the whole page.
+\`maxBytes\`/\`start\`/\`end\` window the scoped text; the response's \`scope\` and
+\`totalBytes\` say what was
 extracted and how big it is, so you can window it. Take that step's locator
 from the snapshot, the tree Playwright's own recorder picks locators from:
 \`button "Sign in"\` is \`{"kind": "role", "role": "button", "name": "Sign in"}\`,
@@ -319,6 +322,21 @@ and the same \`maxBytes\`/\`start\`/\`end\` windowing over the scoped text. For 
 page *before* step X, read the step before X. Prefer that stored evidence; use
 \`browser_inspect\` only when the page must be re-observed after the workflow
 changed, because it replays every earlier node for real.
+
+**A click is not the change it starts.** A click that kicks off a slow request
+is done the moment the click lands, while the page is still moving: such a step
+passes and its evidence carries \`evidenceNote: "The page was still changing
+when its evidence was taken."\`. Do not read that page at once and call the
+click a no-op — follow it with \`expect-visible\` on the element the change
+produces (the saved row, the confirmation) and a generous \`timeoutMs\`, and
+assert there.
+
+**\`browser_inspect\` replays side effects.** A page cannot be seeded from an
+earlier run, so every inspection runs the browser chain from its first step
+again: a step that submits, deletes or pays does so on every call. When a
+finished run already shows the page you want, read the side-effecting step's
+own stored evidence (above) instead of inspecting again; \`beforeNodeId\` stops
+*before* a named step, but the steps before it still run for real.
 
 **Repair.** A browser step's evidence is in \`workflows_debugContext\`, or in
 \`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,

@@ -3,7 +3,7 @@ import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
-import { SECRET_PLACEHOLDER } from "../../services/secret_utils"
+import { SECRET_PLACEHOLDER, redactUrlForRunHistory } from "../../services/secret_utils"
 import { rememberSecretField, within } from "./capture"
 import { buildLocator } from "./locator"
 import { pollUntil } from "./poll"
@@ -90,18 +90,6 @@ function resolveValue(ctx: BrowserStepContext, text: string, allowSecrets: boole
 /** Collapse runs of whitespace and trim, the way Playwright's own text assertions compare. */
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim()
-}
-
-/** `url` without its query string and fragment, which can carry tokens, as run history stores URLs. */
-export function withoutQuery(url: string): string {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return url
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return url
-  return `${parsed.origin}${parsed.pathname}${parsed.search ? "?<REDACTED>" : ""}${parsed.hash ? "#<REDACTED>" : ""}`
 }
 
 function seconds(ms: number): string {
@@ -428,15 +416,15 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
         async () => page.url(),
         (actual) => compareText(ctx, actual, expected, match),
         timeout,
-        withoutQuery(expected),
+        redactUrlForRunHistory(expected),
         () => `the page URL did not ${MATCH_VERBS[match]} the expected URL within ${seconds(timeout)}`,
-        withoutQuery,
+        redactUrlForRunHistory,
       )
     }
     case "extract": {
       const value = await extractValue(page, config, locate, timeout)
       ctx.setVariable(config.variable, value)
-      return { actual: config.from === "url" ? withoutQuery(value) : value }
+      return { actual: config.from === "url" ? redactUrlForRunHistory(value) : value }
     }
   }
 }
@@ -526,14 +514,16 @@ function detailOf(error: unknown): string | undefined {
 }
 
 /**
- * Where the page is: its url without the query and its title. Read after a
+ * Where the page is: its redacted url and its title. Read after a
  * step, and again of the settled page when its evidence is taken, so both say
- * which page they belong to.
+ * which page they belong to. Plain query parameters stay legible; userinfo,
+ * the fragment and secret-named parameters are withheld, on top of the run's
+ * own secret-value masker.
  */
 export async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
   const url = page.url()
   const title = await within(page.title(), 2_000, "")
-  return { ...(url !== "" ? { url: withoutQuery(url) } : {}), ...(title !== "" ? { title } : {}) }
+  return { ...(url !== "" ? { url: redactUrlForRunHistory(url) } : {}), ...(title !== "" ? { title } : {}) }
 }
 
 /**

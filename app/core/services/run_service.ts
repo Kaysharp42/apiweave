@@ -57,16 +57,14 @@ export interface RunWaitOptions {
   readonly signal?: AbortSignal
 }
 
-/** One `browser.inspect` run's kept page, awaiting its single read (or expiry). */
+/** One `browser.inspect` run's kept page, readable by its runId until it expires (or is displaced). */
 interface KeptInspection {
   readonly workspaceId: string
   readonly beforeNodeId?: string
   /** Undefined until the run reads its page, and thereafter what it read: null when no browser step opened one. */
   page: InspectedPage | null | undefined
-  /** When this entry last became useful: at enqueue, then when the page landed. Pruned after {@link BROWSER_INSPECTION_TTL_MS}. */
+  /** When this entry last became useful: at enqueue, when the page landed, and on every read. Pruned after {@link BROWSER_INSPECTION_TTL_MS}. */
   storedAt: number
-  /** True once a terminal result has been handed out, so two concurrent waits cannot both read it. */
-  consumed: boolean
 }
 
 /** What `browser.inspect` starts a run with; `runId` selects an earlier inspection instead. */
@@ -120,8 +118,9 @@ export class RunService {
   /** Finished load runs by group id, newest last. In memory: the aggregates are the report, and a restart ends the session. */
   private readonly loadRuns = new Map<string, LoadRun>()
   /**
-   * `browser.inspect` pages by run id, awaiting their one read. In memory: the
-   * page is a picture of a live browser, and a restart ends the session.
+   * `browser.inspect` pages by run id, kept readable until they expire. In
+   * memory: the page is a picture of a live browser, and a restart ends the
+   * session.
    */
   private readonly inspections = new Map<string, KeptInspection>()
 
@@ -399,7 +398,9 @@ export class RunService {
    * an earlier call, the page that inspection read. The run is an ordinary one
    * — in history, and an agent's needs the user's approval to send secrets — so
    * this waits for it, bounded by `waitMs`. A deadline or a caller that goes
-   * away never cancels it; the page stays keyed by its runId for a later read.
+   * away never cancels it; the page stays keyed by its runId, readable again
+   * until it expires, so a follow-up read (a different scope or window) starts
+   * no second run and asks for no second approval.
    */
   async inspectBrowser(
     workspaceId: string,
@@ -433,7 +434,6 @@ export class RunService {
       workspaceId,
       page: undefined,
       storedAt: Date.now(),
-      consumed: false,
       ...(input.beforeNodeId !== undefined ? { beforeNodeId: input.beforeNodeId } : {}),
     }
     const runId = trigger.enqueue({
@@ -466,7 +466,7 @@ export class RunService {
   ): Promise<BrowserInspection> {
     this.pruneInspections()
     const kept = this.inspections.get(runId)
-    if (kept === undefined || kept.workspaceId !== workspaceId || kept.consumed) {
+    if (kept === undefined || kept.workspaceId !== workspaceId) {
       throw this.inspectionGone(runId)
     }
     // The caller is using it: keep it alive for the next continuation.
@@ -475,28 +475,24 @@ export class RunService {
   }
 
   /**
-   * Shape one read of an inspection. A terminal run's page is consumed here —
-   * a screenshot is held once, never handed back twice — while a run still
-   * going keeps its entry for the next `runId` call.
+   * Shape one read of an inspection. A terminal read keeps the entry — the
+   * page stays readable by its runId until it expires or is displaced, so a
+   * caller can read it again (another scope, another window) without a second
+   * run — while a run still going keeps it for the next `runId` call.
    */
   private finishInspection(run: Run, kept: KeptInspection, read: SnapshotRead): BrowserInspection {
     const result = inspectionResult(run, kept.page, {
       ...(kept.beforeNodeId !== undefined ? { beforeNodeId: kept.beforeNodeId } : {}),
       ...read,
     })
-    if (result.terminal) {
-      // Two waits on the same inspection share this entry: the first to see it
-      // finished reads the page, the second is told to inspect again.
-      if (kept.consumed) throw this.inspectionGone(run.runId)
-      kept.consumed = true
-      this.inspections.delete(run.runId)
-    }
+    if (result.terminal) kept.storedAt = Date.now()
     return result
   }
 
   private inspectionGone(runId: string): NotFoundError {
     return new NotFoundError(
-      `run ${runId} is not a browser inspection whose page is still kept: it was already read or has expired. Call browser_inspect with a workflowId to inspect again.`,
+      `run ${runId} is not a browser inspection whose page is still kept: its page has expired `
+        + "(kept for 10 minutes after its last read). Call browser_inspect with a workflowId to inspect again.",
     )
   }
 

@@ -195,7 +195,7 @@ export const browserStepsChapter: TutorialChapter = {
           instruction:
             "Double-click a browser step after the run. Its result pane shows Page title, Page address, Duration, Expected and found for a check, a Screenshot, and the Page structure (accessibility tree). A failed step adds Playwright's message. Click the screenshot to see it full size.",
           detail:
-            "Evidence is kept for every step, pass or fail. The address's query string and fragment are replaced with <REDACTED>. To compare steps side by side, expand them on the canvas with their chevron: each shows its screenshot, address and, for a check, what it expected and found.",
+            "Evidence is kept for every step, pass or fail. The address keeps its plain query parameters; secret-named ones, the fragment and any login in the address read <REDACTED>. To compare steps side by side, expand them on the canvas with their chevron: each shows its screenshot, address and, for a check, what it expected and found.",
         },
         {
           title: "Know what is masked",
