@@ -170,6 +170,7 @@ snapshot to a clean canvas → no save), `WorkflowContext.test.tsx`.
 | FB-072 | `force` on `click`/`check`. | D4. |
 | FB-073 | Serialise browser runs. | D5. |
 | FB-074 | Report in-flight requests in step evidence (CDP). | After FB-043 shows whether the cheap signal suffices. |
+| FB-076 | `runs_get` `variables: true` names an over-budget variable but cannot fetch it alone. | Next round: a `variableNames` filter on the same opt-in. Found in B8 review. |
 | FB-075 | Recorder output: dead-end steps, `selector`/css locators, hard-coded data, stale catalog labels. | Separate recorder work; collect concrete cases first. |
 
 ## External (closed, no APIWeave change)
