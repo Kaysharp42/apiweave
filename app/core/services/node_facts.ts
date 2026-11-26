@@ -133,7 +133,8 @@ function collectAssertionVariables(value: unknown, add: AddReference): void {
   }
 }
 
-function forEachString(value: unknown, visit: (text: string) => void): void {
+/** Calls `visit` with every string leaf of a config, however deeply nested. */
+export function forEachString(value: unknown, visit: (text: string) => void): void {
   if (typeof value === "string") {
     visit(value)
   } else if (Array.isArray(value)) {

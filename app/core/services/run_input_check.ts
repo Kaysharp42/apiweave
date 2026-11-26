@@ -7,6 +7,7 @@ import type { RunInputUse } from "@shared/types/RunInputUse"
 import type { Workflow } from "@shared/types/Workflow"
 import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
 import { NotFoundError } from "../ipc/errors"
+import { forEachString } from "./node_facts"
 
 /**
  * Where a secret stands for a run: no value anywhere down the chain, a value
@@ -61,24 +62,15 @@ export class RunInputChecker {
     const workflow = this.sources.workflows.getByIdInWorkspace(workflowId, workspaceId)
     if (workflow === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
 
-    const environmentId = selectedEnvironmentId === undefined ? workflow.selectedEnvironmentId ?? null : selectedEnvironmentId
-    const found = environmentId === null ? undefined : this.sources.environments.getById(environmentId)
-    // An environment from another workspace is one this run cannot use.
-    const environment = found !== undefined && found.workspaceId === workspaceId ? found : undefined
+    const environment = this.environmentFor(workspaceId, workflow, selectedEnvironmentId)
     const variables = environment === undefined ? {} : this.sources.environments.resolveEffectiveVariables(environment.environmentId)
     const chain = { ...(environment === undefined ? {} : { environmentId: environment.environmentId }), workspaceId }
 
     const missing: MissingRunInput[] = []
     for (const [key, usedBy] of collectReferences(workflow, workspaceId, this.sources.workflows)) {
       const [kind, name] = splitKey(key)
-      if (kind === "env") {
-        if (!Object.hasOwn(variables, name)) missing.push({ kind, name, reason: "unset", storedIn: null, usedBy })
-        else if (isBlank(variables[name])) missing.push({ kind, name, reason: "empty", storedIn: null, usedBy })
-        continue
-      }
-      const secret = await this.sources.secretState(name, chain)
-      if (secret.state === "unset") missing.push({ kind, name, reason: "unset", storedIn: null, usedBy })
-      else if (secret.state === "empty") missing.push({ kind, name, reason: "empty", storedIn: secret.storedIn, usedBy })
+      const gap = kind === "env" ? envGap(variables, name) : secretGap(await this.sources.secretState(name, chain))
+      if (gap !== undefined) missing.push({ kind, name, ...gap, usedBy })
     }
     missing.sort((left, right) => (left.kind === right.kind ? left.name.localeCompare(right.name) : left.kind === "env" ? -1 : 1))
 
@@ -90,6 +82,25 @@ export class RunInputChecker {
       missing,
     }
   }
+
+  private environmentFor(workspaceId: string, workflow: Workflow, selectedEnvironmentId: string | null | undefined): Environment | undefined {
+    const environmentId = selectedEnvironmentId === undefined ? workflow.selectedEnvironmentId ?? null : selectedEnvironmentId
+    const found = environmentId === null ? undefined : this.sources.environments.getById(environmentId)
+    // An environment from another workspace is one this run cannot use.
+    return found !== undefined && found.workspaceId === workspaceId ? found : undefined
+  }
+}
+
+type Gap = Pick<MissingRunInput, "reason" | "storedIn">
+
+function envGap(variables: Record<string, JsonValue>, name: string): Gap | undefined {
+  if (!Object.hasOwn(variables, name)) return { reason: "unset", storedIn: null }
+  return isBlank(variables[name]) ? { reason: "empty", storedIn: null } : undefined
+}
+
+function secretGap(secret: SecretState): Gap | undefined {
+  if (secret.state === "unset") return { reason: "unset", storedIn: null }
+  return secret.state === "empty" ? { reason: "empty", storedIn: secret.storedIn } : undefined
 }
 
 /** Keyed `env:NAME` / `secret:NAME`, each with the steps that read it. */
@@ -111,41 +122,40 @@ function collectReferences(
         nodeId: node.nodeId,
         nodeLabel: node.label || node.nodeId,
       }
-      for (const key of nodeReferences(node.config)) {
-        const uses = references.get(key) ?? []
-        uses.push(use)
-        references.set(key, uses)
-      }
-      // The same lookup the scheduler makes: a target it cannot reach contributes nothing.
-      const target: unknown = node.type === "workflow" ? (node.config as Record<string, unknown> | undefined)?.["targetWorkflowId"] : undefined
-      const child = typeof target === "string" ? workflows.getByIdInWorkspace(target, workspaceId) : undefined
+      for (const key of nodeReferences(node.config)) references.set(key, [...(references.get(key) ?? []), use])
+      const child = calledWorkflow(node, workspaceId, workflows)
       if (child !== undefined) pending.push(child)
     }
   }
   return references
 }
 
+/** The same lookup the scheduler makes: a target it cannot reach contributes nothing. */
+function calledWorkflow(node: Workflow["nodes"][number], workspaceId: string, workflows: RunInputSources["workflows"]): Workflow | undefined {
+  if (node.type !== "workflow") return undefined
+  const target = (node.config as Record<string, unknown> | undefined)?.["targetWorkflowId"]
+  return typeof target === "string" ? workflows.getByIdInWorkspace(target, workspaceId) : undefined
+}
+
+/** The reference key each `{{env.*}}` / `{{secrets.*}}` in `text` names. */
+function* textReferences(text: string): Generator<string> {
+  for (const match of text.matchAll(REFERENCE_RE)) {
+    const path = match[2]!
+    if (match[1] === "env") {
+      const name = path.split(".")[0]!
+      if (name !== "") yield `env:${name}`
+    } else if (SECRET_NAME_RE.test(path)) {
+      yield `secret:${path}`
+    }
+  }
+}
+
 /** Every reference key in one node's config, once each. */
 function nodeReferences(config: unknown): Set<string> {
   const keys = new Set<string>()
-  const visit = (value: unknown): void => {
-    if (typeof value === "string") {
-      for (const match of value.matchAll(REFERENCE_RE)) {
-        const path = match[2]!
-        if (match[1] === "env") {
-          const name = path.split(".")[0]!
-          if (name !== "") keys.add(`env:${name}`)
-        } else if (SECRET_NAME_RE.test(path)) {
-          keys.add(`secret:${path}`)
-        }
-      }
-    } else if (Array.isArray(value)) {
-      for (const item of value) visit(item)
-    } else if (value !== null && typeof value === "object") {
-      for (const item of Object.values(value)) visit(item)
-    }
-  }
-  visit(config)
+  forEachString(config, (text) => {
+    for (const key of textReferences(text)) keys.add(key)
+  })
   return keys
 }
 

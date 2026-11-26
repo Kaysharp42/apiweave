@@ -195,6 +195,17 @@ export class RunService {
     refuseMissingInputs(this.inputs, { kind: "workflow", name: check.workflowName }, [check], agent)
   }
 
+  /** The scheduler for a multi-run start, once the scope is visible and the run's inputs are all set. */
+  private async schedulerFor(
+    workspaceId: string,
+    input: { readonly workflowId: string; readonly selectedEnvironmentId?: string | null },
+  ): Promise<RunTrigger> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    if (this.trigger === undefined) throw new Error("No run scheduler is available")
+    await this.requireInputs(workspaceId, input.workflowId, input.selectedEnvironmentId)
+    return this.trigger
+  }
+
   async createRun(
     workspaceId: string,
     input: RunCreateInput,
@@ -232,11 +243,9 @@ export class RunService {
       readonly rows: readonly Readonly<Record<string, JsonValue>>[]
     },
   ): Promise<Run> {
-    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    if (this.trigger === undefined) throw new Error("No run scheduler is available")
-    await this.requireInputs(workspaceId, input.workflowId, input.selectedEnvironmentId)
+    const trigger = await this.schedulerFor(workspaceId, input)
     const { firstRunId } = startIterations(
-      this.trigger,
+      trigger,
       {
         workspaceId,
         workflowId: input.workflowId,
@@ -267,12 +276,10 @@ export class RunService {
       readonly nodeInfo: ReadonlyMap<string, LoadNodeInfo>
     },
   ): Promise<Run> {
-    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    if (this.trigger === undefined) throw new Error("No run scheduler is available")
-    await this.requireInputs(workspaceId, input.workflowId, input.selectedEnvironmentId)
+    const trigger = await this.schedulerFor(workspaceId, input)
     const startedAt = new Date().toISOString()
     const handle = startLoadRun(
-      this.trigger,
+      trigger,
       {
         workspaceId,
         workflowId: input.workflowId,

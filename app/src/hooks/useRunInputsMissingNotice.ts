@@ -16,5 +16,3 @@ export function useRunInputsMissingNotice(): void {
     [],
   );
 }
-
-export default useRunInputsMissingNotice;

@@ -92,7 +92,8 @@ interface RunInputCheckSectionProps {
 }
 
 /** One workflow's missing values: its environment variables, then its secrets. */
-function RunInputCheckSection({ check, showWorkflow, base, onNavigate, onSetSecret }: RunInputCheckSectionProps) {
+function RunInputCheckSection(props: RunInputCheckSectionProps) {
+  const { check, showWorkflow, base, onNavigate, onSetSecret } = props;
   const env = check.missing.filter((input) => input.kind === "env");
   const secrets = check.missing.filter((input) => input.kind === "secret");
   const environment = check.environment;
@@ -183,9 +184,7 @@ function RunInputCheckSection({ check, showWorkflow, base, onNavigate, onSetSecr
  * add one — that is the whole reason an agent's refusal is shown to them.
  */
 export function MissingRunInputsDialog() {
-  const shown = useMissingRunInputsStore((s) => s.shown);
-  const show = useMissingRunInputsStore((s) => s.show);
-  const close = useMissingRunInputsStore((s) => s.close);
+  const { shown, show, close } = useMissingRunInputsStore();
   const navigate = useNavigate();
   const { availableWorkspaces, currentOrg } = useWorkspace();
   const [settingSecret, setSettingSecret] = useState<SecretTargetScope | null>(null);
