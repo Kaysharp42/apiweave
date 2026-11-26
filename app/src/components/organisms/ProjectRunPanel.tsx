@@ -15,6 +15,8 @@ import { downloadReport } from "../../utils/downloadFile";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import { formatTimestamp } from "../../utils/formatTimestamp";
 import type { ProjectRunPanelProps, StatusBadgeProps } from "../../types";
+import useMissingRunInputsStore from "../../stores/MissingRunInputsStore";
+import { refusedRunInputs } from "../../utils/refusedRunInputs";
 
 const NO_ENVIRONMENT = "";
 
@@ -125,6 +127,12 @@ export function ProjectRunPanel({
       );
       setSelectedRunId(run.projectRunId);
     } catch (error: unknown) {
+      // Refused for values that are not set: show what each workflow lacks.
+      const refused = refusedRunInputs(error);
+      if (refused !== null) {
+        useMissingRunInputsStore.getState().show(refused, null);
+        return;
+      }
       toast.error(errorMessage(error, "Failed to start the project run"));
     } finally {
       setIsStarting(false);

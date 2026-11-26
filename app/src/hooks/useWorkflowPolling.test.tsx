@@ -4,6 +4,8 @@ import type { Node } from "@xyflow/react";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import useWorkflowPolling from "./useWorkflowPolling";
 import useRunStatusStore from "../stores/RunStatusStore";
+import useMissingRunInputsStore from "../stores/MissingRunInputsStore";
+import type { RunInputCheck } from "@shared/types/RunInputCheck";
 
 const onRunStartedMock = vi.hoisted(() => vi.fn());
 const onRunProgressMock = vi.hoisted(() => vi.fn());
@@ -11,6 +13,10 @@ const getLatestMock = vi.hoisted(() => vi.fn());
 const createIterationsMock = vi.hoisted(() => vi.fn());
 const createMock = vi.hoisted(() => vi.fn());
 const getLatestFailedMock = vi.hoisted(() => vi.fn());
+// Every value set unless a test says otherwise: the run gate asks before each run.
+const checkInputsMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ workspaceId: "ws1", workflowId: "wf1", workflowName: "Login", environment: null, missing: [] }),
+);
 const toastErrorMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/apiweaveClient", () => ({
@@ -19,6 +25,7 @@ vi.mock("../utils/apiweaveClient", () => ({
       getLatest: getLatestMock,
       getLatestFailed: getLatestFailedMock,
       get: vi.fn().mockResolvedValue({ runId: "r", results: [] }),
+      checkInputs: checkInputsMock,
       create: createMock,
       createIterations: createIterationsMock,
     },
@@ -253,6 +260,67 @@ describe("useWorkflowPolling — running with data", () => {
 
     expect(createIterationsMock).not.toHaveBeenCalled();
     expect(toastErrorMock).toHaveBeenCalledWith(expect.stringContaining("array of objects"));
+  });
+});
+
+describe("useWorkflowPolling — the run gate refuses a run that reads unset values", () => {
+  const missing: RunInputCheck = {
+    workspaceId: "ws1",
+    workflowId: "wf1",
+    workflowName: "Login",
+    environment: { environmentId: "env-1", name: "Dev" },
+    missing: [
+      { kind: "env", name: "BASE_URL", reason: "unset", storedIn: null, usedBy: [{ workflowId: "wf1", workflowName: "Login", nodeId: "http-1", nodeLabel: "Sign in" }] },
+      { kind: "secret", name: "API_KEY", reason: "unset", storedIn: null, usedBy: [{ workflowId: "wf1", workflowName: "Login", nodeId: "http-1", nodeLabel: "Sign in" }] },
+    ],
+  };
+
+  beforeEach(() => {
+    captureRunStarted();
+    getLatestMock.mockReset();
+    getLatestMock.mockResolvedValue(undefined);
+    createMock.mockReset();
+    createMock.mockResolvedValue({ runId: "run-1", iteration: null });
+    toastErrorMock.mockReset();
+    useMissingRunInputsStore.getState().close();
+  });
+
+  it("shows what is missing and starts no run", async () => {
+    checkInputsMock.mockResolvedValueOnce(missing);
+    const { result } = setup();
+
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    await waitFor(() => expect(useMissingRunInputsStore.getState().shown).toEqual({
+        refusal: { target: { kind: "workflow", name: "Login" }, checks: [missing] },
+        agent: null,
+      }),
+    );
+    expect(createMock).not.toHaveBeenCalled();
+    expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("checks against the environment picked for the run", async () => {
+    const { result } = renderHook(() =>
+      useWorkflowPolling({
+        workspaceId: "ws1",
+        workflowId: "wf1",
+        nodes: NODES,
+        edges: [],
+        setNodes: vi.fn(),
+        selectedEnvironment: "env-1",
+        reactFlowInstanceRef: { current: null },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.runWorkflow();
+    });
+
+    await waitFor(() => expect(createMock).toHaveBeenCalled());
+    expect(checkInputsMock).toHaveBeenLastCalledWith({ workspaceId: "ws1", workflowId: "wf1", selectedEnvironmentId: "env-1" });
   });
 });
 

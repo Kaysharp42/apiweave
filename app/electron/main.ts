@@ -43,6 +43,8 @@ import {
   EnvironmentService,
   NodePresetService,
   RunService,
+  RunInputChecker,
+  type RunInputGate,
   ProjectRunService,
   SecretService,
   ProjectExportService,
@@ -68,6 +70,7 @@ import type { McpStatus } from "@shared/types/McpStatus"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
+import type { RunInputsMissingEvent } from "@shared/types/RunInputsMissingEvent"
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest"
 import {
   AGENT_CHANNELS,
@@ -81,6 +84,7 @@ import {
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
+  RUN_INPUTS_MISSING_CHANNEL,
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
@@ -706,7 +710,34 @@ if (!hasSingleInstanceLock) {
     // run-event broker gives runs.create/wait their event-driven observation
     // without DB polling; a disconnect or deadline never cancels the run.
     const workflowService = new WorkflowService(workflows, scopeResolver, collections, environments)
-    const runService = new RunService(runs, scopeResolver, scheduler, runEvents)
+    // Every run is checked for `{{env.*}}` and `{{secrets.*}}` that are not
+    // set or are empty before it starts: workflow runs, project runs and
+    // browser inspections. The renderer checks before its own runs and shows
+    // the result itself; an agent's refused run is pushed to the window,
+    // because only the user can add the secrets it lacks.
+    const runInputs = new RunInputChecker({
+      workflows,
+      environments,
+      // Opened here only to see whether the value is blank; it never leaves main.
+      secretState: async (name, chain) => {
+        const { plaintext, scopeType } = await secretService.resolvePlaintext(name, chain)
+        if (plaintext === null) return { state: "unset" }
+        if (plaintext.trim() === "" && scopeType !== null) return { state: "empty", storedIn: scopeType }
+        return { state: "set" }
+      },
+    })
+    const runInputGate: RunInputGate = {
+      check: (workspaceId, workflowId, selectedEnvironmentId) => runInputs.check(workspaceId, workflowId, selectedEnvironmentId),
+      refused: (refusal, agent) => {
+        if (agent === undefined) return
+        mcpLog.info(`agent ${refusal.target.kind} run of '${refusal.target.name}' refused: values not set`)
+        const win = mainWindow
+        if (win === null || win.isDestroyed()) return
+        if (!win.isFocused()) win.flashFrame(true)
+        win.webContents.send(RUN_INPUTS_MISSING_CHANNEL, { agent, refusal } satisfies RunInputsMissingEvent)
+      },
+    }
+    const runService = new RunService(runs, scopeResolver, scheduler, runEvents, runInputGate)
     const deps: HandlerDeps = {
       // About describes this process; none of it is configurable from there.
       app: {
@@ -745,7 +776,7 @@ if (!hasSingleInstanceLock) {
       ),
       imports: new ImportService(workflows, environments, collections, scopeResolver, http),
       grpcDiscovery: new GrpcDiscoveryService(http),
-      projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, scopeResolver),
+      projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, scopeResolver, runInputGate),
     }
     registerAllHandlers(ipcRouter, deps)
 
