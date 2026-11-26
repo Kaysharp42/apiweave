@@ -482,9 +482,12 @@ rejected on write — the runner caps nesting at 8 levels and fails the node
 instead. A `{{secrets.NAME}}` on the right-hand side of an input mapping fails
 the node by design; the sub-workflow resolves secrets itself.
 
-The sub-workflow runs inside the caller's run, so there is no second run to
-poll: `runs_get` reports the calling node's status, and the run tools never
-expose a child run id because none exists.
+Each call is its own child run of the target; the calling node's `call`
+evidence names it (`runId`, or one per iteration under `forEach`), and the
+caller's `runs_get` reports the calling node's status. The child sees only its
+own variables plus the mapped inputs, and only `outputMapping` keys come back.
+A mapping value that is exactly one placeholder keeps its type (an object stays
+an object); one not set in the caller fails the node.
 
 **Reading a mapping back is lossy.** The redaction pass that protects MCP reads
 works on key names anywhere in a config, so a mapping entry whose *variable

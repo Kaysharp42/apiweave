@@ -2864,8 +2864,9 @@ export class WorkflowExecutor {
     outputMapping: Record<string, string>,
     cancelSignal?: AbortSignal,
   ): Promise<NodeResult> {
-    const inputVariables = this.resolveInputVariables(inputMapping)
-    const { output, runId } = await this.runChildIteration(targetWorkflowId, target, inputVariables, cancelSignal)
+    const input = this.resolveInputVariables(inputMapping)
+    if ("error" in input) return { status: "error", error: input.error }
+    const { output, runId } = await this.runChildIteration(targetWorkflowId, target, input.variables, cancelSignal)
     const childOutput = output
 
     for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
@@ -2983,6 +2984,7 @@ export class WorkflowExecutor {
     // The input mapping is resolved once in the caller's context: it does not
     // depend on the item, which arrives through the item/index variables.
     const baseInput = this.resolveInputVariables(inputMapping)
+    if ("error" in baseInput) return { status: "error", error: baseInput.error }
 
     const outcomes: ForEachIterationOutcome[] = []
     let cancelled = false
@@ -2995,7 +2997,7 @@ export class WorkflowExecutor {
         nextIndex += 1
         if (index >= capped.length) return
 
-        const inputVariables = { ...baseInput }
+        const inputVariables = { ...baseInput.variables }
         if (forEach.itemVariable) inputVariables[forEach.itemVariable] = capped[index]
         if (forEach.indexVariable) inputVariables[forEach.indexVariable] = index
 
@@ -3139,13 +3141,30 @@ export class WorkflowExecutor {
    * here so a secret value is never downgraded into a plain child variable
    * when the child can already reach it directly and more safely via
    * {{secrets.*}}.
+   *
+   * A placeholder that does not resolve in the caller fails the call here,
+   * naming the key: passed on as literal text it only failed later, inside
+   * the child, as if the mapping had never arrived. A value that is exactly
+   * one placeholder passes the raw value, so an object, array, number or
+   * boolean keeps its type; a mixed template is text.
    */
-  private resolveInputVariables(inputMapping: Record<string, string>): Record<string, unknown> {
+  private resolveInputVariables(
+    inputMapping: Record<string, string>,
+  ): { readonly variables: Record<string, unknown> } | { readonly error: string } {
     const inputVariables: Record<string, unknown> = {}
     for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
-      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
+      let unresolved: string | undefined
+      const text = sourceExpr.replace(PLACEHOLDER_RE, (placeholder) => {
+        const value = this.substituteVariables(placeholder, { allowSecrets: false })
+        if (value === placeholder) unresolved ??= placeholder
+        return value
+      })
+      if (unresolved !== undefined) return { error: `inputMapping.${targetVarName}: ${unresolved} is not set in the caller` }
+      const single = /^\{\{([^}]+)\}\}$/.exec(sourceExpr.trim())
+      const raw = single ? this.resolvePlaceholderValue(single[1]!.trim()) : undefined
+      inputVariables[targetVarName] = raw ?? text
     }
-    return inputVariables
+    return { variables: inputVariables }
   }
 
   /**

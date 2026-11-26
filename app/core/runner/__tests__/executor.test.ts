@@ -1295,6 +1295,79 @@ describe("WorkflowExecutor", () => {
       expect(result).not.toHaveProperty("subWorkflow.results")
     })
 
+    describe("inputMapping", () => {
+      const echoChild = {
+        name: "Echo",
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+      }
+
+      async function callWith(
+        inputMapping: Record<string, string>,
+        variables: Record<string, unknown>,
+        outputMapping: Record<string, string>,
+        secrets: Record<string, string> = {},
+      ) {
+        let childRuns = 0
+        const executor = new WorkflowExecutor({
+          ...makeDeps(),
+          secrets,
+          resolveWorkflow: () => {
+            childRuns += 1
+            return echoChild
+          },
+        })
+        const output = await executor.executeWorkflow({
+          ...callerWorkflow({ targetWorkflowId: "sub-1", inputMapping, outputMapping }),
+          variables,
+        })
+        return { output, childRuns, result: output.results.find((r) => r.nodeId === "call1") }
+      }
+
+      it("fails the call, naming the key, when a placeholder is not set in the caller", async () => {
+        const { output, result } = await callWith({ title: "{{variables.missing}}" }, {}, { got: "title" })
+        expect(output.status).toBe("failed")
+        expect(result?.error).toBe("inputMapping.title: {{variables.missing}} is not set in the caller")
+        expect(output.extractedVariables).not.toHaveProperty("got")
+      })
+
+      it("fails the call when one placeholder of a mixed template is not set", async () => {
+        const { output, result } = await callWith({ label: "case {{variables.n}} of {{env.TOTAL}}" }, { n: 2 }, {})
+        expect(output.status).toBe("failed")
+        expect(result?.error).toBe("inputMapping.label: {{env.TOTAL}} is not set in the caller")
+      })
+
+      it("still refuses a secret in the mapping", async () => {
+        const { output, result } = await callWith({ token: "{{secrets.API_KEY}}" }, {}, {}, { API_KEY: "k-value" })
+        expect(output.status).toBe("failed")
+        expect(result?.error).toContain("Secret substitution not allowed")
+        expect(JSON.stringify(output)).not.toContain("k-value")
+      })
+
+      it("passes a single placeholder's raw value, keeping its type", async () => {
+        const record = { title: "First case", tags: ["a", "b"], open: true }
+        const { output } = await callWith(
+          { record: "{{variables.record}}", count: "{{variables.count}}", flag: "{{variables.flag}}", list: " {{variables.list}} " },
+          { record, count: 3, flag: false, list: [1, 2] },
+          { record: "record", count: "count", flag: "flag", list: "list" },
+        )
+        expect(output.status).toBe("passed")
+        expect(output.extractedVariables).toMatchObject({ record, count: 3, flag: false, list: [1, 2] })
+      })
+
+      it("keeps a mixed template as text", async () => {
+        const { output } = await callWith(
+          { label: "case {{variables.n}}: {{variables.record}}" },
+          { n: 2, record: { id: 7 } },
+          { label: "label" },
+        )
+        expect(output.extractedVariables["label"]).toBe('case 2: {"id":7}')
+      })
+    })
+
     it("propagates a sub-workflow's own extracted variable through outputMapping", async () => {
       const executor = new WorkflowExecutor({
         ...makeDeps(),

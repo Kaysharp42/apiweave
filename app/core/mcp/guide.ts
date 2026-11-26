@@ -132,7 +132,7 @@ rejected config names its node's list index and field in the error path.
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
-| \`workflow\` | runs another workflow in this workspace inline | 1 in, 1 out |
+| \`workflow\` | runs another workflow in this workspace as a child run | 1 in, 1 out |
 
 ### http-request
 
@@ -388,14 +388,22 @@ specific branch by index: \`{{prev[0].response.body.id}}\`.
 }
 \`\`\`
 
-Runs inline inside the current run — no separate run history entry. The
-sub-workflow shares the environment and secrets, so only \`variables\` need
-mapping. \`inputMapping\` maps a target variable name to an expression resolved in
-the **caller's** context; \`outputMapping\` maps a caller variable name to a
-sub-workflow variable name. A \`{{secrets.NAME}}\` on the right-hand side of an
-input mapping is rejected — let the sub-workflow read the secret itself. The
-target must live in the same workspace and cannot be the calling workflow.
-Recursion is capped at 8 levels.
+Each call runs the target as its own child run, listed in the callee's run
+history; the node's \`call\` evidence names it (\`runId\`). Variables are
+isolated both ways: the child sees only its own stored variables plus the
+mapped inputs (and, under \`forEach\`, the item and index); the caller gets back
+only the \`outputMapping\` keys — nothing else the child sets. Environment and
+secrets are shared. \`inputMapping\` maps a target variable name to an
+expression resolved in the **caller's** context: a value that is exactly one
+placeholder (\`{{variables.record}}\`) passes the raw value, so an object,
+array, number or boolean keeps its type and the child reads
+\`{{variables.record.title}}\`; a mixed template (\`"id-{{variables.n}}"\`)
+becomes text. A placeholder not set in the caller fails the call node
+(\`inputMapping.<key>: {{…}} is not set in the caller\`). \`outputMapping\` maps a
+caller variable name to a child variable name. A \`{{secrets.NAME}}\` on the
+right-hand side of an input mapping is rejected — let the child read the
+secret itself. The target must live in the same workspace and cannot be the
+calling workflow. Recursion is capped at 8 levels.
 
 \`forEach\` runs the target once per element instead of once:
 

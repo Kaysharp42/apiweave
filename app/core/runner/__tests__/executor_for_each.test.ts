@@ -175,6 +175,77 @@ describe("Call Workflow forEach", () => {
     })
   })
 
+  it("passes the input mapping into every iteration, beside the item", async () => {
+    const output = await run(
+      caller(
+        { items: "[1,2,3]", itemVariable: "item" },
+        { inputMapping: { tenant: "{{variables.tenant}}", limits: "{{variables.limits}}" }, outputMapping: { tenants: "tenant", limitSets: "limits", echoed: "item" } },
+        { tenant: "tenant-a", limits: { max: 5 } },
+      ),
+    )
+    expect(output.status).toBe("passed")
+    expect(output.extractedVariables["tenants"]).toEqual(["tenant-a", "tenant-a", "tenant-a"])
+    expect(output.extractedVariables["limitSets"]).toEqual([{ max: 5 }, { max: 5 }, { max: 5 }])
+    expect(output.extractedVariables["echoed"]).toEqual([1, 2, 3])
+  })
+
+  it("fails before any iteration when the input mapping does not resolve in the caller", async () => {
+    const begun: string[] = []
+    const subRun = {
+      begin: (workflowId: string) => {
+        begun.push(workflowId)
+        return { runId: `run-${begun.length}`, deps: { ...makeDeps() } }
+      },
+      finish: () => undefined,
+    }
+    const output = await run(
+      caller({ items: "[1,2]", itemVariable: "item" }, { inputMapping: { tenant: "{{variables.tenant}}" } }),
+      echoChild,
+      { subRun },
+    )
+    expect(output.status).toBe("failed")
+    expect(output.results.find((r) => r.nodeId === "call1")?.error).toBe("inputMapping.tenant: {{variables.tenant}} is not set in the caller")
+    expect(begun).toEqual([])
+    expect(output.extractedVariables).not.toHaveProperty("echoed")
+  })
+
+  describe("with an object item read field by field in the child", () => {
+    let server: Server
+    let port: number
+    const paths: string[] = []
+
+    beforeEach(async () => {
+      paths.length = 0
+      server = createServer((req, res) => {
+        paths.push(req.url ?? "")
+        res.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      port = (server.address() as { port: number }).port
+    })
+    afterEach(() => {
+      server.closeAllConnections()
+      server.close()
+    })
+
+    it("resolves {{variables.case.title}} against each item", async () => {
+      const child: ResolvedSubWorkflow = {
+        name: "Case",
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "h", type: "http-request", config: { url: `http://127.0.0.1:${port}/{{variables.case.title}}/{{variables.case.meta.rank}}` } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "h" }],
+      }
+      const output = await run(
+        caller({ items: "{{variables.cases}}", itemVariable: "case" }, {}, { cases: [{ title: "first", meta: { rank: 1 } }, { title: "second", meta: { rank: 2 } }] }),
+        child,
+      )
+      expect(output.status).toBe("passed")
+      expect(paths).toEqual(["/first/1", "/second/2"])
+    })
+  })
+
   it("records one child run per iteration through subRun", async () => {
     const begun: string[] = []
     const finished: string[] = []
