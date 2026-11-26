@@ -28,3 +28,20 @@ function port(handle: string | null | undefined): string | null {
 export function edgeConnectionKey(edge: Connection): string {
   return JSON.stringify([edge.source, port(edge.sourceHandle), edge.target, port(edge.targetHandle)])
 }
+
+/**
+ * Each edge of `edges` that repeats an earlier edge's connection, as
+ * `[first, duplicate]`: `first` is the earliest edge drawn for that connection,
+ * which is never itself reported.
+ */
+export function duplicateConnections<E extends Connection>(edges: readonly E[]): Array<readonly [E, E]> {
+  const byConnection = new Map<string, E>()
+  const duplicates: Array<readonly [E, E]> = []
+  for (const edge of edges) {
+    const key = edgeConnectionKey(edge)
+    const first = byConnection.get(key)
+    if (first === undefined) byConnection.set(key, edge)
+    else duplicates.push([first, edge])
+  }
+  return duplicates
+}

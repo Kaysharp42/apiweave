@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "../atoms/Button";
-import { Select } from "../atoms/Select";
-import { Spinner } from "../atoms/Spinner";
 import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
+import { ProjectAssignmentSelect } from "../molecules/ProjectAssignmentSelect";
 import { useAsyncOptions } from "../../hooks/useAsyncOptions";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { MoveToProjectDialogProps, Project } from "../../types";
@@ -91,29 +90,15 @@ export function MoveToProjectDialog({
           label="Project"
           hint="Choose a project in this workspace, or no project at all."
         >
-          {isLoadingProjects ? (
-            <div className="flex items-center gap-2 py-2 text-xs text-text-secondary dark:text-text-secondary-dark">
-              <Spinner size="xs" /> Loading projects…
-            </div>
-          ) : (
-            <Select
-              aria-label="Target project"
-              className="cursor-pointer"
-              value={selectedProjectId}
-              onChange={(event) => setSelectedProjectId(event.target.value)}
-              disabled={isMoving}
-            >
-              <option value={UNASSIGNED}>No project</option>
-              {projects.map((project) => {
-                const projectId = project.collectionId;
-                return (
-                  <option key={projectId} value={projectId}>
-                    {project.name}
-                  </option>
-                );
-              })}
-            </Select>
-          )}
+          <ProjectAssignmentSelect
+            projects={projects}
+            isLoading={isLoadingProjects}
+            value={selectedProjectId}
+            onChange={setSelectedProjectId}
+            disabled={isMoving}
+            ariaLabel="Target project"
+            unassignedValue={UNASSIGNED}
+          />
         </FormField>
       </div>
     </Modal>

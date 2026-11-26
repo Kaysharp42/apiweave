@@ -1,7 +1,6 @@
 import { FolderKanban } from "lucide-react";
-import { Button } from "../../atoms/Button";
-import { EmptyState } from "../../molecules/EmptyState";
 import { ProjectItem } from "./ProjectItem";
+import { SidebarListEmptyState } from "./SidebarListEmptyState";
 import type { ProjectListProps } from "../../../types";
 
 /**
@@ -30,34 +29,16 @@ export function ProjectList({
   onAddWorkflowToProject,
   onAssignWorkflowToProject,
 }: ProjectListProps) {
+  // fallow-ignore-next-line code-duplication -- the empty-state-or-rows shape WorkflowList shares is the whole of a sidebar list; the empty state itself is shared as SidebarListEmptyState, and the rows differ.
   if (projects.length === 0) {
     return (
-      <EmptyState
-        icon={
-          <FolderKanban
-            className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
-            strokeWidth={1.5}
-          />
-        }
-        title={searchQuery ? "No matching projects" : "No projects yet"}
-        description={
-          searchQuery
-            ? `No projects match "${searchQuery}"`
-            : "Create projects to organize your workflows"
-        }
-        action={
-          !searchQuery && (
-            <Button
-              variant="primary"
-              intent="default"
-              size="sm"
-              onClick={onCreateProject}
-              icon={<FolderKanban className="w-4 h-4" />}
-            >
-              Create Project
-            </Button>
-          )
-        }
+      <SidebarListEmptyState
+        icon={FolderKanban}
+        items="projects"
+        emptyDescription="Create projects to organize your workflows"
+        createLabel="Create Project"
+        searchQuery={searchQuery}
+        onCreate={onCreateProject}
       />
     );
   }

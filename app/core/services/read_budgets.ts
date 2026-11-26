@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- a table of documented numeric constants: runs of `export const NAME = n` align token for token by nature, which is not behaviour to extract.
 /**
  * Stated budgets for the focused-read surface (MCP optimization phase 2).
  * Every bounded read names its default, maximum and the aggregate inline

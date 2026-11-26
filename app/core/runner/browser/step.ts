@@ -256,6 +256,32 @@ async function expectRead(
   throw new StepFailure(describeMiss(actual), { expected, ...(actual !== undefined ? { actual: shown(actual) } : {}) })
 }
 
+/**
+ * An expect-text or expect-value check: poll what `read` takes from the element
+ * at `where` until it compares to `expected` by `match`. `noun` names that part
+ * of the element in the failure.
+ */
+function expectElementRead(
+  ctx: BrowserStepContext,
+  read: (timeoutMs: number) => Promise<string>,
+  expected: string,
+  match: "equals" | "contains" | "matches",
+  timeout: number,
+  where: string,
+  noun: "text" | "value",
+): Promise<Compared> {
+  return expectRead(
+    read,
+    (actual) => compareText(ctx, actual, expected, match),
+    timeout,
+    expected,
+    (actual) =>
+      actual === undefined
+        ? `${where} was not found within ${seconds(timeout)}`
+        : `the ${noun} of ${where} did not ${MATCH_VERBS[match]} the expected ${noun} within ${seconds(timeout)}`,
+  )
+}
+
 /** What a native <select> holds, read in the page: each selected option's value and visible label. */
 function readSelected(select: Element): Array<{ value: string; label: string }> {
   if (!(select instanceof HTMLSelectElement)) return []
@@ -381,32 +407,26 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
       const match = config.match ?? "contains"
       const expected = match === "matches" ? resolveValue(ctx, config.text, false) : normalizeText(resolveValue(ctx, config.text, false))
       const element = locate(config.locator)
-      const where = describeLocator(config.locator)
-      return expectRead(
+      return expectElementRead(
+        ctx,
         async (readTimeout) => normalizeText(await element.innerText({ timeout: readTimeout })),
-        (actual) => compareText(ctx, actual, expected, match),
-        timeout,
         expected,
-        (actual) =>
-          actual === undefined
-            ? `${where} was not found within ${seconds(timeout)}`
-            : `the text of ${where} did not ${MATCH_VERBS[match]} the expected text within ${seconds(timeout)}`,
+        match,
+        timeout,
+        describeLocator(config.locator),
+        "text",
       )
     }
     case "expect-value": {
-      const match = config.match ?? "equals"
-      const expected = resolveValue(ctx, config.value, false)
       const element = locate(config.locator)
-      const where = describeLocator(config.locator)
-      return expectRead(
+      return expectElementRead(
+        ctx,
         (readTimeout) => element.inputValue({ timeout: readTimeout }),
-        (actual) => compareText(ctx, actual, expected, match),
+        resolveValue(ctx, config.value, false),
+        config.match ?? "equals",
         timeout,
-        expected,
-        (actual) =>
-          actual === undefined
-            ? `${where} was not found within ${seconds(timeout)}`
-            : `the value of ${where} did not ${MATCH_VERBS[match]} the expected value within ${seconds(timeout)}`,
+        describeLocator(config.locator),
+        "value",
       )
     }
     case "expect-url": {

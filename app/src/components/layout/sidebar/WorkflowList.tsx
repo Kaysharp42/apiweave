@@ -1,7 +1,6 @@
 import { FileText } from "lucide-react";
-import { Button } from "../../atoms/Button";
 import { Skeleton } from "../../atoms/Skeleton";
-import { EmptyState } from "../../molecules/EmptyState";
+import { SidebarListEmptyState } from "./SidebarListEmptyState";
 import { WorkflowItem } from "./WorkflowItem";
 import type { WorkflowListProps } from "../../../types";
 
@@ -40,32 +39,13 @@ export function WorkflowList({
 
   if (workflows.length === 0) {
     return (
-      <EmptyState
-        icon={
-          <FileText
-            className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
-            strokeWidth={1.5}
-          />
-        }
-        title={searchQuery ? "No matching workflows" : "No workflows yet"}
-        description={
-          searchQuery
-            ? `No workflows match "${searchQuery}"`
-            : "Create your first workflow to get started"
-        }
-        action={
-          !searchQuery && (
-            <Button
-              variant="primary"
-              intent="default"
-              size="sm"
-              onClick={onCreateWorkflow}
-              icon={<FileText className="w-4 h-4" />}
-            >
-              Create Workflow
-            </Button>
-          )
-        }
+      <SidebarListEmptyState
+        icon={FileText}
+        items="workflows"
+        emptyDescription="Create your first workflow to get started"
+        createLabel="Create Workflow"
+        searchQuery={searchQuery}
+        onCreate={onCreateWorkflow}
       />
     );
   }

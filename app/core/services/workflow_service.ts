@@ -37,7 +37,7 @@ import type { ScopeResolver } from "./scope_resolver"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
-import { edgeConnectionKey } from "@shared/graph/edgeConnection"
+import { duplicateConnections, edgeConnectionKey } from "@shared/graph/edgeConnection"
 
 /** A subset change to a stored graph — see {@link WorkflowService.patch}. */
 export interface WorkflowGraphPatch {
@@ -221,30 +221,57 @@ function assertEdgeIntegrity(
   resultEdges: readonly WorkflowEdge[],
   nodes: readonly WorkflowNode[],
   sent: readonly SentEdge[],
-  context: { readonly removedNodeIds?: readonly string[]; readonly existingNodeIds?: ReadonlySet<string> } = {},
+  context: EdgeIntegrityContext = {},
 ): void {
   if (sent.length === 0) return
+  assertSentEndpointsExist(nodes, sent, context)
+  assertSentEdgeIdsUnique(sent)
+  assertNoAuthoredDuplicateConnection(resultEdges, sent)
+}
+
+interface EdgeIntegrityContext {
+  readonly removedNodeIds?: readonly string[]
+  readonly existingNodeIds?: ReadonlySet<string>
+}
+
+function assertSentEndpointsExist(nodes: readonly WorkflowNode[], sent: readonly SentEdge[], context: EdgeIntegrityContext): void {
   const nodeIds = new Set(nodes.map((node) => node.nodeId))
   const removed = new Set(context.removedNodeIds ?? [])
-  const existingNodeIds = context.existingNodeIds
 
   for (const item of sent) {
     for (const endpoint of ["source", "target"] as const) {
       const nodeId = item.edge[endpoint]
-      if (nodeIds.has(nodeId)) continue
-      // A stored dangling edge carried over by a whole-graph save is a
-      // diagnosis on the next read, not something this write introduced.
-      if (item.carriedOver && existingNodeIds !== undefined && !existingNodeIds.has(nodeId)) continue
+      if (!endpointRejected(item, nodeId, nodeIds, context.existingNodeIds)) continue
       const removedInPatch = removed.has(nodeId)
       throw new ValidationError(
-        `${describeSentEdge(item)}: ${endpoint} node "${nodeId}" ${removedInPatch ? "was removed by this patch" : "is not a node in the resulting workflow"}. ${removedInPatch ? "Remove the edge in the same patch, or keep the node." : "Add or upsert that node in the same write, or point the edge at a node that exists."}`,
+        `${describeSentEdge(item)}: ${endpoint} node "${nodeId}" ${missingEndpointAdvice(removedInPatch)}`,
         { edgeIndex: item.index, edgeId: item.edge.edgeId, endpoint, nodeId, removedInPatch },
       )
     }
   }
+}
 
-  // An edgeId is the stored edge's identity, so a repeat inside one request
-  // means one of the two edges would silently replace the other.
+/**
+ * Whether a sent edge's endpoint `nodeId` fails the write. A stored dangling
+ * edge carried over by a whole-graph save is a diagnosis on the next read, not
+ * something this write introduced.
+ */
+function endpointRejected(item: SentEdge, nodeId: string, nodeIds: ReadonlySet<string>, existingNodeIds: ReadonlySet<string> | undefined): boolean {
+  if (nodeIds.has(nodeId)) return false
+  return !(item.carriedOver && existingNodeIds !== undefined && !existingNodeIds.has(nodeId))
+}
+
+function missingEndpointAdvice(removedInPatch: boolean): string {
+  return removedInPatch
+    ? "was removed by this patch. Remove the edge in the same patch, or keep the node."
+    : "is not a node in the resulting workflow. Add or upsert that node in the same write, or point the edge at a node that exists."
+}
+
+/**
+ * An edgeId is the stored edge's identity, so a repeat inside one request
+ * means one of the two edges would silently replace the other.
+ */
+function assertSentEdgeIdsUnique(sent: readonly SentEdge[]): void {
   const sentById = new Map<string, SentEdge>()
   for (const item of sent) {
     const previous = sentById.get(item.edge.edgeId)
@@ -256,16 +283,11 @@ function assertEdgeIntegrity(
     }
     sentById.set(item.edge.edgeId, item)
   }
+}
 
+function assertNoAuthoredDuplicateConnection(resultEdges: readonly WorkflowEdge[], sent: readonly SentEdge[]): void {
   const sentByEdgeId = new Map(sent.map((item) => [item.edge.edgeId, item]))
-  const byConnection = new Map<string, WorkflowEdge>()
-  for (const edge of resultEdges) {
-    const key = edgeConnectionKey(edge)
-    const first = byConnection.get(key)
-    if (first === undefined) {
-      byConnection.set(key, edge)
-      continue
-    }
+  for (const [first, edge] of duplicateConnections(resultEdges)) {
     // Blame the edge this write actually authored; when both are carried over,
     // the duplicate predates the write.
     const duplicate = [sentByEdgeId.get(edge.edgeId), sentByEdgeId.get(first.edgeId)]

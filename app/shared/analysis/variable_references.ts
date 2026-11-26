@@ -36,6 +36,7 @@ export function placeholderReferences(text: string): PlaceholderReference[] {
 }
 
 /** Every literal-named `aw.<scope>.get`/`set` call in script `text`, in order. */
+// fallow-ignore-next-line code-duplication -- the `[...matchAll].map` shape it shares with placeholderReferences is the whole of each scanner; the regex and the record built from the groups differ.
 export function scriptReferences(text: string): ScriptReference[] {
   return [...text.matchAll(SCRIPT_CALL_RE)].map((match) => ({
     scope: match[1] as ScriptReference["scope"],
@@ -57,33 +58,43 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 export function variableWrites(node: VariableProvenanceNode): VariableWrite[] {
   const config = node.config
   if (config === undefined) return []
-  const writes: VariableWrite[] = []
-  const extractors = config["extractors"]
-  if (isRecord(extractors)) {
-    for (const [name, path] of Object.entries(extractors)) if (typeof path === "string") writes.push({ name, field: "extractors", path })
+  return [
+    ...mappedWrites(config["extractors"], "extractors"),
+    // A Call Workflow node copies each child variable into the caller's scope.
+    ...(node.type === "workflow" ? mappedWrites(config["outputMapping"], "outputMapping") : []),
+    ...(node.type === "browser" ? browserExtractWrites(config) : []),
+    ...scriptWrites(config["scripts"]),
+  ]
+}
+
+/** One write per `name: path` entry of an `extractors` or `outputMapping` record. */
+function mappedWrites(mapping: unknown, field: "extractors" | "outputMapping"): VariableWrite[] {
+  if (!isRecord(mapping)) return []
+  return Object.entries(mapping).flatMap(([name, path]) => (typeof path === "string" ? [{ name, field, path }] : []))
+}
+
+/** A browser `extract` step's `variable`, with the page part it reads as its path. */
+function browserExtractWrites(config: Readonly<Record<string, unknown>>): VariableWrite[] {
+  const variable = config["variable"]
+  if (config["action"] !== "extract" || typeof variable !== "string") return []
+  const from = typeof config["from"] === "string" ? config["from"] : "text"
+  const attribute = config["attribute"]
+  const path = from === "attribute" && typeof attribute === "string" ? `page.attribute.${attribute}` : `page.${from}`
+  return [{ name: variable, field: "variable", path }]
+}
+
+/**
+ * Each variable a node's scripts set. A node whose scripts set a variable
+ * several times is still one producer of it, named by the first script that does.
+ */
+function scriptWrites(scripts: unknown): VariableWrite[] {
+  if (!isRecord(scripts)) return []
+  const phases = new Map<string, string>()
+  for (const [phase, source] of Object.entries(scripts)) {
+    if (typeof source !== "string") continue
+    for (const ref of scriptReferences(source)) if (ref.scope === "variables" && ref.write && !phases.has(ref.name)) phases.set(ref.name, phase)
   }
-  // A Call Workflow node copies each child variable into the caller's scope.
-  const outputMapping = config["outputMapping"]
-  if (node.type === "workflow" && isRecord(outputMapping)) {
-    for (const [name, path] of Object.entries(outputMapping)) if (typeof path === "string") writes.push({ name, field: "outputMapping", path })
-  }
-  if (node.type === "browser" && config["action"] === "extract" && typeof config["variable"] === "string") {
-    const from = typeof config["from"] === "string" ? config["from"] : "text"
-    const path = from === "attribute" && typeof config["attribute"] === "string" ? `page.attribute.${config["attribute"]}` : `page.${from}`
-    writes.push({ name: config["variable"], field: "variable", path })
-  }
-  const scripts = config["scripts"]
-  if (isRecord(scripts)) {
-    // A node whose scripts set a variable several times is still one producer
-    // of it, named by the first script that does.
-    const phases = new Map<string, string>()
-    for (const [phase, source] of Object.entries(scripts)) {
-      if (typeof source !== "string") continue
-      for (const ref of scriptReferences(source)) if (ref.scope === "variables" && ref.write && !phases.has(ref.name)) phases.set(ref.name, phase)
-    }
-    for (const [name, phase] of phases) writes.push({ name, field: "scripts", path: `scripts.${phase}` })
-  }
-  return writes
+  return [...phases].map(([name, phase]) => ({ name, field: "scripts", path: `scripts.${phase}` }))
 }
 
 /**
@@ -97,15 +108,18 @@ export function callerSuppliedVariableNames(callerNodes: readonly VariableProven
   for (const node of callerNodes) {
     const config = node.config
     if (node.type !== "workflow" || config === undefined || config["targetWorkflowId"] !== targetWorkflowId) continue
-    const inputMapping = config["inputMapping"]
-    if (isRecord(inputMapping)) for (const name of Object.keys(inputMapping)) names.add(name)
-    const forEach = config["forEach"]
-    if (isRecord(forEach)) {
-      for (const key of ["itemVariable", "indexVariable"]) {
-        const name = forEach[key]
-        if (typeof name === "string" && name !== "") names.add(name)
-      }
-    }
+    for (const name of suppliedVariableNames(config)) names.add(name)
   }
   return [...names].sort()
+}
+
+/** One Call Workflow node's `inputMapping` keys and non-empty `forEach` item/index variables. */
+function suppliedVariableNames(config: Readonly<Record<string, unknown>>): string[] {
+  const inputMapping = config["inputMapping"]
+  const forEach = config["forEach"]
+  const loopVariables = isRecord(forEach) ? [forEach["itemVariable"], forEach["indexVariable"]] : []
+  return [
+    ...(isRecord(inputMapping) ? Object.keys(inputMapping) : []),
+    ...loopVariables.filter((name): name is string => typeof name === "string" && name !== ""),
+  ]
 }

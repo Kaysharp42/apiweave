@@ -10,7 +10,7 @@ import type { WorkflowDiagnosis } from "../types/WorkflowDiagnosis"
 import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutCanvasOnlyNodes } from "../graph/frames"
-import { edgeConnectionKey } from "../graph/edgeConnection"
+import { duplicateConnections } from "../graph/edgeConnection"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
@@ -586,14 +586,7 @@ function addEdgeSourceHandleDiagnostics(
  * by `duplicate_edge_id`.
  */
 function addDuplicateEdgeDiagnostics(edges: readonly WorkflowEdge[], diagnostics: WorkflowDiagnostic[]): void {
-  const byConnection = new Map<string, WorkflowEdge>()
-  for (const edge of edges) {
-    const key = edgeConnectionKey(edge)
-    const first = byConnection.get(key)
-    if (first === undefined) {
-      byConnection.set(key, edge)
-      continue
-    }
+  for (const [first, edge] of duplicateConnections(edges)) {
     diagnostics.push(diagnostic(
       "duplicate_edge",
       "error",
