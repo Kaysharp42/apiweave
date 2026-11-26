@@ -13,10 +13,10 @@ written generically: no application under test, host, record or label is named.
 | B2 | Call Workflow data passing fails loudly and keeps types | FB-010…FB-016 | Opus 5.5 | `fb-b2` → merged | done (`b62e7bc6`, `f3061696`) |
 | B3 | One placeholder path walker; analyzer sees scripts and nested reads | FB-017, FB-018 | Opus 5.5 | `fb-b3` → merged | done (`e2a8b1b0`, `fe1ef160`) |
 | B4 | Browser actions verify what they did | FB-030…FB-036 | Sonnet 5.5 | `fb-b4` → merged | done (`5942a4b9`) |
-| B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | `fb-b5` | in progress |
-| B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 (guides), DeepSeek Flash (schemas) | — | planned |
+| B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | `fb-b5` → merged | done (`9813336e`…`942c4de3`) |
+| B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 (guides), DeepSeek Flash (schemas) | `fb-b6` | in progress |
 | B7 | The open canvas stops bumping `rev` | FB-006 | Opus 5.5 | `fb-b7` → merged | done (`863017d7`) |
-| B8 | Read a run's final variables | FB-019 | Opus 5.5 (design), GLM-5.3 (impl) | — | planned |
+| B8 | Read a run's final variables | FB-019 | Opus 5.5 (design), GLM-5.3 (impl) | `fb-b8` | in progress |
 | — | Deferred features | FB-070…FB-075 | — | — | needs decision |
 
 Round 1: notes as of 2026-11-26, triaged by four subagents (Opus 5.5, Sonnet 5.5,
@@ -221,6 +221,19 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   (hyphens allowed later in the path); `aw.variables.get` in a script is not
   counted as a read by the analyzer; the canvas still shows the caller-input
   warning because it cannot read other workflows.
+- **2026-11-26 — B5 merged.** FB-040: stored run URLs (browser pages,
+  inspected pages, request metadata) keep plain parameters; userinfo, the
+  fragment, secret-named and credential-looking parameters are withheld.
+  Review widened the parameter list beyond config key names (OAuth `code`,
+  `sig`/`signature`, bare `key`, `session`/`sid`, SSO tickets and
+  assertions). FB-041 auto scope notes content outside `main`; FB-042
+  inspected pages re-readable until the 10-minute expiry; FB-043
+  `evidenceNote` says when the page was still changing; FB-044 documented;
+  FB-045 `debugContext` takes a `runId` alone. B3 + B5 combined needed one
+  fix (caller lookup used the optional `workflowId`), caught by typecheck.
+  Full suite on the combined branch: only the known flaky tests fail; each
+  browser file passes alone except the pre-existing `recording.test.ts`
+  iframe case.
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`).
