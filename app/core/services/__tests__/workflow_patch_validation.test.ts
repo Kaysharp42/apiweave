@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { ZodError } from "zod"
 import type { Workflow } from "@shared/types/Workflow"
+import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer"
 import { mergeWorkflowNodePatches, WorkflowService } from "../workflow_service"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { CollectionRepository, EnvironmentRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
@@ -250,6 +251,99 @@ describe("edge integrity on every write", () => {
     }))
 
     expect(error.message).toContain('edges[4] ("e9")')
+    expect(workflows.getById(workflowId)!.rev).toBe(before.rev)
+  })
+
+  /**
+   * The canvas saves through `workflows.update` with the whole edge list
+   * (`WorkflowCanvas` → `apiweave.workflows.update`), so an edge identical to
+   * the stored one is carried over, not requested. A graph written by the old
+   * create path, or imported through the repository, can already hold a
+   * duplicate or a dangling edge; refusing every save would lock the canvas on
+   * a defect that is invisible there. `workflow_diagnose` reports both.
+   */
+  it("saves a whole edge list that already holds a duplicate connection", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored duplicate",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e2", source: "start", target: "end" },
+      ],
+    })
+
+    const saved = await service.update(workspaceId, stored.workflowId, {
+      nodes: stored.nodes.map((node) => node.nodeId === "start"
+        ? { ...node, position: { x: 10, y: 20 } }
+        : node),
+      edges: stored.edges,
+    })
+
+    expect(saved.rev).toBe(stored.rev + 1)
+    expect(saved.edges.map((edge) => edge.edgeId)).toEqual(["e1", "e2"])
+    expect(analyzeWorkflowGraph(saved).diagnostics.map((item) => item.code)).toContain("duplicate_edge")
+  })
+
+  it("still rejects a whole-graph update that adds a third copy of a stored connection", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored duplicate",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e2", source: "start", target: "end" },
+      ],
+    })
+
+    const error = await rejected(service.update(workspaceId, stored.workflowId, {
+      edges: [...stored.edges, { edgeId: "e3", source: "start", target: "end" }],
+    }))
+
+    expect(error.message).toContain('edges[2] ("e3")')
+    expect(error.details).toMatchObject({ edgeId: "e3", duplicateEdgeId: "e1" })
+    expect(workflows.getById(stored.workflowId)!.rev).toBe(stored.rev)
+  })
+
+  it("saves a whole edge list that already holds a dangling edge", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored dangling",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e9", source: "end", target: "ghost" },
+      ],
+    })
+
+    const saved = await service.update(workspaceId, stored.workflowId, {
+      name: "Stored dangling (renamed)",
+      edges: stored.edges,
+    })
+
+    expect(saved.rev).toBe(stored.rev + 1)
+    expect(saved.edges.map((edge) => edge.edgeId)).toEqual(["e1", "e9"])
+  })
+
+  it("rejects a carried-over edge whose node this update removes", async () => {
+    const before = workflows.getById(workflowId)!
+
+    const error = await rejected(service.update(workspaceId, workflowId, {
+      nodes: before.nodes.filter((node) => node.nodeId !== "step"),
+      edges: before.edges,
+    }))
+
+    expect(error.message).toContain('edges[0] ("e1")')
+    expect(error.message).toContain('target node "step" is not a node in the resulting workflow')
     expect(workflows.getById(workflowId)!.rev).toBe(before.rev)
   })
 })
