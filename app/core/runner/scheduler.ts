@@ -1029,10 +1029,15 @@ function agentRunApprovalFingerprint(
 }
 
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {
-  // Redact secret-looking keys/values only (same posture as the failure path and
-  // per-node snapshots). Real extracted values are kept for the trusted local run
-  // history — the MCP run projection never exposes variables, so there is nothing
-  // to mask them from over the wire.
+  // The key-based redaction every stored copy gets, layered on the secret-value
+  // mask `recordOutcome` has already applied to this output: a value the run
+  // resolved from `{{secrets.X}}` — copied into a variable by a script, an
+  // extractor or a mapping — is `<SECRET>` in nested strings before it gets
+  // here, and a secret-named key (`token`) keeps no value either way. Ordinary
+  // values stay: run history keeps what a run produced, and the MCP `runs_get`
+  // opt-in reads back exactly this stored set, masked the same way. The failure
+  // path below cannot reach this with a resolved secret — it re-stores the
+  // caller-supplied starting variables (nothing mid-run writes that column).
   return sanitizeVariablesForExport(output.extractedVariables as Record<string, JsonValue>)
 }
 

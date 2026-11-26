@@ -580,6 +580,47 @@ describe("RunScheduler", () => {
       expectNoSecret(buildHtmlReport({ kind: "run", run: run!, workflow }))
     })
 
+    // The same masking covers a value a script copied into a variable with
+    // aw.variables.set: the final variable set is stored masked, so the
+    // runs_get opt-in can expose it without a second redaction pass.
+    it("masks a secret a script copied into a variable before the final variable set is stored", async () => {
+      const ws = seedWorkspace()
+      const echo = await startEchoServer()
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "script-variable-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "issue",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "GET",
+              url: `http://127.0.0.1:${echo.port}/issue`,
+              scripts: {
+                postResponse: 'aw.variables.set("leaked", aw.secrets.get("api_token"))\naw.variables.set("plain", "kept-value")',
+              },
+            } as never,
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "issue" }],
+      }).workflowId
+
+      const scheduler = makeScheduler({
+        resolveSecret: async (name) =>
+          name === "api_token" ? { plaintext: SECRET, scopeType: "workspace" } : { plaintext: null, scopeType: null },
+      })
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await scheduler.whenFinished(runId)
+      echo.close()
+
+      const run = runs.getById(runId)
+      expect(run?.status).toBe("completed")
+      expect(run?.variables).toMatchObject({ leaked: "<SECRET>", plain: "kept-value" })
+      expectNoSecret(run)
+    })
+
     it("resolves a secret a script reads by name, and masks it in the script's console output and errors", async () => {
       const ws = seedWorkspace()
       const echo = await startEchoServer()
@@ -1123,8 +1164,9 @@ describe("RunScheduler", () => {
       expect(JSON.stringify(persisted)).not.toContain("super-secret-value-xyz")
 
       const completedRun = runs.getById(runId)
-      // Secret-looking extracted values are redacted; ordinary extracted values are
-      // kept for the trusted local run history (MCP never exposes variables).
+      // Secret-looking keys are redacted and resolved secret values were masked
+      // before storage; ordinary extracted values are kept — the runs_get
+      // opt-in exposes exactly this stored set, still masked.
       expect(completedRun?.variables).toMatchObject({ api_key: "<SECRET>", sessionId: "x7Q9aB3c" })
       expect(JSON.stringify(completedRun?.variables)).not.toContain("super-secret-value-xyz")
       expect(completedRun?.results.find((result) => result.nodeId === "http_1")?.extractorOutcomes).toEqual([
