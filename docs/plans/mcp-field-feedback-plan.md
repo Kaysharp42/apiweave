@@ -16,7 +16,7 @@ written generically: no application under test, host, record or label is named.
 | B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | `fb-b5` → merged | done (`9813336e`…`942c4de3`) |
 | B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 | `fb-b6` → merged | done (`049ae209`…`05ff7e5c`) |
 | B7 | The open canvas stops bumping `rev` | FB-006 | Opus 5.5 | `fb-b7` → merged | done (`863017d7`) |
-| B8 | Read a run's final variables | FB-019 | Opus 5.5 (design), GLM-5.3 (impl) | `fb-b8` | in progress |
+| B8 | Read a run's final variables | FB-019 | Opus 5.5 (design), GLM-5.3 (impl) | merged | done (`52da71a4`…`f898b51d`) |
 | — | Deferred features | FB-070…FB-075 | — | — | needs decision |
 
 Round 1: notes as of 2026-11-26, triaged by four subagents (Opus 5.5, Sonnet 5.5,
@@ -159,7 +159,7 @@ snapshot to a clean canvas → no save), `WorkflowContext.test.tsx`.
 
 | ID | Report | Verdict | Root cause | Fix | Size |
 | --- | --- | --- | --- | --- | --- |
-| FB-019 | No tool reads a run's final variables (`outputMapping` results, script-set values). | feature | Stored sanitised by key (`core/runner/scheduler.ts:668,1033-1038`), deliberately not exposed; evidence sections are fixed (`core/services/run_evidence.ts:58`, `core/ipc/handlers/runs.ts:84`). | D3: a `variables` section on the run read, masked by key **and** by the run's secret values; add to the MCP whitelist (`core/mcp/tools.ts`) with an exposure test. | M |
+| FB-019 | No tool reads a run's final variables (`outputMapping` results, script-set values). | feature | Stored masked by the run's secret masker (`scheduler.ts:603,630`) and sanitised by key (`:1031`), but never exposed. A stale comment claimed they were not masked; triage repeated it. | D3: `runs_get` with `variables: true` returns them, 8 KiB budget, whole entries kept or named as omitted. | M |
 
 ## Deferred features
 
@@ -244,6 +244,20 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   workflows are listed under the sidebar's Workflows tab; guide says to file
   with `collectionId`. FB-055, FB-060, FB-061 documented; one dedup pass over
   the guides. start-here size ceiling raised 3 850 → 4 050 chars.
+- **2026-11-26 — machine restart.** The per-batch worktrees under `/tmp`
+  were lost; all merged work was safe on the tracking branch. B8 had not
+  committed and was restarted in the main checkout.
+- **2026-11-26 — B8 merged.** FB-019: `runs_get` takes `variables: true`
+  (MCP-side projection; the renderer's IPC result is unchanged) and returns
+  the stored final variables within an 8 KiB budget, omitted names listed.
+  Works for child runs. Storage was already masked by the run's secret
+  masker; only the stale comment was wrong, now corrected and pinned by a
+  test.
+- **2026-11-26 — round 1 verified.** On the tracking branch: typecheck,
+  lint and `build:app` pass; `vitest run`: 5 409 passed, 5 failed — the 3
+  gRPC TLS tests and 2 `executor_browser` screenshot-evidence tests, which
+  also fail intermittently on the base commit `3aca4e67` (2 of 4 runs).
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
-  (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`).
+  (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`,
+  `executor_browser` screenshot-evidence numbering).
