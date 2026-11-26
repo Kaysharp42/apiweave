@@ -601,6 +601,59 @@ describe("MCP bridge — second transport, parity by construction", () => {
     await client.close()
   })
 
+  // FB-019: runs_get is metadata-only unless the caller opts in; the opt-in
+  // returns the run's stored variables masked and bounded, never sliced.
+  it("runs_get exposes stored variables only on the variables opt-in, masked and bounded", async () => {
+    const secret = "opaque-value-that-must-never-cross-mcp"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "final variables",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "completed",
+      variables: {
+        token: secret,
+        petName: "Rex",
+        bigField: "x".repeat(12 * 1024),
+      },
+    })
+
+    const client = await connectClient()
+    const withoutOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId },
+    })
+    const plain = JSON.parse(textOf(withoutOptIn as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+    expect(plain).not.toHaveProperty("variables")
+    expect(textOf(withoutOptIn as { content: Array<{ type: string; text?: string }> })).not.toContain(secret)
+
+    const withOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, variables: true },
+    })
+    const text = textOf(withOptIn as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      variables: {
+        values: Record<string, unknown>
+        omittedVariableNames: string[]
+        budgetBytes: number
+        budgetLimitBytes: number
+      }
+    }
+    // A secret-named key never crosses: the transport redaction blanks it, and
+    // an ordinary value arrives as stored.
+    expect(parsed.variables.values).toMatchObject({ token: "<SECRET>", petName: "Rex" })
+    // The 12 KiB entry cannot fit the 8 KiB budget: named, not sliced.
+    expect(parsed.variables.values).not.toHaveProperty("bigField")
+    expect(parsed.variables.omittedVariableNames).toEqual(["bigField"])
+    expect(parsed.variables.budgetLimitBytes).toBe(8192)
+    expect(parsed.variables.budgetBytes).toBeLessThanOrEqual(8192)
+    expect(text).not.toContain(secret)
+    await client.close()
+  })
+
   it("names a failed browser step's page and its own error, with the evidence read to open next", async () => {
     const secret = "opaque-browser-error-that-must-never-cross-mcp"
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })

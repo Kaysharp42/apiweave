@@ -883,8 +883,8 @@ usually omit it — patch only touches the nodes you name.
 
 Runs are metadata only: status, timing, aggregate counts and failed-node
 detail with the *type* and *state* of actual values but never the values
-themselves. No response bodies, headers, cookies, URLs or variable values
-cross this bridge on any run tool except three. \`runs_getNodeResult\` returns
+themselves. No response bodies, headers, cookies or URLs cross this bridge
+on any run tool except three. \`runs_getNodeResult\` returns
 bounded evidence for up to 50 nodes of a run — selected sections, an
 extractor-grammar path into the response record (body, headers, fault,
 trailers), capped text previews with explicit truncation accounting, a Call
@@ -901,7 +901,13 @@ secret-redaction pass every other read gets, and bodies travel as previews,
 never whole. One exception in the run summaries themselves: a failed browser
 step in \`runs_create\`, \`runs_wait\` or \`runs_get\` carries its action, page URL
 and title and the runner's own failure message, plus a \`nextRead\` pointing at
-its evidence. Everything else about runs stays metadata-only; to see other
+its evidence. A second, opt-in: \`runs_get\` with \`variables: true\` also
+returns the run's stored variables — the final set once it has finished
+(\`outputMapping\`, \`aw.variables.set\` and extractor values; a Call Workflow
+child run's own variables read the same way by its runId) — held to 8 KiB,
+with entries that did not fit named in \`omittedVariableNames\`. They were
+masked before storage, so a value the run resolved from a secret reads
+\`<SECRET>\`. Everything else about runs stays metadata-only; to see other
 payloads, open the run in the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response

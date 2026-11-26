@@ -734,3 +734,80 @@ describe("H10 — an agent's run that would send secrets needs the user's approv
     expect(run.error).not.toContain("not allowed to send secrets")
   })
 })
+
+describe("FB-019 — runs_get opt-in returns a run's final variables, masked", () => {
+  // The post-response script only runs against a real response, so a tiny
+  // local server echoes one back; it never sees or names anything real.
+  async function startEchoServer(): Promise<{ port: number; close: () => void }> {
+    const { createServer } = await import("node:http")
+    const server = createServer((_req, res) => {
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({ name: "Rex" }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    return { port: (server.address() as { port: number }).port, close: () => server.close() }
+  }
+
+  it("returns script-set and extractor values, with a secret copied into a variable masked", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const echo = await startEchoServer()
+    const workflowId = workflowRepository.create({
+      workspaceId: workspace.workspaceId,
+      name: "final-variables-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "call",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: {
+            method: "GET",
+            url: `http://127.0.0.1:${echo.port}/pets`,
+            headers: [{ key: "X-Key", value: "{{secrets.API_KEY}}" }],
+            extractors: { petName: "body.name" },
+            scripts: { postResponse: 'aw.variables.set("note", "kept")\naw.variables.set("leaked", aw.secrets.get("API_KEY"))' },
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+      ] as never,
+      edges: [
+        { edgeId: "e1", source: "start", target: "call" },
+        { edgeId: "e2", source: "call", target: "end" },
+      ] as never,
+    }).workflowId
+
+    // Over plain IPC (no agent): the run resolves the stored secret without
+    // the approval gate, which is for agent-started runs only.
+    const run = await dispatchOk<{ runId: string; status: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId,
+      waitMs: 5000,
+    })
+    expect(run.status).toBe("completed")
+    echo.close()
+
+    const client = await connectClient()
+    const withoutOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId },
+    })
+    const plain = JSON.parse(textOf(withoutOptIn as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+    expect(plain).not.toHaveProperty("variables")
+
+    const withOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, variables: true },
+    })
+    const text = textOf(withOptIn as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      variables: { values: Record<string, unknown>; omittedVariableNames: string[]; budgetBytes: number; budgetLimitBytes: number }
+    }
+    // The script-set values and the extractor value arrive; the resolved
+    // secret the script copied into a variable was masked before storage.
+    expect(parsed.variables.values).toMatchObject({ note: "kept", petName: "Rex", leaked: "<SECRET>" })
+    expect(parsed.variables.omittedVariableNames).toEqual([])
+    expect(parsed.variables.budgetBytes).toBeLessThanOrEqual(parsed.variables.budgetLimitBytes)
+    expect(text).not.toContain("s3cr3t")
+    await client.close()
+  })
+})

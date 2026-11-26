@@ -387,6 +387,12 @@ A row that is one iteration of a data-driven or load run carries `iteration`
 (`groupId`, 1-based `index`, `count`) — a load run's iterations are ordinary
 runs, so check the marker before treating the newest row as "the" latest run.
 
+`runs_get` stays metadata-only unless the caller passes `variables: true`,
+which also returns the run's stored variables — the final set once the run
+has finished (`outputMapping`, `aw.variables.set` and extractor values),
+masked like every read and bounded to 8 KiB, with entries that did not fit
+named in `omittedVariableNames`.
+
 Two run-adjacent operations are deliberately not agent tools. A load run —
 the same workflow fanned out as up to thousands of parallel real requests —
 is started by you from **Run options → Load run…** or with the CLI

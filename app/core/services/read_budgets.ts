@@ -40,6 +40,15 @@ export const EVIDENCE_PREVIEW_MAX_BYTES = 8192
  */
 export const CALL_EVIDENCE_MAX_ITERATIONS = 20
 
+/**
+ * Bytes of the `variables` section `runs.get` carries inline when the caller
+ * opts in (`variables: true`) — the run's stored final variables, already
+ * masked at capture. Entries that do not fit are dropped whole and named in
+ * `omittedVariableNames`, never sliced mid-value: every returned value is the
+ * stored value, and the accounting says what was left out.
+ */
+export const RUN_VARIABLES_BUDGET_BYTES = 8 * 1024
+
 /** Default/maximum bounded wait for run observation (`runs.create` waitMs, `runs.wait`). */
 export const RUN_WAIT_DEFAULT_MS = 10_000
 export const RUN_WAIT_MAX_MS = 30_000
