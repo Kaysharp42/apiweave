@@ -141,6 +141,8 @@ async function installRunnableIpc(
         "workflows.list": () => ok({ items: [workflow], total: 1 }),
         "workflows.get": () => ok(workflow),
         "workflows.update": () => ok(workflow),
+        "runs.checkInputs": () =>
+          ok({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, workflowName: workflow.name, environment: null, missing: [] }),
         "runs.create": () => ok({ runId: "run-evidence-1" }),
         "runs.get": () =>
           ok({ runId: "run-evidence-1", nodeStatuses: {}, results: [] }),

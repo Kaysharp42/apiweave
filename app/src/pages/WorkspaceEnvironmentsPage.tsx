@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Settings, Plus, Layers } from "lucide-react";
 import { Button } from "../components/atoms/Button";
@@ -75,6 +76,26 @@ export default function WorkspaceEnvironmentsPage() {
   const [moveWarnings, setMoveWarnings] = useState<string[]>([]);
 
   const workspaceId = currentWorkspace?.workspaceId ?? "";
+
+  // `?edit=<environmentId>` opens that environment's editor — the link a run
+  // refused for missing environment variables offers. Consumed once, so
+  // leaving the editor does not reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  useEffect(() => {
+    if (editId === null || storeIsLoading) return;
+    const target = environments.find((env) => env.environmentId === editId);
+    if (target === undefined) return;
+    setSelectedEnv(target);
+    setViewMode("edit");
+    setSearchParams(
+      (params) => {
+        params.delete("edit");
+        return params;
+      },
+      { replace: true },
+    );
+  }, [editId, environments, storeIsLoading, setSearchParams]);
 
   /**
    * One group per workspace, fetched a workspace at a time.

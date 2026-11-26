@@ -18,6 +18,9 @@ import type { Threshold } from "../runner/thresholds"
 import { formatThreshold } from "../runner/thresholds"
 import type { LoadRun } from "@shared/types/LoadRun"
 import type { ScopeResolver } from "./scope_resolver"
+import type { RunInputCheck } from "@shared/types/RunInputCheck"
+import type { RunInputsRefusal } from "@shared/types/RunInputsRefusal"
+import { describeMissingRunInputs } from "./run_input_check"
 
 /**
  * The run-execution seam. The in-process {@link RunScheduler} satisfies it
@@ -28,6 +31,46 @@ import type { ScopeResolver } from "./scope_resolver"
  */
 export interface RunTrigger extends IterationScheduler, LoadScheduler {
   cancel(runId: string): boolean
+}
+
+/**
+ * The check every run the service starts passes first: a run that would read
+ * an environment variable or a secret that is not set, or is empty, is refused
+ * before anything is sent, rather than sent with the placeholder in it.
+ */
+export interface RunInputGate {
+  check(workspaceId: string, workflowId: string, selectedEnvironmentId: string | null | undefined): Promise<RunInputCheck>
+  /** A run was refused; `agent` names the MCP client that asked, when one did. */
+  refused(refusal: RunInputsRefusal, agent: string | undefined): void
+}
+
+/**
+ * A run refused for missing values. A validation error, so it reaches the
+ * renderer and the agent as one; `details.runInputs` carries the refusal for
+ * the renderer's dialog, and the message says the same for an agent.
+ */
+export class MissingRunInputsError extends ValidationError {
+  constructor(readonly refusal: RunInputsRefusal) {
+    super(describeMissingRunInputs(refusal), { runInputs: refusal })
+  }
+}
+
+/**
+ * Refuse a run when any check lacks a value: tell the gate, then throw. The
+ * one refusal path for workflow, inspection and project runs alike.
+ */
+export function refuseMissingInputs(
+  gate: RunInputGate,
+  target: RunInputsRefusal["target"],
+  checks: readonly RunInputCheck[],
+  agent: string | undefined,
+): void {
+  const lacking = checks.filter((check) => check.missing.length > 0)
+  const [first, ...rest] = lacking
+  if (first === undefined) return
+  const refusal: RunInputsRefusal = { target, checks: [first, ...rest] }
+  gate.refused(refusal, agent)
+  throw new MissingRunInputsError(refusal)
 }
 
 /** What `runs.create` takes: a run row's fields, one data row for `{{data.<column>}}`, and a rerun request. */
@@ -129,7 +172,38 @@ export class RunService {
     private readonly scopeResolver: ScopeResolver,
     private readonly trigger?: RunTrigger,
     private readonly broker?: RunEventBroker | RunEventSource,
+    private readonly inputs?: RunInputGate,
   ) {}
+
+  /** What a run of `workflowId` would read that is not set. Sends nothing, starts nothing. */
+  async checkInputs(workspaceId: string, workflowId: string, selectedEnvironmentId: string | null | undefined): Promise<RunInputCheck> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    if (this.inputs === undefined) throw new Error("No run input check is available")
+    return this.inputs.check(workspaceId, workflowId, selectedEnvironmentId)
+  }
+
+  /** Refuse a run that would read values that are not set or empty — see {@link RunInputGate}. */
+  private async requireInputs(
+    workspaceId: string,
+    workflowId: string,
+    selectedEnvironmentId: string | null | undefined,
+    agent?: string,
+  ): Promise<void> {
+    if (this.inputs === undefined) return
+    const check = await this.inputs.check(workspaceId, workflowId, selectedEnvironmentId)
+    refuseMissingInputs(this.inputs, { kind: "workflow", name: check.workflowName }, [check], agent)
+  }
+
+  /** The scheduler for a multi-run start, once the scope is visible and the run's inputs are all set. */
+  private async schedulerFor(
+    workspaceId: string,
+    input: { readonly workflowId: string; readonly selectedEnvironmentId?: string | null },
+  ): Promise<RunTrigger> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    if (this.trigger === undefined) throw new Error("No run scheduler is available")
+    await this.requireInputs(workspaceId, input.workflowId, input.selectedEnvironmentId)
+    return this.trigger
+  }
 
   async createRun(
     workspaceId: string,
@@ -138,6 +212,7 @@ export class RunService {
     waitOptions: RunWaitOptions = {},
   ): Promise<Run> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    await this.requireInputs(workspaceId, input.workflowId, input.selectedEnvironmentId, options.agent)
     // Immediate by default at the service layer: existing callers (renderer via
     // waitMs:0, unit tests, scheduler field writes) expect the queued snapshot
     // back, not a bounded wait. The IPC/MCP `runs.create` handler applies the
@@ -167,10 +242,9 @@ export class RunService {
       readonly rows: readonly Readonly<Record<string, JsonValue>>[]
     },
   ): Promise<Run> {
-    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    if (this.trigger === undefined) throw new Error("No run scheduler is available")
+    const trigger = await this.schedulerFor(workspaceId, input)
     const { firstRunId } = startIterations(
-      this.trigger,
+      trigger,
       {
         workspaceId,
         workflowId: input.workflowId,
@@ -201,11 +275,10 @@ export class RunService {
       readonly nodeInfo: ReadonlyMap<string, LoadNodeInfo>
     },
   ): Promise<Run> {
-    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    if (this.trigger === undefined) throw new Error("No run scheduler is available")
+    const trigger = await this.schedulerFor(workspaceId, input)
     const startedAt = new Date().toISOString()
     const handle = startLoadRun(
-      this.trigger,
+      trigger,
       {
         workspaceId,
         workflowId: input.workflowId,
@@ -417,6 +490,9 @@ export class RunService {
       return this.continueInspection(workspaceId, input.runId, read, waitMs, options)
     }
     if (options.signal?.aborted === true) throw abortError("inspect cancelled")
+    // An inspection is a real run up to its stop: it is refused for missing
+    // values like any other, over the whole workflow it would replay.
+    if (input.workflowId !== undefined) await this.requireInputs(workspaceId, input.workflowId, input.selectedEnvironmentId, options.agent)
     const { runId, kept } = this.startInspection(workspaceId, input, options)
     return this.finishInspection(await this.waitForRun(workspaceId, runId, waitMs, options), kept, read)
   }

@@ -80,6 +80,8 @@ describe("Task 20: run progress streams over IPC events", () => {
           return { ok: true, data: { ...runResult, status: "pending" } };
         if (action === "get") return { ok: true, data: runResult };
         if (action === "getLatestFailed") return { ok: true, data: null };
+        if (action === "checkInputs")
+          return { ok: true, data: { workspaceId: "ws", workflowId: "wf", workflowName: "", environment: null, missing: [] } };
         if (action === "cancel") return { ok: true, data: runResult };
         return { ok: true, data: {} };
       },
@@ -152,6 +154,8 @@ describe("Task 20: run progress streams over IPC events", () => {
           return { ok: true, data: { ...runResult, status: "pending" } };
         }
         if (action === "getLatestFailed") return { ok: true, data: null };
+        if (action === "checkInputs")
+          return { ok: true, data: { workspaceId: "ws", workflowId: "wf", workflowName: "", environment: null, missing: [] } };
         return { ok: true, data: {} };
       },
     );
@@ -277,6 +281,8 @@ describe("Task 20: run progress streams over IPC events", () => {
             data: { ...runResult, nodeStatuses: { end_1: "passed" } },
           };
         if (action === "getLatestFailed") return { ok: true, data: null };
+        if (action === "checkInputs")
+          return { ok: true, data: { workspaceId: "ws", workflowId: "wf", workflowName: "", environment: null, missing: [] } };
         return { ok: true, data: {} };
       },
     );

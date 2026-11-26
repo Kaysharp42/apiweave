@@ -3,6 +3,7 @@ import type { CollectionRepository, ProjectRunRepository } from "../repositories
 import type { ProjectRunner } from "../runner/project_runner"
 import { NotFoundError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
+import { refuseMissingInputs, type RunInputGate } from "./run_service"
 
 /**
  * Workspace-scoped project runs: authorizes, then hands execution to the
@@ -15,11 +16,21 @@ export class ProjectRunService {
     private readonly projectRuns: ProjectRunRepository,
     private readonly collections: CollectionRepository,
     private readonly scopeResolver: ScopeResolver,
+    private readonly inputs?: RunInputGate,
   ) {}
 
-  /** Starts the run and returns at once with it `running`; progress arrives through the runner's `onChange`. */
+  /**
+   * Starts the run and returns at once with it `running`; progress arrives through the runner's `onChange`.
+   * Refused before anything is sent when any workflow it would run reads a value that is not set or empty.
+   */
   async start(workspaceId: string, projectId: string, environmentId: string | null, agent?: string): Promise<ProjectRun> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    if (this.inputs !== undefined) {
+      const inputs = this.inputs
+      const { name, items } = this.runner.planFor(workspaceId, projectId)
+      const checks = await Promise.all(items.map((item) => inputs.check(workspaceId, item.workflowId, environmentId)))
+      refuseMissingInputs(inputs, { kind: "project", name }, checks, agent)
+    }
     return this.runner.start({ workspaceId, projectId, environmentId, ...(agent !== undefined ? { agent } : {}) }).projectRun
   }
 

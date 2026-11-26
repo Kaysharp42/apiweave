@@ -8,6 +8,8 @@ import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { AppInfo } from "@shared/types/AppInfo";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
+import type { RunInputCheck } from "@shared/types/RunInputCheck";
+import type { RunInputsMissingEvent } from "@shared/types/RunInputsMissingEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest";
 import type { WorkflowRevision } from "@shared/types/WorkflowRevision";
@@ -126,6 +128,9 @@ type IpcBridge = {
   ) => () => void;
   readonly onRunStarted?: (
     callback: (event: RunStartedEvent) => void,
+  ) => () => void;
+  readonly onRunInputsMissing?: (
+    callback: (event: RunInputsMissingEvent) => void,
   ) => () => void;
   readonly onProjectRunChanged?: (
     callback: (projectRun: ProjectRun) => void,
@@ -634,6 +639,12 @@ export const apiweave = {
       readonly ruleIndex: number;
       readonly value: JsonValue;
     }) => invoke<{ accepted: boolean; updatedAt: string }>("runs", "acceptSnapshot", input),
+    /** What a run would read that is not set; omitting the environment uses the workflow's saved one. */
+    checkInputs: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly selectedEnvironmentId?: string | null;
+    }) => invoke<RunInputCheck>("runs", "checkInputs", input),
     create: (
       input: {
         readonly workspaceId: string;
@@ -929,6 +940,16 @@ export function onRunStarted(
   callback: (event: RunStartedEvent) => void,
 ): () => void {
   return getIpcBridge().onRunStarted?.(callback) ?? (() => undefined);
+}
+
+/**
+ * Subscribe to every agent run refused for values that are not set. Unkeyed:
+ * no renderer call asked for those runs; see `RUN_INPUTS_MISSING_CHANNEL`.
+ */
+export function onRunInputsMissing(
+  callback: (event: RunInputsMissingEvent) => void,
+): () => void {
+  return getIpcBridge().onRunInputsMissing?.(callback) ?? (() => undefined);
 }
 
 /**

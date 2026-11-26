@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema, RunArtifactSchema, AriaScopeSchema, unknownKeyError } from "@shared/zod-schemas"
+import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema, RunArtifactSchema, AriaScopeSchema, RunInputCheckSchema, unknownKeyError } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { ifFound, listResult } from "./common"
@@ -169,6 +169,22 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
         },
         context?.signal !== undefined ? { signal: context.signal } : {},
       ),
+  })
+
+  // What a run would read that is not set: every `{{env.*}}` the run's
+  // environment lacks and every `{{secrets.*}}` with no value, in the workflow
+  // and the ones it calls. Names only. `runs.create` refuses such a run anyway;
+  // this answers the same question without asking for one.
+  router.register("runs", "checkInputs", {
+    input: z
+      .object({
+        workspaceId: ws,
+        workflowId: z.string().min(1),
+        selectedEnvironmentId: z.string().nullable().optional().describe("The environment to check against. Omitted uses the workflow's saved one; null checks a run with no environment."),
+      })
+      .strict(),
+    output: RunInputCheckSchema,
+    handle: (i) => runs.checkInputs(i.workspaceId, i.workflowId, i.selectedEnvironmentId),
   })
 
   // Renderer only (not on the MCP whitelist): a data-driven run, the workflow
