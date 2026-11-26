@@ -263,3 +263,10 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`,
   `executor_browser` screenshot-evidence numbering).
+- **2026-11-26 — merged `main` (#226) into the branch.** `main` fixed the gRPC
+  TLS tests and the browser test flakiness. Two conflicts (`runs.ts` imports;
+  `projects_run` and `browser_inspect` descriptions) resolved by keeping both
+  sides. `main`'s new run-input check read `{{env.HOSTS[1]}}` as a variable
+  named `HOSTS[1]` and would have refused the run now that `[n]` resolves
+  (B3): fixed to take the root the runner reads, with a test. Full suite:
+  5 437 passed, 0 failed.
