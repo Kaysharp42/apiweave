@@ -11,7 +11,7 @@ written generically: no application under test, host, record or label is named.
 | --- | --- | --- | --- | --- | --- |
 | B1 | Edge integrity on every write | FB-001…FB-005 | DeepSeek Flash (impl), coordinator (review) | `fb-b1` → merged | done (`234a5e5f`…`998b3644`) |
 | B2 | Call Workflow data passing fails loudly and keeps types | FB-010…FB-016 | Opus 5.5 | `fb-b2` → merged | done (`b62e7bc6`, `f3061696`) |
-| B3 | One placeholder path walker; analyzer sees scripts and nested reads | FB-017, FB-018 | Opus 5.5 | `fb-b3` | in progress |
+| B3 | One placeholder path walker; analyzer sees scripts and nested reads | FB-017, FB-018 | Opus 5.5 | `fb-b3` → merged | done (`e2a8b1b0`, `fe1ef160`) |
 | B4 | Browser actions verify what they did | FB-030…FB-036 | Sonnet 5.5 | `fb-b4` → merged | done (`5942a4b9`) |
 | B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | `fb-b5` | in progress |
 | B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 (guides), DeepSeek Flash (schemas) | — | planned |
@@ -209,6 +209,18 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   whole edge list, so a stored duplicate or dangling edge would have blocked
   every save: fixed by checking only edges the write adds or changes.
   Repository imports and git sync stay permissive (diagnosed, not refused).
+- **2026-11-26 — B3 merged.** FB-017: five copies of the placeholder path
+  walker replaced by one shared `readDotPath`; `[n]` resolves in
+  `variables`/`env`/`data`, an index past the end stays unresolved. A masked
+  variable read through a path (`tokens[0]`) is now refused on rerun (it
+  slipped through before). FB-018: one shared reference extractor
+  (`shared/analysis/variable_references.ts`) used by the analyzer, node facts
+  and the rerun check; `aw.variables.set` counts as a producer; a child's
+  inputs supplied by its callers (`inputMapping` keys, `forEach`
+  item/index) are no longer flagged. Limits: root names must be identifiers
+  (hyphens allowed later in the path); `aw.variables.get` in a script is not
+  counted as a read by the analyzer; the canvas still shows the caller-input
+  warning because it cannot read other workflows.
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`).
