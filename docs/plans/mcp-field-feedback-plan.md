@@ -257,6 +257,7 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   lint and `build:app` pass; `vitest run`: 5 409 passed, 5 failed — the 3
   gRPC TLS tests and 2 `executor_browser` screenshot-evidence tests, which
   also fail intermittently on the base commit `3aca4e67` (2 of 4 runs).
+- **2026-11-26 — round 1 PR opened:** #227.
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`,
