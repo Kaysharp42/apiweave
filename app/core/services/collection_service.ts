@@ -12,7 +12,7 @@ import type { ScopeResolver } from "./scope_resolver"
 
 /**
  * Workspace-scoped collection CRUD + workflow membership. "Project" and
- * "collection" are the same aggregate here (the repo carries a `projectId` field). `workflowCount` is
+ * "collection" are the same aggregate here (the id is `collectionId`). `workflowCount` is
  * always recomputed from the workflow table, never trusted from the stored column.
  */
 export class CollectionService {

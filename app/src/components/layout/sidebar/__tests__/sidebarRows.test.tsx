@@ -27,7 +27,6 @@ const noop = (): void => undefined;
 const PROJECT: Project = {
   id: "project-row",
   collectionId: "project-row",
-  projectId: "project-row",
   name: "Checkout",
   workflowCount: 0,
   createdAt: "2026-07-20T00:00:00.000Z",

@@ -1,9 +1,8 @@
 import { z } from "zod"
-import { JsonValueSchema, AriaScopeSchema } from "@shared/zod-schemas"
+import { JsonValueSchema, AriaScopeSchema, unknownKeyError } from "@shared/zod-schemas"
 import { BrowserInspectionSchema } from "@shared/zod-schemas/BrowserInspectionSchema"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import { unknownKeyError } from "./common"
 import {
   BROWSER_INSPECT_SNAPSHOT_DEFAULT_BYTES,
   BROWSER_INSPECT_SNAPSHOT_MAX_BYTES,

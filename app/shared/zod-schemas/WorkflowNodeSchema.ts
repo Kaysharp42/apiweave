@@ -13,6 +13,7 @@ import { SseNodeDataSchema } from "./SseNodeDataSchema"
 import { WebsocketNodeDataSchema } from "./WebsocketNodeDataSchema"
 import { StartNodeDataSchema } from "./StartNodeDataSchema"
 import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
+import { unknownKeyError } from "./unknownKeyError"
 
 /**
  * Base shape every workflow-node discrimination member shares: identity,
@@ -34,6 +35,37 @@ const baseNode = z.object({
   parentId: z.string().min(1).optional().describe('Node id of the group frame this node sits inside. When set, `position` is relative to that frame. Layout only.'),
 })
 
+const NODE_LEVEL_KEY = "belongs on the node, not in `config`."
+
+/**
+ * What an agent that put a node-level field inside `config` is told. A browser
+ * step takes `description` itself, so for it that key is never unrecognised.
+ */
+const unknownConfigKey = unknownKeyError({
+  description: "Put text on the node `label` (only browser steps have a description).",
+  label: `\`label\` ${NODE_LEVEL_KEY}`,
+  position: `\`position\` ${NODE_LEVEL_KEY}`,
+  parentId: `\`parentId\` ${NODE_LEVEL_KEY}`,
+})
+
+/** Only an unknown key is reworded; every other issue the object raises keeps zod's own message. */
+const configKeyError = (issue: { readonly code: string; readonly keys?: unknown }): string | undefined =>
+  issue.code === "unrecognized_keys" ? unknownConfigKey(issue) : undefined
+
+type Cloneable = z.ZodType & { readonly def: Record<string, unknown> & { readonly options?: readonly z.ZodType[] } }
+
+/**
+ * `config` with a hinted unknown-key error on every strict object it holds.
+ * Cloned with the original as `parent`, so descriptions and the generated JSON
+ * Schema are those of the schema passed in.
+ */
+function hintConfigKeys<T extends z.ZodType>(schema: T): T {
+  const { def } = schema as unknown as Cloneable
+  const options = def.options?.map(hintConfigKeys)
+  const next = options === undefined ? { ...def, error: configKeyError } : { ...def, options }
+  return (schema as unknown as { clone(d: unknown, params: { parent: boolean }): T }).clone(next, { parent: true })
+}
+
 /**
  * Discriminated union over `type` so a node carries exactly the config
  * shape its `type` permits — a `delay` node with a `headers` field is
@@ -53,28 +85,28 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
   baseNode
     .extend({
       type: z.literal("http-request"),
-      config: HTTPNodeDataSchema.optional(),
+      config: hintConfigKeys(HTTPNodeDataSchema).optional(),
     })
     .strict()
     .describe("Sends one HTTP request and optionally extracts values from the response into workflow variables. One input, one output."),
   baseNode
     .extend({
       type: z.literal("sse"),
-      config: SseNodeDataSchema.optional(),
+      config: hintConfigKeys(SseNodeDataSchema).optional(),
     })
     .strict()
     .describe('Starts a Server-Sent Events listener. Its "ready" output runs after the SSE handshake succeeds; its "complete" output runs after the bounded stream ends. Finish rules may close on a matching event. The complete path can feed an assertion node using the collected SSE response.'),
   baseNode
     .extend({
       type: z.literal("websocket"),
-      config: WebsocketNodeDataSchema.optional(),
+      config: hintConfigKeys(WebsocketNodeDataSchema).optional(),
     })
     .strict()
     .describe('Opens a WebSocket connection, sends its configured messages, and collects the incoming ones. Its "ready" output runs after the handshake succeeds; its "complete" output runs after the bounded stream ends. Finish rules may close on a matching message. The complete path can feed an assertion node using the collected messages.'),
   baseNode
     .extend({
       type: z.literal("grpc"),
-      config: GrpcNodeDataSchema.optional(),
+      config: hintConfigKeys(GrpcNodeDataSchema).optional(),
     })
     .strict()
     .describe(
@@ -83,7 +115,7 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
   baseNode
     .extend({
       type: z.literal("browser"),
-      config: BrowserNodeDataSchema.optional(),
+      config: hintConfigKeys(BrowserNodeDataSchema).optional(),
     })
     .strict()
     .describe(
@@ -92,7 +124,7 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
   baseNode
     .extend({
       type: z.literal("assertion"),
-      config: AssertionNodeDataSchema.optional(),
+      config: hintConfigKeys(AssertionNodeDataSchema).optional(),
     })
     .strict()
     .describe(
@@ -101,49 +133,49 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
   baseNode
     .extend({
       type: z.literal("delay"),
-      config: DelayNodeDataSchema.optional(),
+      config: hintConfigKeys(DelayNodeDataSchema).optional(),
     })
     .strict()
     .describe("Waits a fixed duration before continuing. One input, one output."),
   baseNode
     .extend({
       type: z.literal("merge"),
-      config: MergeNodeDataSchema.optional(),
+      config: hintConfigKeys(MergeNodeDataSchema).optional(),
     })
     .strict()
     .describe('Joins parallel branches back into one path using a strategy ("all", "any", "first" or "conditional"). Downstream nodes address a specific branch as "{{prev[0]...}}", "{{prev[1]...}}". Many inputs, one output.'),
   baseNode
     .extend({
       type: z.literal("start"),
-      config: StartNodeDataSchema.optional(),
+      config: hintConfigKeys(StartNodeDataSchema).optional(),
     })
     .strict()
     .describe("Entry point. Exactly one per workflow; the run begins here. Output only."),
   baseNode
     .extend({
       type: z.literal("end"),
-      config: EndNodeDataSchema.optional(),
+      config: hintConfigKeys(EndNodeDataSchema).optional(),
     })
     .strict()
     .describe("Terminal point of a path. At least one per workflow; several are allowed for separate success and failure paths. Input only."),
   baseNode
     .extend({
       type: z.literal("workflow"),
-      config: WorkflowCallNodeDataSchema.optional(),
+      config: hintConfigKeys(WorkflowCallNodeDataSchema).optional(),
     })
     .strict()
     .describe("Runs another workflow in the same workspace inline, as one step, with input/output variable mappings. One input, one output."),
   baseNode
     .extend({
       type: z.literal("group"),
-      config: GroupNodeDataSchema.optional(),
+      config: hintConfigKeys(GroupNodeDataSchema).optional(),
     })
     .strict()
     .describe("A frame drawn behind its members. Purely visual: it has no handles, takes no edges and never executes — the runner and the graph validator drop it before they see the graph. Nodes join it by setting `parentId` to its id, which makes their `position` relative to the frame."),
   baseNode
     .extend({
       type: z.literal("note"),
-      config: NoteNodeDataSchema.optional(),
+      config: hintConfigKeys(NoteNodeDataSchema).optional(),
     })
     .strict()
     .describe("A sticky note for documenting a workflow branch. Purely visual: it has no handles, takes no edges, and never executes."),

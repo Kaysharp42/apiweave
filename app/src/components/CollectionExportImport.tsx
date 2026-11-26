@@ -750,8 +750,8 @@ export function CollectionExportImport({
                   <option value="">Select project…</option>
                   {projects.map((project) => (
                     <option
-                      key={project.projectId ?? project.collectionId}
-                      value={project.projectId ?? project.collectionId}
+                      key={project.collectionId}
+                      value={project.collectionId}
                     >
                       {project.name}
                     </option>

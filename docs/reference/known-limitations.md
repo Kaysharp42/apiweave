@@ -178,6 +178,12 @@ which use the browser's own trust store.
   the user's own browsing data, logins and extensions are never touched, and
   there is no saved login state to reuse. Sign in with steps, ideally once, in a
   sub-workflow called through Call Workflow.
+- **Runs are not isolated from the application's own session rules.** Each run
+  has its own browser profile, but the application under test sees the same
+  account. If it allows one session per account, or ends the older session on a
+  new sign-in, two runs that sign in with the same account (up to four run at
+  once) can sign each other out mid-run. Wait for one run to finish before
+  starting another that shares its login, or give each its own test account.
 - **Only the proxy reaches the browser.** The proxy configured in
   **Settings → Network** — or `--proxy`, `HTTPS_PROXY` and `NO_PROXY` on the CLI
   — is used by browser steps, recording, re-pick and re-record as well as by

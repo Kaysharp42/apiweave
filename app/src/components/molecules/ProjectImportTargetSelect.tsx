@@ -25,8 +25,8 @@ export function ProjectImportTargetSelect({
         <option value="">-- Choose a project --</option>
         {projects.map((project) => (
           <option
-            key={project.projectId ?? project.collectionId}
-            value={project.projectId ?? project.collectionId}
+            key={project.collectionId}
+            value={project.collectionId}
           >
             {project.name} ({project.workflowCount} workflows)
           </option>

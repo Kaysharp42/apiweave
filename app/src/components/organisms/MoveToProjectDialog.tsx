@@ -105,7 +105,7 @@ export function MoveToProjectDialog({
             >
               <option value={UNASSIGNED}>No project</option>
               {projects.map((project) => {
-                const projectId = project.projectId ?? project.collectionId;
+                const projectId = project.collectionId;
                 return (
                   <option key={projectId} value={projectId}>
                     {project.name}

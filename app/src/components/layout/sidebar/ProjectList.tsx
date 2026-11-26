@@ -66,11 +66,9 @@ export function ProjectList({
     <ul className="w-full list-none space-y-1 px-0.5 font-sans">
       {projects.map((project) => (
         <ProjectItem
-          key={project.projectId ?? project.collectionId}
+          key={project.collectionId}
           project={project}
-          isExpanded={expandedProjects.has(
-            project.projectId ?? project.collectionId,
-          )}
+          isExpanded={expandedProjects.has(project.collectionId)}
           workflows={workflows}
           projects={projects}
           environments={environments}

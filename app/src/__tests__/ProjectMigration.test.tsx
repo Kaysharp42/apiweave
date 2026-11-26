@@ -54,7 +54,7 @@ describe("project migration UI", () => {
     const user = userEvent.setup();
     const invoke = installBridge((key) =>
       key === "projects.create"
-        ? { projectId: "proj-1", collectionId: "proj-1" }
+        ? { collectionId: "proj-1" }
         : { items: [], total: 0 },
     );
 

@@ -88,7 +88,7 @@ export function MoveToWorkspaceFields({
             >
               <option value={unassignedValue}>No project</option>
               {targetProjects.map((project) => {
-                const projectId = project.projectId ?? project.collectionId;
+                const projectId = project.collectionId;
                 return (
                   <option key={projectId} value={projectId}>
                     {project.name}

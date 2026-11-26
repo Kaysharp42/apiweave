@@ -183,7 +183,7 @@ export class ProjectExportService {
       schemaVersion: SCHEMA_VERSION,
       type: "aweproject",
       project: {
-        projectId: project.projectId ?? project.collectionId,
+        projectId: project.collectionId,
         name: project.name,
         description: project.description ?? "",
         color: project.color ?? "#3B82F6",

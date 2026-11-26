@@ -135,6 +135,10 @@ export interface McpToolSpec {
   readonly description: string
 }
 
+/** A project is a collection underneath; its id is `collectionId`, and the run tools name that same id `projectId`. */
+const PROJECT_ID_NOTE =
+  "A project's id is its `collectionId`; projects_run, projects_listRuns and projects_export call that same id `projectId`."
+
 function tool(
   domain: string,
   action: string,
@@ -184,14 +188,14 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   // `workflows_search` with `collectionId` lists what a project contains as paged
   // summaries, and `workflows_attachToCollection` attaches/detaches. The
   // project-centric IPC handlers stay for the renderer; they are not agent tools.
-  tool("projects", "list", "read", "List projects in a workspace."),
-  tool("projects", "get", "read", "Get a project by id."),
-  tool("projects", "create", "write", "Create a project."),
-  tool("projects", "update", "write", "Update a project.", { idempotent: true }),
-  tool("projects", "delete", "write", "Delete an empty project.", { destructive: true, idempotent: true }),
-  tool("projects", "run", "write", "Run a project: its enabled workflows one after another, in the project's saved order, all against one environment (`environmentId`, or null for none). Returns at once with the project run `running`; read progress with projects_getRun. Each workflow is an ordinary run — inspect one with runs_get using its item's runId. A failed workflow stops the project unless its row has continueOnFail, and the workflows after a stop are skipped; any failure fails the project. Variables do not pass between workflows. A workflow run that would send stored secrets first waits for the user to approve it in APIWeave, exactly as runs_create does; a denial fails that workflow — tell the user, do not retry.", { openWorld: true }),
+  tool("projects", "list", "read", `List projects in a workspace. ${PROJECT_ID_NOTE}`),
+  tool("projects", "get", "read", `Get a project by id. ${PROJECT_ID_NOTE}`),
+  tool("projects", "create", "write", `Create a project. ${PROJECT_ID_NOTE}`),
+  tool("projects", "update", "write", `Update a project. ${PROJECT_ID_NOTE}`, { idempotent: true }),
+  tool("projects", "delete", "write", `Delete an empty project. ${PROJECT_ID_NOTE}`, { destructive: true, idempotent: true }),
+  tool("projects", "run", "write", "Run a project: its enabled workflows one after another, in the project's saved order, all against one environment (`environmentId`, or null for none). Returns at once with the project run `running`; read progress with projects_getRun. Each workflow is an ordinary run — inspect one with runs_get using its item's runId. A failed workflow stops the project unless its row has continueOnFail, and the workflows after a stop are skipped; any failure fails the project. Variables do not pass between workflows. A workflow run that would send stored secrets first waits for the user to approve it in APIWeave, exactly as runs_create does; a denial fails that workflow — tell the user, do not retry. " + PROJECT_ID_NOTE, { openWorld: true }),
   tool("projects", "getRun", "read", "Get a project run: its status, and each workflow's status (pending, running, completed, failed, cancelled, interrupted, skipped), runId and duration, in run order."),
-  tool("projects", "listRuns", "read", "List a project's runs, newest first. The newest 50 finished runs of a project are kept."),
+  tool("projects", "listRuns", "read", `List a project's runs, newest first. The newest 50 finished runs of a project are kept. ${PROJECT_ID_NOTE}`),
   tool("projects", "cancelRun", "write", "Cancel a running project run: its current workflow run is cancelled and the workflows after it are skipped.", { destructive: true, idempotent: true }),
   tool("projects", "moveToWorkspace", "write", "Move a project and every workflow in it into another workspace. Each moved workflow's selected environment is cleared, and calls out to a workflow left behind lose their target; calls between workflows in this project survive. Confirm with the user before calling.", { destructive: true }),
 
@@ -228,11 +232,11 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("runs", "cancel", "write", "Cancel a queued or running run and return its metadata-only snapshot.", { destructive: true, idempotent: true, resultProjection: "run" }),
 
   // Secrets — read-only metadata surface (never plaintext, never sealed bytes)
-  tool("secrets", "list", "read", "List secret metadata (names/scopes) for a scope. Never returns secret values."),
+  tool("secrets", "list", "read", "List secret metadata (names/scopes). Give only `workspaceId` for the workspace scope; an environment scope needs `scopeType: \"environment\"` and `scopeId` (the environmentId). Never returns secret values."),
   tool("secrets", "resolve", "read", "Resolve which scope a secret name binds to. Returns metadata only, never the value."),
 
   // Projects — export/import (references only, fail-closed on plaintext)
-  tool("projects", "export", "read", "Export a project bundle (`.aweproject`) with secret references only, no values."),
+  tool("projects", "export", "read", "Export a project bundle (`.aweproject`) with secret references only, no values. " + PROJECT_ID_NOTE),
   tool("projects", "dryRun", "read", "Preview importing a project bundle (`.aweproject`) without writing."),
   tool("projects", "import", "write", "Import a project bundle (`.aweproject`) into a workspace."),
 ]

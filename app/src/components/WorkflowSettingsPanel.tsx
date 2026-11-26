@@ -67,7 +67,7 @@ export function WorkflowSettingsPanel() {
     }
 
     const selectedProject = collections.find(
-      (project) => (project.projectId ?? project.collectionId) === projectId,
+      (project) => project.collectionId === projectId,
     );
     if (!selectedProject) {
       toast.error("Project not found");
@@ -217,7 +217,7 @@ export function WorkflowSettingsPanel() {
                         <div className="py-1">
                           {collections.map((collection) => {
                             const c = collection as unknown as LocalProject;
-                            const cId = c.projectId ?? c.collectionId;
+                            const cId = c.collectionId;
                             return (
                               <button
                                 type="button"

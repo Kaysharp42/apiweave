@@ -7,10 +7,10 @@ import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, toJson } fr
 import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
 export type CollectionCreate = Pick<Collection, "workspaceId" | "name"> &
-  Partial<Pick<Collection, "collectionId" | "projectId" | "description" | "color" | "workflowOrder">>
+  Partial<Pick<Collection, "collectionId" | "description" | "color" | "workflowOrder">>
 
 export type CollectionUpdate = Partial<
-  Pick<Collection, "name" | "projectId" | "description" | "color" | "workflowCount" | "workflowOrder">
+  Pick<Collection, "name" | "description" | "color" | "workflowCount" | "workflowOrder">
 >
 
 const COLUMNS = "id, workspace_id, name, workflow_ids_json, settings_json, rev, createdAt, updatedAt"
@@ -27,7 +27,6 @@ interface CollectionRow extends SqliteRow {
 }
 
 interface CollectionSettings {
-  readonly projectId: string | null
   readonly description: string | null
   readonly color: string | null
   readonly workflowCount: number
@@ -54,7 +53,6 @@ export class CollectionRepository {
   public create(input: CollectionCreate): Collection {
     const id = input.collectionId ?? generateId()
     const settings: CollectionSettings = {
-      projectId: input.projectId ?? null,
       description: input.description ?? null,
       color: input.color ?? null,
       workflowCount: 0,
@@ -90,7 +88,6 @@ export class CollectionRepository {
     }
     const merged: Collection = { ...existing, ...patch }
     const settings: CollectionSettings = {
-      projectId: merged.projectId ?? null,
       description: merged.description ?? null,
       color: merged.color ?? null,
       workflowCount: merged.workflowCount,
@@ -150,7 +147,6 @@ function rowToCollection(row: CollectionRow): Collection {
   return {
     collectionId: row.id,
     workspaceId: row.workspace_id,
-    projectId: settings.projectId,
     name: row.name,
     description: settings.description,
     color: settings.color,
