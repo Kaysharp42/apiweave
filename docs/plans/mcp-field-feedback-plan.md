@@ -14,7 +14,7 @@ written generically: no application under test, host, record or label is named.
 | B3 | One placeholder path walker; analyzer sees scripts and nested reads | FB-017, FB-018 | Opus 5.5 | `fb-b3` → merged | done (`e2a8b1b0`, `fe1ef160`) |
 | B4 | Browser actions verify what they did | FB-030…FB-036 | Sonnet 5.5 | `fb-b4` → merged | done (`5942a4b9`) |
 | B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | `fb-b5` → merged | done (`9813336e`…`942c4de3`) |
-| B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 (guides), DeepSeek Flash (schemas) | `fb-b6` | in progress |
+| B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 | `fb-b6` → merged | done (`049ae209`…`05ff7e5c`) |
 | B7 | The open canvas stops bumping `rev` | FB-006 | Opus 5.5 | `fb-b7` → merged | done (`863017d7`) |
 | B8 | Read a run's final variables | FB-019 | Opus 5.5 (design), GLM-5.3 (impl) | `fb-b8` | in progress |
 | — | Deferred features | FB-070…FB-075 | — | — | needs decision |
@@ -234,6 +234,16 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   Full suite on the combined branch: only the known flaky tests fail; each
   browser file passes alone except the pre-existing `recording.test.ts`
   iframe case.
+- **2026-11-26 — B6 merged.** FB-050 `MCP_INSTRUCTIONS` names `guides_get`
+  (1 396 / 1 600 bytes). FB-051 `secrets_list` defaults to the workspace
+  scope. FB-052: `Collection.projectId` was dead (never set; every reader fell
+  back to `collectionId`) and is removed end to end; it lived in
+  `settings_json`, so no migration. FB-053: node-config unknown keys get a
+  hint in the MCP validation projection (first version cloned zod internals;
+  rejected in review and redone on public issue fields). FB-054: unattached
+  workflows are listed under the sidebar's Workflows tab; guide says to file
+  with `collectionId`. FB-055, FB-060, FB-061 documented; one dedup pass over
+  the guides. start-here size ceiling raised 3 850 → 4 050 chars.
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`).
