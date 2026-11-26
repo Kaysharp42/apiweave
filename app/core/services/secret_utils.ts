@@ -743,6 +743,22 @@ function redactUrlQueryParams(
 const RUN_HISTORY_URL_BLANK = "<REDACTED>"
 
 /**
+ * Query parameter names that carry a credential in a URL a browser lands on,
+ * beyond what a config key name says: an OAuth authorization code, a signed
+ * URL's signature, a bare API `key`, single sign-on tickets and assertions,
+ * magic-link codes. Lowercased, matched exactly.
+ */
+const URL_CREDENTIAL_PARAMS: ReadonlySet<string> = new Set([
+  "code", "key", "sig", "signature", "x-amz-signature", "ticket", "nonce",
+  "samlresponse", "samlrequest", "id_token_hint", "login_hint", "otp", "pin",
+])
+
+/** True if a query parameter of a stored run URL must not keep its value. */
+function isRunHistorySensitiveParam(key: string): boolean {
+  return isSyncSensitiveKey(key) || URL_CREDENTIAL_PARAMS.has(key.toLowerCase())
+}
+
+/**
  * A URL as run history keeps it — the one redaction every captured evidence
  * URL (a browser step's page, an inspected page, a request's metadata) goes
  * through, on top of the run's own secret-value masker.
@@ -757,7 +773,7 @@ const RUN_HISTORY_URL_BLANK = "<REDACTED>"
  * so they are decoded back.
  */
 export function redactUrlForRunHistory(value: string): string {
-  const redacted = sanitizeUrlWithReferences(value, RUN_HISTORY_URL_BLANK, isSecretKey)
+  const redacted = sanitizeUrlWithReferences(value, RUN_HISTORY_URL_BLANK, isRunHistorySensitiveParam)
   if (redacted === value) return value
   return redacted
     .replaceAll(encodeURIComponent(RUN_HISTORY_URL_BLANK), RUN_HISTORY_URL_BLANK)

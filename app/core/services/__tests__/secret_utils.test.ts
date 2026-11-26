@@ -431,6 +431,16 @@ describe("redactUrlForRunHistory — what a stored run URL keeps", () => {
     )
   })
 
+  it("redacts the credentials a sign-in redirect or a signed URL carries", () => {
+    expect(
+      redactUrlForRunHistory(
+        "https://app.test/callback?code=auth-code-1&state=xyz&session=s-1&sig=abc&key=k-1&SAMLResponse=PHNhbWw&X-Amz-Signature=f00",
+      ),
+    ).toBe(
+      "https://app.test/callback?code=<REDACTED>&state=xyz&session=<REDACTED>&sig=<REDACTED>&key=<REDACTED>&SAMLResponse=<REDACTED>&X-Amz-Signature=<REDACTED>",
+    )
+  })
+
   it("redacts a credential-looking value under an innocuous name", () => {
     const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
     expect(redactUrlForRunHistory(`https://app.test/orders?ref=${jwt}`)).toBe(
