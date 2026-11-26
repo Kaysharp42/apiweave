@@ -9,6 +9,7 @@ import type { AgentsBridge } from "@shared/types/AgentsBridge"
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
+import type { RunInputsMissingEvent } from "@shared/types/RunInputsMissingEvent"
 import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
@@ -37,6 +38,7 @@ import {
   OAUTH_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   runProgressChannel,
+  RUN_INPUTS_MISSING_CHANNEL,
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
@@ -89,6 +91,7 @@ type IpcBridge = {
   readonly invoke: (domain: string, action: string, payload: unknown) => Promise<ContractResult<unknown>>
   readonly onRunProgress: (runId: string, callback: (event: RunProgressEvent) => void) => () => void
   readonly onRunStarted: (callback: (event: RunStartedEvent) => void) => () => void
+  readonly onRunInputsMissing: (callback: (event: RunInputsMissingEvent) => void) => () => void
   readonly onProjectRunChanged: (callback: (projectRun: ProjectRun) => void) => () => void
   readonly onAgentWrite: (callback: (event: AgentWriteEvent) => void) => () => void
   readonly onWorkflowChanged: (callback: (event: WorkflowChangedEvent) => void) => () => void
@@ -100,6 +103,7 @@ const ipcBridge: IpcBridge = {
   onRunProgress: (runId, callback) =>
     subscribe<RunProgressEvent>(runProgressChannel(runId), callback),
   onRunStarted: (callback) => subscribe<RunStartedEvent>(RUN_STARTED_CHANNEL, callback),
+  onRunInputsMissing: (callback) => subscribe<RunInputsMissingEvent>(RUN_INPUTS_MISSING_CHANNEL, callback),
   onProjectRunChanged: (callback) => subscribe<ProjectRun>(PROJECT_RUN_CHANGED_CHANNEL, callback),
   onAgentWrite: (callback) => subscribe<AgentWriteEvent>(AGENT_WRITE_CHANNEL, callback),
   onWorkflowChanged: (callback) =>

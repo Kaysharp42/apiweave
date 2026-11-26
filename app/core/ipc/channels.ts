@@ -163,6 +163,14 @@ export const GIT_STATUS_CHANGED_CHANNEL = "apiweave:git-status-changed"
 export const RUN_STARTED_CHANNEL = "apiweave:run-started"
 
 /**
+ * An agent's run was refused because it would read environment variables or
+ * secrets that are not set. Unkeyed for the reason {@link RUN_STARTED_CHANNEL}
+ * is: no renderer call asked for the run. The agent hears the refusal as its
+ * error; this is how the user hears it, since only they can add a secret.
+ */
+export const RUN_INPUTS_MISSING_CHANNEL = "apiweave:run-inputs-missing"
+
+/**
  * A project run's record changed — carries the whole `ProjectRun`, which is
  * small and holds ids and statuses only. Unkeyed for the same reason as
  * {@link RUN_STARTED_CHANNEL}: an agent can start a project run the renderer

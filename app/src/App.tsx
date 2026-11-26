@@ -17,8 +17,10 @@ import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import useWindowChromeStore from "./stores/WindowChromeStore";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
+import { useRunInputsMissingNotice } from "./hooks/useRunInputsMissingNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { AgentWorkspaceRepositoryPrompt } from "./components/organisms/AgentWorkspaceRepositoryPrompt";
+import { MissingRunInputsDialog } from "./components/organisms/MissingRunInputsDialog";
 import { useWindowTitle } from "./hooks/useWindowTitle";
 import { apiweave, desktop } from "./utils/apiweaveClient";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
@@ -180,6 +182,9 @@ function AppShellRoutes() {
   // route the user is on, and a per-route listener would miss the ones that land
   // while they are in Settings.
   useAgentRunNotice();
+  // An agent's run refused for unset values: only the user can add a secret,
+  // so they are shown what is missing wherever they are.
+  useRunInputsMissingNotice();
   // Same reasoning, for everything an agent writes that is not a run: the
   // sidebar, environments and presets have to refetch wherever the user is.
   useAgentDataUpdates();
@@ -193,6 +198,8 @@ function AppShellRoutes() {
       </MainLayout>
       {/* A workspace an agent creates is offered a repository wherever the user is. */}
       <AgentWorkspaceRepositoryPrompt />
+      {/* What a refused run was missing — the canvas's own Run, or an agent's. */}
+      <MissingRunInputsDialog />
     </div>
   );
 }

@@ -119,9 +119,7 @@ export class ProjectRunner {
         throw new NotFoundError(`environment ${request.environmentId} not found`)
       }
     }
-    const members = this.deps.workflows.listByCollection(request.workspaceId, request.projectId).items
-    const items = planProjectRun(project, members)
-    if (items.length === 0) throw new ValidationError("This project has no enabled workflows to run.")
+    const items = this.plan(request.workspaceId, project)
 
     const projectRun = this.deps.projectRuns.create({ projectId: project.collectionId, environmentId: request.environmentId ?? null, items })
     const active: ActiveProjectRun = { controller: new AbortController(), currentRunId: null }
@@ -129,6 +127,24 @@ export class ProjectRunner {
     this.deps.onChange?.(projectRun)
     const done = this.execute(projectRun, request, active).finally(() => this.active.delete(projectRun.projectRunId))
     return { projectRun, done }
+  }
+
+  /**
+   * The project's name and the workflows a run of it would start, in order —
+   * what {@link start} runs, for a caller that checks them first. Throws as
+   * `start` does for a project outside the workspace or nothing to run.
+   */
+  public planFor(workspaceId: string, projectId: string): { readonly name: string; readonly items: ProjectRunItem[] } {
+    const project = this.deps.collections.getById(projectId)
+    if (project === undefined || project.workspaceId !== workspaceId) throw new NotFoundError(`project ${projectId} not found`)
+    return { name: project.name, items: this.plan(workspaceId, project) }
+  }
+
+  private plan(workspaceId: string, project: Collection): ProjectRunItem[] {
+    const members = this.deps.workflows.listByCollection(workspaceId, project.collectionId).items
+    const items = planProjectRun(project, members)
+    if (items.length === 0) throw new ValidationError("This project has no enabled workflows to run.")
+    return items
   }
 
   /** Stop a live project run: its current workflow run is cancelled and the rest are skipped. False when it is not running here. */

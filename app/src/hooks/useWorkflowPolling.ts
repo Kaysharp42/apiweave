@@ -34,6 +34,8 @@ import type { RunCameraHandle } from "../types/RunCameraHandle";
 import type { RunResult } from "../types/RunResult";
 import type { LoadRunRequest } from "../types/LoadRunRequest";
 import { downloadReport } from "../utils/downloadFile";
+import useMissingRunInputsStore from "../stores/MissingRunInputsStore";
+import { refusedRunInputs, workflowRefusal } from "../utils/refusedRunInputs";
 
 /** The canvas renders nodes by `executionStatus` in {running, success, error,
  * warning, skipped} (see `BaseNode`'s statusConfig). Normalise both vocabularies
@@ -812,8 +814,6 @@ export default function useWorkflowPolling({
       isStartingRef.current = true;
 
       try {
-        clearCanvasForRun(runOptions.resume !== undefined);
-
         const runEnvId =
           selectedEnvironment && selectedEnvironment.trim()
             ? selectedEnvironment.trim()
@@ -822,8 +822,25 @@ export default function useWorkflowPolling({
         // Flush pending canvas edits before the run. The scheduler loads the
         // graph from persisted storage by workflowId, so without this a click
         // less than one autosave debounce (700ms) after an edit would execute
-        // the stale graph against external systems.
+        // the stale graph against external systems. It also makes the input
+        // check below read the graph on screen.
         await saveWorkflowRef?.current?.(false);
+
+        // Every `{{env.*}}` and `{{secrets.*}}` the run reads must be set and
+        // not empty, or it goes out with the placeholder (or nothing) in it. `runs.create` refuses such a
+        // run too; asking first keeps the last run's results on the canvas
+        // and shows what is missing instead of an error toast.
+        const inputs = await apiweave.runs.checkInputs({
+          workspaceId,
+          workflowId,
+          ...(runEnvId ? { selectedEnvironmentId: runEnvId } : {}),
+        });
+        if (inputs.missing.length > 0) {
+          useMissingRunInputsStore.getState().show(workflowRefusal(inputs), null);
+          return;
+        }
+
+        clearCanvasForRun(runOptions.resume !== undefined);
 
         const request = {
           workspaceId,
@@ -846,6 +863,13 @@ export default function useWorkflowPolling({
           announceLoadResult(workspaceId, run.iteration.groupId);
         }
       } catch (error) {
+        // A value removed between the check and the run: the refusal carries
+        // the same check, so it opens the same dialog.
+        const refused = refusedRunInputs(error);
+        if (refused !== null) {
+          useMissingRunInputsStore.getState().show(refused, null);
+          return;
+        }
         const detail =
           error instanceof IpcError
             ? error.message

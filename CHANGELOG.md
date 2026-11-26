@@ -9,6 +9,31 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A run that would send a missing value is stopped first.** Before a
+  workflow run, a project run or an agent's `browser_inspect` starts,
+  APIWeave checks every `{{env.NAME}}` and `{{secrets.NAME}}` it would read,
+  in the workflow and every workflow it calls. If any is not set or is empty,
+  nothing is sent and a dialog lists each one, whether it is unset or empty,
+  the steps that read it, and where to fix it: an environment variable opens
+  its environment's editor, and a secret is saved right from the dialog. An
+  agent's refused run shows you the same dialog, and the agent gets an error
+  naming what is missing. It can set an environment variable but never a
+  secret. Agents can ask the same question without running, with the new
+  `runs_checkInputs` tool. See
+  [MCP Integration](docs/features/mcp-integration.md).
+
+### Fixed
+
+- **gRPC over TLS to an IP address works on Node.js 25 and later.** `apiweave
+  run` on Node.js 25+ failed every TLS gRPC call to a target such as
+  `10.0.0.5:443` with `UNAVAILABLE`, because the gRPC library sent the IP as
+  the TLS server name, which those Node.js versions refuse. The upstream fix is
+  applied until the library releases it.
+
 ## [1.2.0] — 2026-11-25
 
 ### Added

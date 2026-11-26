@@ -375,11 +375,28 @@ environment this one inherits plain variables from; `null` clears it. See
 ### Runs
 
 - `runs_create`
+- `runs_checkInputs`
 - `runs_wait`
 - `runs_get`
 - `runs_getNodeResult`
 - `runs_history`
 - `runs_cancel`
+
+Before a run starts, APIWeave checks every `{{env.NAME}}` and
+`{{secrets.NAME}}` it would read, in the workflow and every workflow it calls.
+It checks them against the run's environment (including environments it
+extends) and the environment and workspace secrets. A value that is not set,
+or is empty (blank text, or a null variable), counts as missing. If any are
+missing, the run is refused with a validation error that names each one and
+says whether it is unset or empty. This applies to `runs_create`,
+`projects_run` (every workflow the project would run is checked first) and
+`browser_inspect`. Nothing is sent, and the app shows you a dialog listing
+what is missing, which steps read it, and where to fix it. An agent can set a
+missing environment variable with `environments_setVariable`. It cannot add or
+change a secret: you do that from the dialog, which saves an empty secret in
+the scope it already sits in. `runs_checkInputs` asks the same question for
+one workflow without starting a run. The canvas's Run button and the project
+page's Run make the same check and show the same dialog.
 
 `runs_history` is the one run query: filter by workflow or status, newest
 first; the latest run is `limit: 1`, the latest failure adds `status: "failed"`.
