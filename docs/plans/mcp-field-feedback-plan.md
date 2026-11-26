@@ -9,13 +9,13 @@ written generically: no application under test, host, record or label is named.
 
 | Batch | Title | IDs | Model | Branch | State |
 | --- | --- | --- | --- | --- | --- |
-| B1 | Edge integrity on every write | FB-001…FB-005 | DeepSeek Flash (impl), Sonnet 5.5 (review) | — | planned |
-| B2 | Call Workflow data passing fails loudly and keeps types | FB-010…FB-016 | Opus 5.5 | — | planned |
-| B3 | One placeholder path walker; analyzer sees scripts and nested reads | FB-017, FB-018 | Opus 5.5 | — | planned |
-| B4 | Browser actions verify what they did | FB-030…FB-036 | Sonnet 5.5 | — | planned |
-| B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | — | planned |
+| B1 | Edge integrity on every write | FB-001…FB-005 | DeepSeek Flash (impl), coordinator (review) | `fb-b1` → merged | done (`234a5e5f`…`998b3644`) |
+| B2 | Call Workflow data passing fails loudly and keeps types | FB-010…FB-016 | Opus 5.5 | `fb-b2` → merged | done (`b62e7bc6`, `f3061696`) |
+| B3 | One placeholder path walker; analyzer sees scripts and nested reads | FB-017, FB-018 | Opus 5.5 | `fb-b3` | in progress |
+| B4 | Browser actions verify what they did | FB-030…FB-036 | Sonnet 5.5 | `fb-b4` → merged | done (`5942a4b9`) |
+| B5 | Evidence and inspection tell the truth | FB-040…FB-045 | GLM-5.3 | `fb-b5` | in progress |
 | B6 | MCP surface and guides | FB-050…FB-061 | Sonnet 5.5 (guides), DeepSeek Flash (schemas) | — | planned |
-| B7 | The open canvas stops bumping `rev` | FB-006 | Opus 5.5 | — | planned |
+| B7 | The open canvas stops bumping `rev` | FB-006 | Opus 5.5 | `fb-b7` → merged | done (`863017d7`) |
 | B8 | Read a run's final variables | FB-019 | Opus 5.5 (design), GLM-5.3 (impl) | — | planned |
 | — | Deferred features | FB-070…FB-075 | — | — | needs decision |
 
@@ -185,3 +185,30 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   FB-002 (edge dropped, not dangling), FB-011, FB-012, FB-014 (all FB-010),
   FB-015 (fill already fails on an unresolved placeholder), passed-step
   screenshots (stale).
+- **2026-11-26 — B2 merged.** FB-010 and FB-013 fixed; FB-011, FB-012, FB-014
+  pinned by tests that pass before and after (the "works" verdicts hold);
+  FB-015 fill evidence records the typed value (`<SECRET>` for a secret or
+  password); FB-016 guide and two feature docs corrected (calls are child
+  runs). Full suite: 3 gRPC TLS failures that also fail on the base commit.
+- **2026-11-26 — B4 merged.** FB-030, FB-031, FB-034, FB-035 fixed; FB-033 and
+  FB-036 documented. FB-032 not reproduced: a blur-to-close popover stays open
+  across evidence capture, so the "not found" wording now says the element may
+  have closed or moved since an earlier step saw it. Cause still open; needs a
+  concrete page from the field.
+- **2026-11-26 — B7 merged.** FB-006 had two causes: extractor names merged
+  into the saved `variables`, and display state (branch counts, run status)
+  on node `data` read by autosave as an edit. Both fixed; autosave now also
+  skips a save equal to the server copy. Frame size was already only written
+  on an explicit resize (pinned by a test). Workflows that already stored
+  extractor names keep them as ordinary variables (no migration).
+- **2026-11-26 — B1 merged.** FB-001…FB-003 fixed: create, update and patch
+  reject a sent edge with a missing endpoint, a repeated `edgeId`, or a
+  duplicate connection; `duplicate_edge` diagnoses graphs already stored;
+  the canvas assertion-branch drag cannot add a duplicate. FB-004/FB-005
+  documented. Review found that the canvas saves through `update` with the
+  whole edge list, so a stored duplicate or dangling edge would have blocked
+  every save: fixed by checking only edges the write adds or changes.
+  Repository imports and git sync stay permissive (diagnosed, not refused).
+- **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
+  tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
+  (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`).
