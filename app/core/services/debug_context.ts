@@ -1,4 +1,5 @@
 import { analyzeWorkflowGraph, buildGraph, traverse } from "@shared/analysis/workflow_graph_analyzer"
+import { callerSuppliedVariableNames } from "@shared/analysis/variable_references"
 import { isCanvasOnlyNode } from "@shared/graph/frames"
 import type { Environment } from "@shared/types/Environment"
 import type { Run } from "@shared/types/Run"
@@ -65,7 +66,9 @@ export class DebugContextService {
 
     const resultsByNode = new Map((run?.results ?? []).map((result) => [result.nodeId, result]))
     const failureSummary = summarizeFailures(workflow, run, resultsByNode)
-    const diagnosis = compactDiagnosis(workflow, run, request.issueLimit ?? DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT)
+    const callers = await this.workflows.listCallers(request.workspaceId, request.workflowId)
+    const callerVariableNames = callerSuppliedVariableNames(callers.flatMap((caller) => caller.nodes), request.workflowId)
+    const diagnosis = compactDiagnosis(workflow, callerVariableNames, run, request.issueLimit ?? DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT)
 
     const requested = dedupe(request.nodeIds ?? [])
     const byId = new Map(workflow.nodes.map((node) => [node.nodeId, node]))
@@ -299,11 +302,12 @@ function summarizeFailures(
  */
 function compactDiagnosis(
   workflow: Workflow,
+  callerVariableNames: readonly string[],
   run: Run | null,
   issueLimit: number,
 ): WorkflowDebugContext["diagnosis"] {
   const full = analyzeWorkflowGraph(
-    { workflowId: workflow.workflowId, nodes: workflow.nodes, edges: workflow.edges, variables: workflow.variables },
+    { workflowId: workflow.workflowId, nodes: workflow.nodes, edges: workflow.edges, variables: workflow.variables, callerVariableNames },
     ...(run === null ? [] : [run]),
   )
   const items = full.diagnostics.slice(0, Math.max(0, issueLimit)).map((item) => ({

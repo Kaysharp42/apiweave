@@ -566,9 +566,25 @@ either the workflow's \`variables\` map or an upstream node's \`extractors\`:
 
 then downstream: \`{ "key": "Authorization", "value": "Bearer {{variables.token}}" }\`.
 
-\`workflow_diagnose\` reports a \`{{variables.x}}\` with no producer as
-\`variable_source_missing\`, and a producer that is not actually upstream of its
-consumer as \`variable_producer_not_upstream\`.
+A path walks into an object or array value, with \`[n]\` for array indexes — the
+same grammar in \`variables.*\`, \`env.*\` and \`data.*\`:
+
+\`\`\`text
+{{variables.case.title}}
+{{variables.ids[0]}}
+{{variables.cars[0].brand}}
+\`\`\`
+
+An index past the end does not resolve. Nested arrays (\`[0][1]\`) are not
+addressable.
+
+\`workflow_diagnose\` reports a \`{{variables.x}}\` (or \`{{variables.x.y}}\`)
+with no producer as \`variable_source_missing\`, and a producer that is not
+actually upstream of its consumer as \`variable_producer_not_upstream\`.
+Producers are extractors, browser \`extract\` steps, a Call Workflow's
+\`outputMapping\` and a script's \`aw.variables.set("x", …)\` (literal name
+only). In a workflow other workflows call, their \`inputMapping\` keys and
+\`forEach\` item and index variables count as set.
 
 ## Dynamic functions
 

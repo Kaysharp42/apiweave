@@ -50,10 +50,28 @@ describe("nodeReferences", () => {
       },
     } as WorkflowNode
     expect(nodeReferences(node)).toEqual([
+      { ref: "variables.next", field: "scripts", role: "produces" },
       { ref: "env.B", field: "url", role: "consumes" },
       { ref: "variables.id", field: "url", role: "consumes" },
-      { ref: "variables.next", field: "scripts", role: "produces" },
       { ref: "env.REGION", field: "scripts", role: "consumes" },
+    ])
+  })
+
+  it("counts a placeholder that walks into a value as a read of its root name", () => {
+    const node = {
+      nodeId: "r",
+      type: "http-request",
+      position: { x: 0, y: 0 },
+      config: {
+        url: "{{env.BASE_URL}}/items/{{variables.order.items[0].sku}}?page={{variables.pages[2]}}",
+        assertions: [{ source: "variables", path: "order.total", operator: "exists" }],
+      },
+    } as unknown as WorkflowNode
+    expect(nodeReferences(node)).toEqual([
+      { ref: "env.BASE_URL", field: "url", role: "consumes" },
+      { ref: "variables.order", field: "url", role: "consumes" },
+      { ref: "variables.pages", field: "url", role: "consumes" },
+      { ref: "variables.order", field: "assertions", role: "consumes" },
     ])
   })
 

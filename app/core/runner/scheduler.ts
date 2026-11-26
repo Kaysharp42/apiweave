@@ -2,6 +2,8 @@ import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
+import { PLACEHOLDER_REFERENCE_RE } from "@shared/analysis/variable_references"
+import { readDotPath } from "@shared/extractors/extractorPath"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunIteration } from "@shared/types/RunIteration"
 import type { Run } from "@shared/types/Run"
@@ -975,11 +977,8 @@ export function requestDestinations(
   })
   for (const url of urls) {
     if (typeof url !== "string" || url.length === 0) continue
-    const filled = url.replace(/\{\{\s*(env|variables|data)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (match, scope: string, key: string) => {
-      const value = key.split(".").reduce<unknown>(
-        (current, part) => (typeof current === "object" && current !== null ? (current as Record<string, unknown>)[part] : undefined),
-        scopes[scope],
-      )
+    const filled = url.replace(PLACEHOLDER_REFERENCE_RE, (match, scope: string, name: string, path: string) => {
+      const value = scope === "secrets" ? undefined : readDotPath(scopes[scope], `${name}${path}`)
       return typeof value === "string" || typeof value === "number" ? String(value) : match
     })
     try {

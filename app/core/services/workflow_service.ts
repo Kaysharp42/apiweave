@@ -446,6 +446,12 @@ export class WorkflowService {
     return this.workflows.listByWorkspace(workspaceId, includeAttached)
   }
 
+  /** The workspace's workflows that call `workflowId` through a Call Workflow node. */
+  async listCallers(workspaceId: string, workflowId: string): Promise<readonly Workflow[]> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    return this.workflows.listCallers(workspaceId, workflowId)
+  }
+
   /**
    * Bounded graph-free discovery over a workspace. Unlike `list`, this never
    * returns configs, variables or graph arrays, searches project-attached

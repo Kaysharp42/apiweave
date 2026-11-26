@@ -1619,3 +1619,67 @@ describe("analyzeWorkflowGraph — source handles", () => {
     expect(codes(graph(source, handle))).not.toContain("stream_edge_handle_invalid")
   })
 })
+
+// What a node reads is the root of each placeholder, and what it writes
+// includes a script's `aw.variables.set`.
+describe("variable producers and readers", () => {
+  function chain(middle: readonly Record<string, unknown>[], variables: Record<string, unknown> = {}) {
+    const ids = ["start", ...middle.map((node) => node["nodeId"] as string), "end"]
+    return WorkflowSchema.parse({
+      workflowId: "workflow-vars",
+      workspaceId: "workspace-1",
+      name: "Variables",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        ...middle.map((node, index) => ({ position: { x: 100 * (index + 1), y: 0 }, ...node })),
+        { nodeId: "end", type: "end", position: { x: 900, y: 0 }, config: {} },
+      ],
+      edges: ids.slice(1).map((target, index) => ({ edgeId: `e${index}`, source: ids[index]!, target })),
+      variables,
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+  }
+  const request = (nodeId: string, config: Record<string, unknown>) =>
+    ({ nodeId, type: "http-request", config: { method: "GET", url: "https://api.example.test/x", ...config } })
+  const findings = (workflow: Workflow, callerVariableNames?: readonly string[]) =>
+    analyzeWorkflowGraph({ ...workflow, callerVariableNames }).diagnostics
+      .filter((item) => item.code.startsWith("variable_"))
+      .map((item) => [item.code, item.evidence?.["variableName"]])
+
+  it("counts a nested or indexed placeholder as a read of its root variable", () => {
+    const workflow = chain([
+      request("read", { url: "https://api.example.test/{{variables.order.items[0].sku}}/{{variables.pages[2]}}" }),
+    ], { pages: [1, 2, 3] })
+    expect(analyzeVariableProvenance(workflow.nodes)["order"]?.consumers).toEqual([{ nodeId: "read", nodeLabel: "read", fields: ["url"] }])
+    expect(findings(workflow)).toEqual([["variable_source_missing", "order"]])
+  })
+
+  it("counts aw.variables.set in an upstream script as the producer", () => {
+    const workflow = chain([
+      request("login", { scripts: { postResponse: 'aw.variables.set("session", aw.response.json().id)\naw.variables.set("session", "again")' } }),
+      request("profile", { headers: [{ key: "X-Session", value: "{{variables.session.id}}" }] }),
+    ])
+    expect(analyzeVariableProvenance(workflow.nodes)["session"]?.producers).toEqual([{ nodeId: "login", nodeLabel: "login", path: "scripts.postResponse" }])
+    expect(findings(workflow)).toEqual([])
+  })
+
+  it("still flags a script producer that is not upstream of its reader", () => {
+    const workflow = chain([
+      request("profile", { headers: [{ key: "X-Session", value: "{{variables.session}}" }] }),
+      request("login", { scripts: { postResponse: 'aw.variables.set("session", "s")' } }),
+    ])
+    expect(findings(workflow)).toEqual([["variable_producer_not_upstream", "session"]])
+  })
+
+  it("counts the variables a calling workflow passes in as set", () => {
+    const workflow = chain([
+      request("read", { url: "https://api.example.test/{{variables.case.title}}/{{variables.i}}/{{variables.tenant}}" }),
+    ])
+    expect(findings(workflow).map(([, name]) => name).sort()).toEqual(["case", "i", "tenant"])
+    expect(findings(workflow, ["case", "i", "tenant"])).toEqual([])
+  })
+})

@@ -173,6 +173,19 @@ export class WorkflowRepository {
     )
   }
 
+  /** The workspace's workflows with a Call Workflow node that targets `targetWorkflowId`. */
+  public listCallers(workspaceId: string, targetWorkflowId: string): readonly Workflow[] {
+    return queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? AND EXISTS (
+         SELECT 1 FROM json_each(graph_json, '$.nodes')
+         WHERE json_extract(value, '$.type') = 'workflow' AND json_extract(value, '$.config.targetWorkflowId') = ?
+       ) ORDER BY createdAt DESC, id DESC`,
+      [workspaceId, targetWorkflowId],
+      rowToWorkflow,
+    )
+  }
+
   /**
    * List a workspace's workflows, newest first. `includeAttached=false` (the
    * default "Workflows" tab) hides workflows already grouped under a project;

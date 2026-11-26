@@ -1711,6 +1711,22 @@ describe("requestDestinations", () => {
       "{{login.response.body.next}}",
     ])
   })
+
+  it("walks dotted and indexed placeholder paths like the runner does", () => {
+    const nodes = [
+      { nodeId: "a", type: "http-request", config: { url: "{{variables.hosts[1]}}/x" } },
+      { nodeId: "b", type: "http-request", config: { url: "{{env.api.base}}/y" } },
+      { nodeId: "c", type: "http-request", config: { url: "{{data.rows[0].url}}/z" } },
+      { nodeId: "d", type: "http-request", config: { url: "{{variables.hosts[7]}}/w" } },
+    ] as unknown as Parameters<typeof requestDestinations>[0]
+
+    expect(requestDestinations(
+      nodes,
+      { api: { base: "https://env.example.org" } },
+      { hosts: ["https://one.example.net", "https://two.example.net"] },
+      { rows: [{ url: "https://row.example.com" }] },
+    )).toEqual(["two.example.net", "env.example.org", "row.example.com", "{{variables.hosts[7]}}/w"])
+  })
 })
 
 describe("OAuth 2.0 runs", () => {
