@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { createMcpBenchmarkRuntime, openMcpBenchmarkClient } from "../harness/services"
 import type { McpBenchmarkRuntime } from "../harness/types"
+import { MCP_GUIDES } from "../guide"
 import { MCP_TOOLS } from "../tools"
 
 type ToolResult = { content: Array<{ type: string; text?: string }>; isError?: boolean }
@@ -54,5 +55,24 @@ describe("a project's id", () => {
     for (const spec of MCP_TOOLS.filter((tool) => tool.domain === "projects" && ["create", "get", "update", "delete", "list", "run", "listRuns", "export"].includes(tool.action))) {
       expect(spec.description, spec.action).toContain("A project's id is its `collectionId`; projects_run, projects_listRuns and projects_export call that same id `projectId`.")
     }
+  })
+})
+
+describe("the guides", () => {
+  const guide = (slug: string): string => MCP_GUIDES.find((item) => item.slug === slug)?.text ?? ""
+
+  it("tell an agent where a new workflow lands, how to follow a long run, and the shared-login hazard", () => {
+    const startHere = guide("start-here")
+    expect(startHere).toContain("`collectionId`")
+    expect(startHere).toContain("workspace and project names")
+    expect(startHere).toContain("`terminal: false`")
+    expect(startHere).toContain("`runs_wait`")
+    expect(startHere).toContain("end each other's session")
+  })
+
+  it("tell a browser author to assert the page after a save, and where node fields go", () => {
+    const authoring = guide("workflow-authoring")
+    expect(authoring).toContain("assert the page it shows after a successful save")
+    expect(authoring).toContain("never keys of `config`")
   })
 })

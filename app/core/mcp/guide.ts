@@ -49,18 +49,22 @@ follows edges; nothing runs unless an edge leads to it.
    \`workflows_nodeSchema\` for one node type's config fields.
 3. **Write one branch end to end** with \`workflows_create\` or
    \`workflows_patch\`, then copy it. Patch by id with \`expectedRevision\` from
-   the rev you read; a conflict means re-read and recompute. Insert a node and
-   rewire it in one patch: new node, old edge removals, replacement edges.
+   the rev you read; a conflict means re-read and recompute. \`workflows_create\`
+   takes \`collectionId\` (a project, listed under Projects; without it the
+   workflow is under Workflows). Tell the user the workspace and project names.
 4. **Read the write's \`diagnosis\`.** Fix every \`error\` first
    (\`apiweave://guide/diagnostics\`); \`status: "unavailable"\` means saved but
    unchecked, never clean. A validation error's path names the node's index.
 5. **Only then \`runs_create\`.** It sends real HTTP; everything above is free.
-   A wait timeout returns the runId for \`runs_wait\` and never cancels the run.
+   \`terminal: false\` (a timeout, a long browser run) means call \`runs_wait\`
+   with the runId again until it is true; it never cancels. Two runs signing in
+   with the same account can end each other's session: wait for one to finish
+   before starting another that shares its login.
    A run using stored secrets waits for the user's approval;
    \`deniedByUser: true\` means they refused — say so, do not retry.
-   A load run is not an agent tool: ask the user for Run options → Load
-   run… in the app, or the CLI \`apiweave run <path> --workflow <name>
-   --concurrency 20 --iteration-count 200 --threshold "p95<500"\`.
+   A load run is not an agent tool: ask the user for Run options → Load run…,
+   or the CLI \`apiweave run <path> --workflow <name> --concurrency 20
+   --iteration-count 200 --threshold "p95<500"\`.
    Before writing a browser step, read the page with \`browser_inspect\`.
 6. **Debug** with \`workflows_debugContext\` (one bounded call: failed nodes,
    diagnosis, configs, placeholders, error previews), then
@@ -69,9 +73,8 @@ follows edges; nothing runs unless an edge leads to it.
 7. **Assertions.** After a run, \`assertion_suggest\` derives rules with
    verified paths from a real response; \`assertion_apply\` writes them.
 
-If the repository has a \`graphify-out/\` folder, use
-\`graphify query "<route or handler>"\` for the code under test instead of
-grepping (graphify for the code, the tools above for the workflows).
+With a \`graphify-out/\` folder, use \`graphify query "<route or handler>"\` for
+the code under test instead of grepping; the tools above are for workflows.
 
 ## Minimal working graph
 
@@ -116,7 +119,9 @@ Every node is \`{ nodeId, type, config?, label?, position? }\`. \`label\` is the
 name the canvas shows — set it on every node you add; a browser node without
 one is named after its action. \`position\` is
 canvas layout only — execution order comes from the edges, never from position
-or array order. The write tools advertise \`config\` as an open object:
+or array order. \`description\`, \`position\`, \`label\` and \`parentId\` are node
+fields, never keys of \`config\` (only browser steps have a \`description\`).
+The write tools advertise \`config\` as an open object:
 \`workflows_nodeSchema\` returns one type's config fields as JSON Schema, and a
 rejected config names its node's list index and field in the error path.
 
@@ -310,16 +315,14 @@ browser step had run: add a \`navigate\` first (there is no \`url\` mode).
 Its wait is bounded (\`waitMs\`, default 10000, max 30000): \`terminal: false\`
 means the run has not finished, possibly waiting for the user's approval —
 pass that \`runId\` back to keep waiting, which starts no new run and asks for
-no second approval. \`deniedByUser: true\` means they refused or did not answer
-— say so, do not retry. A timeout or disconnect never cancels the run (only
-\`runs_cancel\` does).
+no second approval. \`deniedByUser: true\`: say so, do not retry. Only
+\`runs_cancel\` cancels a run.
 
 **Read a finished run's page.** Every executed browser step — passed or failed —
 stores its URL, title, masked ARIA snapshot and a screenshot, readable without a
 rerun: \`runs_getNodeResult\` with \`nodeIds: [<step>]\` and \`sections: ["browser"]\`
-(+ \`screenshot: true\`). The snapshot there carries the same \`scope\` default
-and the same \`maxBytes\`/\`start\`/\`end\` windowing over the scoped text. For the
-page *before* step X, read the step before X. Prefer that stored evidence; use
+(+ \`screenshot: true\`), with the same \`scope\` and \`maxBytes\`/\`start\`/\`end\`
+as \`browser_inspect\`. For the page *before* step X, read the step before X. Prefer that stored evidence; use
 \`browser_inspect\` only when the page must be re-observed after the workflow
 changed, because it replays every earlier node for real.
 
@@ -329,7 +332,9 @@ passes and its evidence carries \`evidenceNote: "The page was still changing
 when its evidence was taken."\`. Do not read that page at once and call the
 click a no-op — follow it with \`expect-visible\` on the element the change
 produces (the saved row, the confirmation) and a generous \`timeoutMs\`, and
-assert there.
+assert there. A save the application refuses shows a message while the click
+still passes: assert the page it shows after a successful save (URL, heading),
+never the click.
 
 **\`browser_inspect\` replays side effects.** A page cannot be seeded from an
 earlier run, so every inspection runs the browser chain from its first step
@@ -463,10 +468,6 @@ branch; an edge without a handle is never followed, so the branch stops silently
 mid-run. This is the single most common authoring mistake, and
 \`workflow_diagnose\` reports it as \`assertion_branch_handle_invalid\` — an error
 you can see before running anything.
-
-That rule constrains which handle an edge that *exists* must use — it does not
-require an edge on *every* handle. Leaving \`fail\` unconnected is normal: the run
-still records the failed assertion and stops that branch there.
 
 Except for stream nodes — SSE, WebSocket and a server-streaming gRPC call
 (\`callType: "server-streaming"\`), whose edges use \`ready\`/\`complete\` — and
@@ -946,8 +947,8 @@ Focused context, cheapest first: \`workflows_search\` (summaries, never graphs;
 then nodes -> \`workflows_debugContext\` for a failure (one bounded call) ->
 \`runs_getNodeResult\` for evidence slices; \`browser_inspect\` returns the page
 a browser step left open, before you write the next step.
-Read ${GUIDE_URI_PREFIX}start-here before building or editing;
-\`server_info\` lists the other guides.`
+Read ${GUIDE_URI_PREFIX}start-here before building or editing (\`guides_get\` if
+your client cannot read resources); \`server_info\` lists the other guides.`
 
 export const MCP_GUIDES: readonly McpGuide[] = [
   {

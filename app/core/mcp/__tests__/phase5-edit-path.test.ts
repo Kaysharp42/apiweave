@@ -517,6 +517,7 @@ describe("Phase 5 — concise task-specific onboarding", () => {
     expect(instructions).toContain("diagnosis")
     expect(instructions).toContain("workflows_debugContext")
     expect(instructions).toContain("apiweave://guide/start-here")
+    expect(instructions).toContain("guides_get")
     expect(instructions).not.toContain("workflows_update")
     expect(Buffer.byteLength(instructions, "utf8")).toBeLessThan(1600)
     await client.close()
@@ -551,9 +552,10 @@ describe("Phase 5 — concise task-specific onboarding", () => {
     // The repair loop was folded into start-here; one orientation read, not two.
     expect(slugs).not.toContain("edit-debug")
     const startHere = MCP_GUIDES.find((guide) => guide.slug === "start-here")?.text ?? ""
-    // One orientation read, priced as a budget: the load-run hand-off line is
-    // the only addition past 3600, so the ceiling moves with it, tightly.
-    expect(startHere.length).toBeLessThanOrEqual(3850)
+    // One orientation read, priced as a budget: the load-run hand-off, the
+    // project filing, run polling and shared-login lines are the only additions
+    // past 3600, so the ceiling moves with them, tightly.
+    expect(startHere.length).toBeLessThanOrEqual(4050)
     for (const step of ["workflows_debugContext", "expectedRevision", "assertion_suggest", "workflows_nodeSchema", "graphify"]) {
       expect(startHere).toContain(step)
     }
