@@ -236,6 +236,14 @@ which use the browser's own trust store.
   inspecting after it. The run it makes is an ordinary run: it sends real
   traffic, waits for the user's approval when it would send secrets, and appears
   in history as `completed` when it stopped at the step it was given.
+- **`browser_inspect` replays the workflow for real, side effects included.** A
+  page cannot be seeded from an earlier run, so every inspection runs the
+  browser chain from its first step again: a step that submits, deletes or pays
+  does so on every call. When a finished run already shows the page — every
+  step stores its own URL, title, ARIA snapshot and screenshot — read that
+  stored evidence with `runs_getNodeResult` instead of inspecting again.
+  `beforeNodeId` stops before a named step, so the step itself does not run,
+  but the steps before it still do.
 
 ## Execution
 
