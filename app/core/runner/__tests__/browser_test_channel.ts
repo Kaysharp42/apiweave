@@ -16,13 +16,17 @@ export const BROWSER_TEST_TIMEOUT_MS = 60_000
 
 /**
  * The browser the browser-step tests run in: `APIWEAVE_TEST_BROWSER` when set
- * (and then it must start), else the first of Edge, Chrome and Playwright's
- * Chromium that starts. Undefined skips those tests, so `npm test` passes on a
- * machine with none of them.
+ * (and then it must start), else the first of Playwright's Chromium, Chrome
+ * and Edge that starts. Playwright's Chromium comes first because it is the
+ * same build wherever it is installed and carries no vendor services: an Edge
+ * enrolled in a managed account syncs its identity and cloud policy on the
+ * browser's own thread, which stalls a page for seconds at random and fails
+ * steps whose timeouts these tests keep short. Undefined skips those tests,
+ * so `npm test` passes on a machine with none of them.
  */
 export async function findTestBrowser(): Promise<BrowserChannel | undefined> {
   const forced = process.env["APIWEAVE_TEST_BROWSER"]
-  const candidates: readonly BrowserChannel[] = forced ? [BrowserChannelSchema.parse(forced)] : ["msedge", "chrome", "chromium"]
+  const candidates: readonly BrowserChannel[] = forced ? [BrowserChannelSchema.parse(forced)] : ["chromium", "chrome", "msedge"]
   for (const channel of candidates) {
     try {
       const browser = await chromium.launch({ headless: true, timeout: LAUNCH_TIMEOUT_MS, ...(channel === "chromium" ? {} : { channel }) })

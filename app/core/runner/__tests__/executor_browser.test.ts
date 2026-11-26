@@ -71,17 +71,21 @@ document.getElementById('del').onclick = () => {
 /**
  * A page that leaves its `load` event behind still moving: its heading
  * changes every 40ms for `ms` after load, then it goes to `/arrived`, which
- * changes the URL and title too. Settle sees two snapshots differ for as long
- * as the page churns, whatever interval it checks at, so these tests depend
- * on what settle promises rather than on when it happens to look.
+ * changes the URL and title too. It keeps changing while that navigation is
+ * in flight, until `/arrived` replaces it: a heading frozen for the request's
+ * round trip would be a still page, which settle rightly calls settled. So
+ * settle sees two snapshots differ for as long as the page churns, whatever
+ * interval it checks at, and these tests depend on what settle promises
+ * rather than on when it happens to look.
  */
 const unsettledPage = (ms: number): string => `<!doctype html><title>Before</title><h1>Before</h1>
 <script>addEventListener('load', () => {
   const start = Date.now()
+  let leaving = false
   const tick = () => {
     const elapsed = Date.now() - start
-    if (elapsed >= ${ms}) { location.href = '/arrived'; return }
-    document.querySelector('h1').textContent = 'Loading ' + elapsed
+    if (elapsed >= ${ms} && !leaving) { leaving = true; location.href = '/arrived' }
+    document.querySelector('h1').textContent = (leaving ? 'Leaving ' : 'Loading ') + elapsed
     setTimeout(tick, 40)
   }
   tick()
@@ -525,7 +529,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     greeting = "Hello"
     const rerun = await run(workflowId, { nodeId: "greets" })
 
-    expect(rerun.status).toBe("completed")
+    expect(rerun.status, JSON.stringify(rerun.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
     expect(rerun.resumeFromNodeIds).toEqual(["open"])
     expect(rerun.results.map((stored) => stored.nodeId)).toEqual(["open", "greets"])
   })
