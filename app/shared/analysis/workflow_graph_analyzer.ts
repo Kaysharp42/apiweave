@@ -10,6 +10,7 @@ import type { WorkflowDiagnosis } from "../types/WorkflowDiagnosis"
 import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutCanvasOnlyNodes } from "../graph/frames"
+import { edgeConnectionKey } from "../graph/edgeConnection"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
@@ -369,6 +370,7 @@ export const WORKFLOW_DIAGNOSTIC_CODES = [
   "missing_end_node",
   "duplicate_node_id",
   "duplicate_edge_id",
+  "duplicate_edge",
   "dangling_edge",
   "edge_source_handle_ignored",
   "stream_edge_handle_invalid",
@@ -591,6 +593,45 @@ function addEdgeSourceHandleDiagnostics(
   }
 }
 
+/**
+ * Pushes one error per edge that joins the same two nodes through the same
+ * handles as an earlier edge. The two edges are one branch drawn twice, and the
+ * runner follows both edges, concurrently — the target runs once per duplicate,
+ * so any side effect it has happens more than once.
+ *
+ * A different `sourceHandle` (an assertion's `pass` and `fail`) or a different
+ * `targetHandle` (two inputs of one merge node) is a different connection, never
+ * a duplicate. A graph with repeated `edgeId`s is a separate problem, reported
+ * by `duplicate_edge_id`.
+ */
+function addDuplicateEdgeDiagnostics(edges: readonly WorkflowEdge[], diagnostics: WorkflowDiagnostic[]): void {
+  const byConnection = new Map<string, WorkflowEdge>()
+  for (const edge of edges) {
+    const key = edgeConnectionKey(edge)
+    const first = byConnection.get(key)
+    if (first === undefined) {
+      byConnection.set(key, edge)
+      continue
+    }
+    diagnostics.push(diagnostic(
+      "duplicate_edge",
+      "error",
+      "topology",
+      [edge.source, edge.target],
+      `Edges "${first.edgeId}" and "${edge.edgeId}" join the same nodes through the same handles; the run follows both, so ${edge.target} runs once per duplicate.`,
+      {
+        edgeId: edge.edgeId,
+        duplicateOfEdgeId: first.edgeId,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      },
+      { kind: "remove_duplicate_edge", edgeId: edge.edgeId },
+    ))
+  }
+}
+
 /** Pushes one warning listing every node that cannot be reached from a start node. */
 function addUnreachableNodeDiagnostics(
   starts: readonly string[],
@@ -633,6 +674,7 @@ function addCycleDiagnostics(successors: ReadonlyMap<string, ReadonlySet<string>
 function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   addDuplicateNodeIdDiagnostics(workflow.nodes, diagnostics)
   addDuplicateEdgeIdDiagnostics(workflow.edges, diagnostics)
+  addDuplicateEdgeDiagnostics(workflow.edges, diagnostics)
   const starts = addStartAndEndNodeDiagnostics(workflow.nodes, diagnostics)
 
   const { nodesById, successors } = buildGraph(workflow.nodes, workflow.edges)

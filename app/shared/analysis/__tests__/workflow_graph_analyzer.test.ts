@@ -150,6 +150,48 @@ describe("workflow graph analyzer", () => {
     expect(codes).toContain("assertion_source_path_invalid")
   })
 
+  /**
+   * FB-003. The executor treats two outgoing edges as a branch and runs the
+   * target once per edge, concurrently — so one connection drawn twice doubles
+   * every side effect of the node behind it. Stored graphs predate the write
+   * refusal, so diagnosis has to name it; a different branch handle is not one.
+   */
+  it("flags two edges that are the same connection, and only those", () => {
+    const workflow = healthyWorkflow()
+    const duplicated = WorkflowSchema.parse({
+      ...workflow,
+      edges: [...workflow.edges, { edgeId: "e1-copy", source: "start", target: "login" }],
+    })
+
+    const duplicates = analyzeWorkflowGraph(duplicated).diagnostics.filter((item) => item.code === "duplicate_edge")
+    expect(duplicates).toHaveLength(1)
+    expect(duplicates[0]).toMatchObject({
+      severity: "error",
+      category: "topology",
+      nodeIds: ["login", "start"],
+      remediation: { kind: "remove_duplicate_edge", edgeId: "e1-copy" },
+      evidence: { edgeId: "e1-copy", duplicateOfEdgeId: "e1", source: "start", target: "login" },
+    })
+
+    // The assertion's two outcomes are two branches of one node pair.
+    const otherBranch = WorkflowSchema.parse({
+      ...workflow,
+      edges: [...workflow.edges, { edgeId: "e5", source: "assert-login", target: "profile", sourceHandle: "fail" }],
+    })
+    expect(analyzeWorkflowGraph(otherBranch).diagnostics.map((item) => item.code)).not.toContain("duplicate_edge")
+
+    // Two inputs of one merge node are two connections, not a duplicate.
+    const twoInputs = WorkflowSchema.parse({
+      ...workflow,
+      edges: [
+        ...workflow.edges,
+        { edgeId: "e6", source: "login", target: "profile", targetHandle: "left" },
+        { edgeId: "e7", source: "login", target: "profile", targetHandle: "right" },
+      ],
+    })
+    expect(analyzeWorkflowGraph(twoInputs).diagnostics.map((item) => item.code)).not.toContain("duplicate_edge")
+  })
+
   // A namespaced XPath declaration sits in a prefix block before the colon:
   // `xpath[prefix=uri;…]:<expression>`. The runtime evaluates it (see
   // `xpathQuery.ts`), so rejecting it here blocked a SOAP workflow that ran.

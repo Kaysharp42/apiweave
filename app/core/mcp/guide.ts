@@ -480,6 +480,15 @@ compare-and-swap: if someone edited the workflow meanwhile you get a conflict
 instead of silently clobbering their change. Removing a node also removes the
 edges attached to it.
 
+An \`edgeId\` is the edge's identity, not a label: a **new** connection needs a new
+\`edgeId\`, and reusing one replaces that edge, including its source and target.
+Two edges joining the same two nodes through the same handles are refused — the
+run would follow both and execute the target twice.
+
+A single chain — including one chain of browser steps — has one edge fewer than
+it has nodes. After removing nodes, read the outline back and confirm the chain
+is still joined end to end.
+
 ### Insert a node and rewire in one patch
 
 The keys are \`upsertNodes\` and \`upsertEdges\`. To insert \`check\` into an
@@ -732,6 +741,7 @@ Clear every \`error\` before running.
 | \`missing_start_node\` / \`duplicate_start_node\` | a workflow needs exactly one \`start\` |
 | \`missing_end_node\` | a workflow needs at least one \`end\`; separate terminal paths may use separate end nodes |
 | \`duplicate_node_id\` / \`duplicate_edge_id\` | ids must be unique |
+| \`duplicate_edge\` | two edges join the same nodes through the same handles, so the run follows both and executes the target once per duplicate — remove one; a different \`sourceHandle\` (an assertion's pass/fail) or \`targetHandle\` (a merge input) is a different connection, not a duplicate |
 | \`dangling_edge\` | an edge references a nodeId that does not exist |
 | \`edge_source_handle_ignored\` | an edge from a single-output node sets a \`sourceHandle\`; the canvas does not draw it (a run still follows it) — warning |
 | \`stream_edge_handle_invalid\` | an edge from an SSE, WebSocket or server-streaming gRPC node does not use \`ready\` or \`complete\`. The run never follows it, so the branch never runs. |
