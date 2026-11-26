@@ -96,6 +96,7 @@ import {
   useHydration,
 } from "../hooks/useHydration";
 import { isLocalWorkflowRemoval } from "../utils/localWorkflowRemovals";
+import { hasDuplicateConnection } from "../utils/canvasConnections";
 import {
   canApplyBackgroundRefresh,
   shouldActOnDetach,
@@ -1311,6 +1312,12 @@ function WorkflowCanvas({
         const isAssertionSource = sourceNode?.type === "assertion";
 
         if (isAssertionSource && params.sourceHandle) {
+          // The branch edge is built by hand, so ReactFlow's own dedupe (which
+          // `addEdge` applies) does not run: a second drag between the same
+          // nodes and handle would store two edges on one branch, and the write
+          // that saves them refuses a duplicate connection. Drop it here.
+          if (hasDuplicateConnection(eds, params)) return eds;
+
           // No `style`: `CustomEdge` reserves colour for run state, and the
           // pass/fail socket already identifies the branch. Styling it here
           // never survived a reload either — `canvasToWorkflow` strips

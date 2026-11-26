@@ -22,4 +22,10 @@ describe("WorkflowCanvas", () => {
       /canvasPrefs\.tipsEnabled && canvasTip && !isRunning/,
     );
   });
+
+  it("drops a second drag onto a branch that is already drawn", () => {
+    // The assertion branch builds its edge by hand, so ReactFlow's own dedupe
+    // never runs on it; a duplicate would make every save fail validation.
+    expect(canvasSource).toMatch(/if \(hasDuplicateConnection\(eds, params\)\) return eds;/);
+  });
 });

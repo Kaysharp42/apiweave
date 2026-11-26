@@ -37,6 +37,7 @@ import type { ScopeResolver } from "./scope_resolver"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { edgeConnectionKey } from "@shared/graph/edgeConnection"
 
 /** A subset change to a stored graph — see {@link WorkflowService.patch}. */
 export interface WorkflowGraphPatch {
@@ -151,6 +152,106 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.tags !== undefined ? { tags: [...patch.tags] } : {}),
+  }
+}
+
+/** One edge the caller sent, and where in the request it was sent. */
+interface RequestedEdge {
+  readonly edge: WorkflowEdge
+  readonly field: "edges" | "upsertEdges"
+  readonly index: number
+}
+
+function describeRequestedEdge(requested: RequestedEdge): string {
+  return `${requested.field}[${requested.index}] ("${requested.edge.edgeId}")`
+}
+
+/** An edge as an agent reads it, for a message naming the connection a duplicate reuses. */
+function describeConnection(edge: WorkflowEdge): string {
+  const sourceHandle = edge.sourceHandle === undefined || edge.sourceHandle === "" ? "" : ` [${edge.sourceHandle}]`
+  const targetHandle = edge.targetHandle === undefined || edge.targetHandle === "" ? "" : ` → ${edge.targetHandle}`
+  return `${edge.source}${sourceHandle} → ${edge.target}${targetHandle}`
+}
+
+/**
+ * The one edge check every write path runs over the edges a caller explicitly
+ * sends: both endpoints must exist in the graph being written, no two edges may
+ * carry the same `edgeId`, and no two may be the same connection.
+ *
+ * `resultEdges` is the edge list that would be stored, so a duplicate is caught
+ * against a stored edge as well as against another sent one. Only sent edges
+ * are reported: a graph that already holds a duplicate must stay patchable —
+ * that is how a `duplicate_edge` diagnosis is fixed — and `workflow_diagnose`
+ * names those.
+ *
+ * `removedNodeIds` lets the message say a missing endpoint was removed by this
+ * very patch. An upserted edge to a node this patch removes used to be dropped
+ * silently, so the caller saw the edge as sent and found the branch broken;
+ * stored edges incident to a removed node are still dropped without an error
+ * when the caller does not send them.
+ */
+function assertEdgeIntegrity(
+  resultEdges: readonly WorkflowEdge[],
+  nodes: readonly WorkflowNode[],
+  requested: readonly RequestedEdge[],
+  removedNodeIds: readonly string[] = [],
+): void {
+  if (requested.length === 0) return
+  const nodeIds = new Set(nodes.map((node) => node.nodeId))
+  const removed = new Set(removedNodeIds)
+
+  for (const item of requested) {
+    for (const endpoint of ["source", "target"] as const) {
+      const nodeId = item.edge[endpoint]
+      if (nodeIds.has(nodeId)) continue
+      const removedInPatch = removed.has(nodeId)
+      throw new ValidationError(
+        `${describeRequestedEdge(item)}: ${endpoint} node "${nodeId}" ${removedInPatch ? "was removed by this patch" : "is not a node in the resulting workflow"}. ${removedInPatch ? "Remove the edge in the same patch, or keep the node." : "Add or upsert that node in the same write, or point the edge at a node that exists."}`,
+        { edgeIndex: item.index, edgeId: item.edge.edgeId, endpoint, nodeId, removedInPatch },
+      )
+    }
+  }
+
+  // An edgeId is the stored edge's identity, so a repeat inside one request
+  // means one of the two edges would silently replace the other.
+  const requestedById = new Map<string, RequestedEdge>()
+  for (const item of requested) {
+    const previous = requestedById.get(item.edge.edgeId)
+    if (previous !== undefined) {
+      throw new ValidationError(
+        `${describeRequestedEdge(item)}: edgeId "${item.edge.edgeId}" is already used by ${describeRequestedEdge(previous)}. Give each connection its own edgeId; reusing one replaces that edge.`,
+        { edgeIndex: item.index, edgeId: item.edge.edgeId, duplicateOfEdgeIndex: previous.index },
+      )
+    }
+    requestedById.set(item.edge.edgeId, item)
+  }
+
+  const requestedByEdgeId = new Map(requested.map((item) => [item.edge.edgeId, item]))
+  const byConnection = new Map<string, WorkflowEdge>()
+  for (const edge of resultEdges) {
+    const key = edgeConnectionKey(edge)
+    const first = byConnection.get(key)
+    if (first === undefined) {
+      byConnection.set(key, edge)
+      continue
+    }
+    const duplicate = requestedByEdgeId.get(edge.edgeId) ?? requestedByEdgeId.get(first.edgeId)
+    // Two stored edges among themselves are a diagnosis on the next read, not
+    // a reason to refuse a write that never touched them.
+    if (duplicate === undefined) continue
+    const counterpart = duplicate.edge.edgeId === edge.edgeId ? first : edge
+    throw new ValidationError(
+      `${describeRequestedEdge(duplicate)}: edge "${duplicate.edge.edgeId}" is the same connection as edge "${counterpart.edgeId}" (${describeConnection(counterpart)}). Two edges joining the same nodes through the same handles run their target once per duplicate; remove one, or use a different handle (an assertion's pass/fail, a merge node's input).`,
+      {
+        edgeIndex: duplicate.index,
+        edgeId: duplicate.edge.edgeId,
+        duplicateEdgeId: counterpart.edgeId,
+        source: counterpart.source,
+        target: counterpart.target,
+        sourceHandle: counterpart.sourceHandle ?? null,
+        targetHandle: counterpart.targetHandle ?? null,
+      },
+    )
   }
 }
 
@@ -282,6 +383,12 @@ export class WorkflowService {
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
     this.assertCallWorkflowTargetsInWorkspace(input.nodes, workspaceId, undefined)
+    const createdEdges = input.edges ?? []
+    assertEdgeIntegrity(
+      createdEdges,
+      input.nodes ?? [],
+      createdEdges.map((edge, index) => ({ edge, field: "edges", index })),
+    )
     // Every node in a create is new, so an unlabelled browser step is named
     // after its action here too — the same default a patch upsert gets.
     const authored = input.nodes?.map((node) => {
@@ -416,6 +523,13 @@ export class WorkflowService {
     if ("nodes" in patch) {
       this.assertCallWorkflowTargetsInWorkspace(patch.nodes, workspaceId, workflowId)
     }
+    if (patch.edges !== undefined) {
+      assertEdgeIntegrity(
+        patch.edges,
+        patch.nodes ?? existing.nodes,
+        patch.edges.map((edge, index) => ({ edge, field: "edges", index })),
+      )
+    }
     let next: WorkflowUpdate = patch
     if (options?.layout === true && (patch.nodes !== undefined || patch.edges !== undefined)) {
       const nextNodes = patch.nodes ?? existing.nodes
@@ -451,6 +565,14 @@ export class WorkflowService {
 
     const next = mergeGraphPatch(existing, patch)
     this.assertCallWorkflowTargetsInWorkspace(next.nodes, workspaceId, workflowId)
+    if (patch.upsertEdges !== undefined) {
+      assertEdgeIntegrity(
+        next.edges ?? [],
+        next.nodes,
+        patch.upsertEdges.map((edge, index) => ({ edge, field: "upsertEdges", index })),
+        patch.removeNodeIds ?? [],
+      )
+    }
 
     // Revision-aware auto-layout on the snapshot being saved — never on a
     // redacted or pre-dispatch copy. The service reads the stored (unredacted)

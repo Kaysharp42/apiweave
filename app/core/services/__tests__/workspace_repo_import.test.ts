@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { CollectionRepository, EnvironmentRepository, NodePresetRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { workspaceSnapshot, type WorkspaceSnapshot } from "../workspace_repo_format"
@@ -405,4 +406,36 @@ it("WorkspaceRepoImporter refuses a snapshot whose workspace id differs from the
     seed(store)
     const snapshot = withSnapshot(snapshotOf(store), (draft) => { draft.workspace.workspaceId = "another-workspace" })
     expect(() => store.importer.apply(store.workspaceId, snapshot)).toThrow(/does not match target workspace/)
+})
+
+/**
+ * Git sync is a file-shaped import, not an authored write: it goes through the
+ * repository so a repository that already holds a graph the editor would now
+ * refuse (two edges on one connection) still imports, and `workflow_diagnose`
+ * is what reports it. Refusing the import would leave the user no way to pull
+ * their own repository.
+ */
+it("WorkspaceRepoImporter imports a graph with a repeated connection instead of refusing it", () => {
+    const store = openStore()
+    store.workflows.create({
+      workflowId: "wf-repeat",
+      workspaceId: store.workspaceId,
+      name: "Repeated connection",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e2", source: "start", target: "end" },
+      ],
+    })
+    const snapshot = snapshotOf(store)
+    store.workflows.delete("wf-repeat")
+
+    expect(() => store.importer.apply(store.workspaceId, snapshot)).not.toThrow()
+
+    const stored = store.workflows.getById("wf-repeat")!
+    expect(stored.edges.map((edge) => edge.edgeId).sort()).toEqual(["e1", "e2"])
+    expect(analyzeWorkflowGraph(stored).diagnostics.map((item) => item.code)).toContain("duplicate_edge")
 })
