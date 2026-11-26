@@ -39,7 +39,7 @@ describe("timeoutReason", () => {
   it("says not found only when the call log never got past waiting", () => {
     expect(
       timeoutReason(["locator.fill: Timeout 10000ms exceeded.", "Call log:", "  - waiting for getByLabel('Email')"].join("\n")),
-    ).toBe("it was not found")
+    ).toBe("it was not found (if an earlier step saw it, it may have closed or moved since)")
   })
 
   it("stays neutral when the locator resolved but never became actionable", () => {
@@ -61,7 +61,9 @@ describe("timeoutReason", () => {
   })
 
   it("keeps mapping the actionable states Playwright names", () => {
-    expect(timeoutReason('  <div class="overlay" …> intercepts pointer events')).toBe("another element covers it")
+    expect(timeoutReason('  <div class="overlay" …> intercepts pointer events')).toBe(
+      "another element covers it (if this is a visually hidden input, click its label or press Space)",
+    )
     expect(timeoutReason("  element is not visible")).toBe("it is not visible")
     expect(timeoutReason("  element is not enabled")).toBe("it is disabled")
     expect(timeoutReason("  element is not editable")).toBe("it is not editable")
@@ -78,7 +80,7 @@ describe("diagnose", () => {
     const error = new PlaywrightTimeout(
       ["locator.fill: Timeout 10000ms exceeded.", "Call log:", "  - waiting for getByLabel('Email')"].join("\n"),
     )
-    expect(diagnose(error, fill, 10_000)).toBe("fill on getByLabel('Email') timed out after 10s: it was not found")
+    expect(diagnose(error, fill, 10_000)).toBe("fill on getByLabel('Email') timed out after 10s: it was not found (if an earlier step saw it, it may have closed or moved since)")
   })
 
   it("points at the stored detail when the element existed but never became ready", () => {
@@ -94,6 +96,16 @@ describe("diagnose", () => {
     expect(diagnose(error, click, 30_000)).toBe(
       "click on getByRole('button', { name: 'Sign in' }) timed out after 30s: it did not become ready in time (see detail)",
     )
+  })
+
+  it("lifts the candidates of an ambiguous locator into the error, capped", () => {
+    const lines = Array.from({ length: 7 }, (_unused, index) => `    ${index + 1}) <button>…</button> aka getByRole('button', { name: 'Item ${index + 1}' })`)
+    const error = new Error(["locator.click: Error: strict mode violation: getByRole('button') resolved to 7 elements:", ...lines].join("\n"))
+    const message = diagnose(error, click, 10_000)
+    expect(message).toContain("matches 7 elements (getByRole('button', { name: 'Item 1' });")
+    expect(message).toContain("Item 5' }); 2 more)")
+    expect(message).not.toContain("Item 6")
+    expect(message).not.toContain("<button")
   })
 
   it("keeps the page content of Playwright's message out of the diagnosis", () => {

@@ -13,6 +13,7 @@ import { BROWSER_ACTIONS } from "@shared/browser/browser_action_labels";
 import {
   actionNeedsLocator,
   configFromDraft,
+  defaultMatch,
   draftFromConfig,
   extractNeedsLocator,
 } from "../../utils/browserStep";
@@ -124,9 +125,12 @@ function ActionFields({ draft, update }: { draft: BrowserStepDraft; update: (pat
       );
     case "expect-value":
       return (
-        <FormField label="Expected value" hint="What the field holds, compared exactly.">
-          <TemplateInput value={draft.value} onValueChange={(value) => update({ value })} />
-        </FormField>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_1fr]">
+          <FormField label="The value"><MatchSelect value={draft.match} onChange={(match) => update({ match })} /></FormField>
+          <FormField label="Expected value" hint="What the field holds.">
+            <TemplateInput value={draft.value} onValueChange={(value) => update({ value })} />
+          </FormField>
+        </div>
       );
     case "expect-url":
       return (
@@ -219,7 +223,7 @@ export function BrowserConfigPanel({ initialConfig, workingDataRef, activeTab }:
           <FormField label="What this step does">
             <Select value={draft.action} onChange={(event) => {
               const action = BROWSER_ACTIONS.find((entry) => entry.value === event.target.value);
-              if (action) update({ action: action.value });
+              if (action) update({ action: action.value, match: defaultMatch(action.value) });
             }}>
               {BROWSER_ACTIONS.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
             </Select>

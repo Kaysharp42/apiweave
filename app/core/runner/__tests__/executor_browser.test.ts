@@ -89,6 +89,26 @@ const unsettledPage = (ms: number): string => `<!doctype html><title>Before</tit
 
 const arrivedPage = (): string => `<!doctype html><title>Arrived</title><h1>Arrived</h1><p>The page settled here.</p>`
 
+/**
+ * Widgets that misbehave the way real pages do: a select whose change handler
+ * puts the old value back, a combobox popover that closes when focus leaves,
+ * and a visually hidden radio.
+ */
+const widgetsPage = (): string => `<!doctype html><title>Widgets</title>
+<label for="plan">Plan</label>
+<select id="plan"><option value="free">Free</option><option value="pro">Pro</option></select>
+<label for="locked">Locked</label>
+<select id="locked"><option value="a">Alpha</option><option value="b">Beta</option></select>
+<input id="combo" aria-label="Country" autocomplete="off">
+<ul id="pop" hidden><li><button id="pick">Norway</button></li></ul>
+<button>Save draft</button><button>Save</button>
+<script>
+document.getElementById('locked').addEventListener('change', (event) => { event.target.value = 'a' })
+const combo = document.getElementById('combo'), pop = document.getElementById('pop')
+combo.addEventListener('focus', () => { pop.hidden = false })
+combo.addEventListener('blur', () => { setTimeout(() => { if (!pop.contains(document.activeElement)) pop.hidden = true }, 0) })
+</script>`
+
 let channel: BrowserChannel | undefined
 let server: Server
 let base: string
@@ -108,6 +128,8 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(loginPage())
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
+    } else if (path === "/widgets") {
+      response.writeHead(200, { "content-type": "text/html" }).end(widgetsPage())
     } else if (path === "/unsettled") {
       const ms = Number(new URLSearchParams((request.url ?? "").split("?")[1] ?? "").get("ms") ?? "300")
       response.writeHead(200, { "content-type": "text/html" }).end(unsettledPage(ms))
@@ -514,7 +536,67 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
 
     const stored = await run(workflowId)
 
-    expect(result(stored, "field")?.error).toBe("Browser step: getByRole('textbox') matches 2 elements; add hasText, nth or within to pick one")
+    expect(result(stored, "field")?.error).toBe(
+      "Browser step: getByRole('textbox') matches 2 elements (getByRole('textbox', { name: 'Email' }); getByRole('textbox', { name: 'Password' })); add hasText, nth or within to pick one",
+    )
+  })
+
+  it("compares an expect-value by equality unless it asks for contains", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/dashboard` }),
+      step("part", { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "ab", match: "contains" }),
+      step("pattern", { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "^a.c$", match: "matches" }),
+      step("whole", { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "ab", timeoutMs: 300 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "part")?.status, result(stored, "part")?.error).toBe("passed")
+    expect(result(stored, "pattern")?.status, result(stored, "pattern")?.error).toBe("passed")
+    expect(result(stored, "whole")?.error).toContain("did not equal the expected value")
+  })
+
+  it("passes a select the page keeps, and fails one whose handler puts the old value back", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/widgets` }),
+      step("keeps", { action: "select", locator: { kind: "label", value: "Plan" }, values: ["Pro"] }),
+      step("reverts", { action: "select", locator: { kind: "label", value: "Locked" }, values: ["b"], timeoutMs: 600 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "keeps")?.status, result(stored, "keeps")?.error).toBe("passed")
+    expect(result(stored, "keeps")?.browser).toMatchObject({ expected: "Pro", actual: "Pro" })
+    expect(result(stored, "reverts")?.error).toContain("did not hold the selected option")
+    expect(result(stored, "reverts")?.browser).toMatchObject({ expected: "b", actual: "Alpha" })
+  })
+
+  it("keeps a focus-opened popover open across the evidence taken between steps", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/widgets` }),
+      step("focus", { action: "click", locator: { kind: "label", value: "Country" } }),
+      step("shown", { action: "expect-visible", locator: role("button", "Norway") }),
+      step("pick", { action: "press", locator: role("button", "Norway"), key: "Enter", timeoutMs: 1000 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "pick")?.status, result(stored, "pick")?.error).toBe("passed")
+  })
+
+  it("says an element may have closed when a click cannot find what an earlier step saw", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/widgets` }),
+      step("focus", { action: "click", locator: { kind: "label", value: "Country" } }),
+      step("shown", { action: "expect-visible", locator: role("button", "Norway") }),
+      step("away", { action: "click", locator: role("button", "Save draft") }),
+      step("closed", { action: "expect-visible", locator: role("button", "Norway"), visible: false }),
+      step("pick", { action: "click", locator: role("button", "Norway"), timeoutMs: 500 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "pick")?.error).toContain("it was not found (if an earlier step saw it, it may have closed or moved since)")
   })
 
   it("reruns a failed check from the start of the browser chain", async () => {

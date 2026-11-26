@@ -274,7 +274,13 @@ assertion are fine). A Call Workflow child shares the page.
 then \`testId\`, then \`placeholder\`/\`text\`/\`alt\`/\`title\`; \`css\` last, and
 never \`kind: "selector"\` (recorder output); either, or \`css\` picked by \`nth\`,
 raises an analyzer notice.
-Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`.
+Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`. A role \`name\` matches
+as a substring: in stacked overlays use \`exact: true\` plus \`nth: -1\`, or a
+\`css\` locator on the element's \`name\`/\`id\`, since \`nth\` order shifts when
+elements hide. A popover can close between steps (blur, outside click), so act
+on it right after opening it. A visually hidden radio or checkbox cannot be
+clicked: click its label or \`press\` Space. A custom select wrapper is not a
+native \`<select>\`: after \`select\`, \`expect-text\` the visible control.
 
 \`{{secrets.NAME}}\` is allowed **only in a fill's value**, and a password is
 always that reference, never a literal; \`{{env.*}}\` for the URL and the test

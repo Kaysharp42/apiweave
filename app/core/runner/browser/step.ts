@@ -268,6 +268,41 @@ async function expectRead(
   throw new StepFailure(describeMiss(actual), { expected, ...(actual !== undefined ? { actual: shown(actual) } : {}) })
 }
 
+/** What a native <select> holds, read in the page: each selected option's value and visible label. */
+function readSelected(select: Element): Array<{ value: string; label: string }> {
+  if (!(select instanceof HTMLSelectElement)) return []
+  return Array.from(select.selectedOptions, (option) => ({ value: option.value, label: option.label }))
+}
+
+/**
+ * Playwright's `selectOption` returns once it has dispatched its events, so a
+ * page whose change handler puts the old value back still reports success.
+ * Read the <select> back until it holds exactly the requested options, each
+ * matched by value or label as `selectOption` matched it.
+ */
+async function expectSelected(element: Locator, values: readonly string[], where: string, timeout: number): Promise<Compared> {
+  const expected = values.join(", ")
+  let held: Array<{ value: string; label: string }> | undefined
+  const { passed } = await pollUntil(
+    timeout,
+    async (remaining) => {
+      held = await element.evaluate(readSelected, undefined, { timeout: Math.min(remaining, POLL_READ_MAX_MS) })
+      const current = held
+      return (
+        values.every((value) => current.some((option) => option.value === value || option.label === value)) &&
+        current.every((option) => values.some((value) => option.value === value || option.label === value))
+      )
+    },
+    isFatal,
+  )
+  const actual = held === undefined ? undefined : held.map((option) => option.label).join(", ")
+  if (passed && actual !== undefined) return { expected, actual }
+  throw new StepFailure(
+    `${where} did not hold the selected option within ${seconds(timeout)}: the page changed it back, or it is not a native <select>`,
+    { expected, ...(actual !== undefined ? { actual } : {}) },
+  )
+}
+
 // fallow-ignore-next-line complexity -- one case per browser action: the switch is the action table
 async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepContext, timeout: number): Promise<Compared> {
   const locate = (locator: BrowserLocator): Locator => buildLocator(page, locator, (text) => resolveValue(ctx, text, false))
@@ -334,9 +369,12 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
     case "hover":
       await locate(config.locator).hover({ timeout })
       return {}
-    case "select":
-      await locate(config.locator).selectOption(config.values.map((value) => resolveValue(ctx, value, false)), { timeout })
-      return {}
+    case "select": {
+      const values = config.values.map((value) => resolveValue(ctx, value, false))
+      const element = locate(config.locator)
+      await element.selectOption(values, { timeout })
+      return expectSelected(element, values, describeLocator(config.locator), timeout)
+    }
     case "expect-visible": {
       const visible = config.visible ?? true
       const expected = visible ? "visible" : "hidden"
@@ -368,18 +406,19 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
       )
     }
     case "expect-value": {
+      const match = config.match ?? "equals"
       const expected = resolveValue(ctx, config.value, false)
       const element = locate(config.locator)
       const where = describeLocator(config.locator)
       return expectRead(
         (readTimeout) => element.inputValue({ timeout: readTimeout }),
-        async (actual) => actual === expected,
+        (actual) => compareText(ctx, actual, expected, match),
         timeout,
         expected,
         (actual) =>
           actual === undefined
             ? `${where} was not found within ${seconds(timeout)}`
-            : `the value of ${where} did not equal the expected value within ${seconds(timeout)}`,
+            : `the value of ${where} did not ${MATCH_VERBS[match]} the expected value within ${seconds(timeout)}`,
       )
     }
     case "expect-url": {
@@ -431,14 +470,31 @@ async function extractValue(
  * own account rides on the result's `detail`.
  */
 export function timeoutReason(message: string): string {
-  if (message.includes("intercepts pointer events")) return "another element covers it"
+  if (message.includes("intercepts pointer events")) {
+    return "another element covers it (if this is a visually hidden input, click its label or press Space)"
+  }
   if (message.includes("element is not visible")) return "it is not visible"
   if (message.includes("element is not enabled")) return "it is disabled"
   if (message.includes("element is not editable")) return "it is not editable"
   if (message.includes("outside of the viewport")) return "it is outside the page"
   if (message.includes("element is not stable")) return "it kept moving"
-  if (message.includes("waiting for") && !message.includes("locator resolved to")) return "it was not found"
+  if (message.includes("waiting for") && !message.includes("locator resolved to")) return "it was not found (if an earlier step saw it, it may have closed or moved since)"
   return "it did not become ready in time (see detail)"
+}
+
+const CANDIDATES_SHOWN = 5
+const CANDIDATE_MAX_CHARS = 80
+
+/**
+ * The candidates of a strict-mode violation as Playwright names them, each a
+ * locator that would pick it (`getByRole('button', { name: 'Save' })`), the
+ * first few and shortened.
+ */
+function ambiguousCandidates(message: string): string[] {
+  const plain = message.replace(/\u001b\[[0-9;]*m/g, "")
+  const all = [...plain.matchAll(/^\s*\d+\) .*? aka (.+?)\s*$/gm)].map((match) => match[1] ?? "")
+  const shown = all.slice(0, CANDIDATES_SHOWN).map((name) => (name.length > CANDIDATE_MAX_CHARS ? `${name.slice(0, CANDIDATE_MAX_CHARS - 1)}…` : name))
+  return all.length > shown.length ? [...shown, `${all.length - shown.length} more`] : shown
 }
 
 /** A Playwright error as a value-free message about this step. */
@@ -449,7 +505,9 @@ export function diagnose(error: unknown, config: BrowserNodeData, timeout: numbe
   if (isClosed(error)) return "the browser was closed"
   if (isAmbiguous(error)) {
     const count = /resolved to (\d+) elements/.exec(message)?.[1]
-    return `${target} matches ${count ?? "several"} elements; add hasText, nth or within to pick one`
+    const candidates = ambiguousCandidates(message)
+    const listed = candidates.length > 0 ? ` (${candidates.join("; ")})` : ""
+    return `${target} matches ${count ?? "several"} elements${listed}; add hasText, nth or within to pick one`
   }
   const network = /net::ERR_[A-Z_]+/.exec(message)?.[0]
   if (network !== undefined) return `the page could not be loaded (${network})`
