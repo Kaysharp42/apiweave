@@ -810,4 +810,64 @@ describe("FB-019 — runs_get opt-in returns a run's final variables, masked", (
     expect(text).not.toContain("s3cr3t")
     await client.close()
   })
+
+  it("returns a caller's outputMapping values, and a child run's own variables by its runId", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const childId = workflowRepository.create({
+      workspaceId: workspace.workspaceId,
+      name: "child-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+      ] as never,
+      edges: [{ edgeId: "e1", source: "start", target: "end" }] as never,
+      variables: { issuedId: "sub-value" },
+    }).workflowId
+    const parentId = workflowRepository.create({
+      workspaceId: workspace.workspaceId,
+      name: "caller-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call1", type: "workflow", position: { x: 1, y: 0 }, config: { targetWorkflowId: childId, outputMapping: { callerId: "issuedId" } } },
+        { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+      ] as never,
+      edges: [
+        { edgeId: "e1", source: "start", target: "call1" },
+        { edgeId: "e2", source: "call1", target: "end" },
+      ] as never,
+    }).workflowId
+
+    const run = await dispatchOk<{ runId: string; status: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId: parentId,
+      waitMs: 5000,
+    })
+    expect(run.status).toBe("completed")
+    // The Call Workflow child is an ordinary run row; an agent reaches its
+    // runId through the call node's evidence.
+    const childRunId = runRepository.getById(run.runId)?.results.find((result) => result.nodeId === "call1")?.subWorkflow?.runId
+    expect(typeof childRunId).toBe("string")
+
+    const client = await connectClient()
+    const callerRead = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, variables: true },
+    })
+    const caller = JSON.parse(textOf(callerRead as { content: Array<{ type: string; text?: string }> })) as {
+      variables: { values: Record<string, unknown> }
+    }
+    expect(caller.variables.values).toMatchObject({ callerId: "sub-value" })
+
+    const childRead = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: childRunId as string, variables: true },
+    })
+    const child = JSON.parse(textOf(childRead as { content: Array<{ type: string; text?: string }> })) as {
+      variables: { values: Record<string, unknown> }
+    }
+    // The child's own final variables, not the caller's mapped view of them.
+    expect(child.variables.values).toMatchObject({ issuedId: "sub-value" })
+    expect(child.variables.values).not.toHaveProperty("callerId")
+    await client.close()
+  })
 })
