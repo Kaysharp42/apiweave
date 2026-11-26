@@ -1,4 +1,5 @@
 import type { ContractErrorCode } from "@shared/contract/errors"
+import { nodeConfigKeyMessage } from "@shared/zod-schemas"
 
 export type McpToolError = {
   readonly code: ContractErrorCode
@@ -67,11 +68,12 @@ function validationIssue(value: unknown): McpValidationIssue | undefined {
   const path = Array.isArray(value["path"])
     ? value["path"].filter((part): part is string | number => typeof part === "string" || typeof part === "number")
     : undefined
+  const code = typeof value["code"] === "string" ? value["code"] : undefined
   return {
-    ...(typeof value["code"] === "string" ? { code: value["code"] } : {}),
+    ...(code === undefined ? {} : { code }),
     ...(path === undefined ? {} : { path }),
     ...(typeof value["expected"] === "string" ? { expected: value["expected"] } : {}),
-    message: value["message"],
+    message: nodeConfigKeyMessage({ code, keys: value["keys"], path, message: value["message"] }),
   }
 }
 

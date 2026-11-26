@@ -6,6 +6,7 @@ import {
   DelayNodeDataSchema,
   HTTPNodeDataSchema,
   WorkflowNodeSchema,
+  nodeConfigKeyMessage,
 } from "@shared/zod-schemas"
 import { createMcpBenchmarkRuntime, openMcpBenchmarkClient } from "../harness/services"
 import type { McpBenchmarkRuntime } from "../harness/types"
@@ -42,7 +43,7 @@ function delayWith(config: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("a node field put inside config", () => {
-  it("leaves each config's JSON Schema exactly as the data schema alone produces it", () => {
+  it("keeps each config's JSON Schema exactly as the data schema alone produces it", () => {
     const raw = new Map<string, z.ZodType>([
       ["delay", DelayNodeDataSchema],
       ["http-request", HTTPNodeDataSchema],
@@ -58,22 +59,24 @@ describe("a node field put inside config", () => {
 
   it("says where a description belongs when a non-browser config carries one", () => {
     const parsed = WorkflowNodeSchema.safeParse(delayWith({ description: "wait a bit" }))
-    expect(parsed.success).toBe(false)
-    expect(parsed.error?.issues[0]?.message).toBe(
+    const issue = parsed.error?.issues[0]
+    expect(issue?.code).toBe("unrecognized_keys")
+    expect(nodeConfigKeyMessage({ ...issue!, path: ["nodes", 1, ...issue!.path] })).toBe(
       'Unrecognized key "description". Put text on the node `label` (only browser steps have a description).',
     )
   })
 
-  it("accepts a description on a browser step and still hints node-level keys there", () => {
-    const step = { nodeId: "go", type: "browser", config: { action: "navigate", url: "https://example.test", description: "open" } }
-    expect(WorkflowNodeSchema.safeParse(step).success).toBe(true)
-    const bad = WorkflowNodeSchema.safeParse({ ...step, config: { ...step.config, position: { x: 1, y: 2 } } })
-    expect(bad.error?.issues[0]?.message).toContain("`position` belongs on the node, not in `config`.")
-  })
-
-  it("keeps zod's own message for a config that is not an object", () => {
-    const parsed = WorkflowNodeSchema.safeParse({ nodeId: "wait", type: "delay", config: "5" })
-    expect(parsed.error?.issues[0]?.message).toMatch(/expected object/i)
+  it("hints node-level keys, keeps a patch's nodeId prefix, and leaves other issues alone", () => {
+    const base = { code: "unrecognized_keys", keys: ["position", "label"], message: "zod" }
+    expect(nodeConfigKeyMessage({ ...base, path: ["nodes", 0, "config"] })).toBe(
+      'Unrecognized keys "position", "label". `position` belongs on the node, not in `config`. `label` belongs on the node, not in `config`.',
+    )
+    expect(nodeConfigKeyMessage({ ...base, path: ["upsertNodes", 2, "config"], message: 'nodeId "w": zod' })).toMatch(
+      /^nodeId "w": Unrecognized keys "position", "label"\. `position`/,
+    )
+    expect(nodeConfigKeyMessage({ ...base, path: ["nodes", 0, "config", "retry"] })).toBe("zod")
+    expect(nodeConfigKeyMessage({ ...base, path: ["nodes", 0] })).toBe("zod")
+    expect(nodeConfigKeyMessage({ code: "invalid_type", path: ["nodes", 0, "config"], message: "zod" })).toBe("zod")
   })
 
   it.each([
