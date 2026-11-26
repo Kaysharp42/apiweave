@@ -3,6 +3,7 @@ import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
+import { SECRET_PLACEHOLDER } from "../../services/secret_utils"
 import { rememberSecretField, within } from "./capture"
 import { buildLocator } from "./locator"
 import { pollUntil } from "./poll"
@@ -314,7 +315,9 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
       if (value !== "" && (secret || password)) rememberSecretField(page, element)
       if (password && value !== "") ctx.maskValue(value)
       await element.fill(value, { timeout })
-      return {}
+      // What was typed, so a value that resolved to "" shows. A secret or a
+      // password is never written here, even one too short for the masker.
+      return { actual: secret || password ? SECRET_PLACEHOLDER : value }
     }
     case "press": {
       armDialog(page, config.dialog)

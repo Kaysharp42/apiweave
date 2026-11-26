@@ -352,6 +352,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-4" })
     expect(failed.browser?.ariaSnapshot).toContain('textbox "Password": <SECRET>')
     expect(failed.browser?.ariaSnapshot).toContain("ada@example.com")
+    // A fill records what it typed; a password never.
+    expect(result(stored, "email")?.browser?.actual).toBe("ada@example.com")
+    expect(result(stored, "password")?.browser?.actual).toBe("<SECRET>")
     expect(JSON.stringify(stored)).not.toContain(typed)
     // Every browser step kept its evidence; the failed check is the fourth.
     expect(artifacts).toHaveLength(4)
@@ -373,6 +376,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-3" })
     expect(failed.browser?.evidenceNote).toBeUndefined()
     expect(failed.browser?.ariaSnapshot).toContain('textbox "Email": <SECRET>')
+    expect(result(stored, "email")?.browser?.actual).toBe("<SECRET>")
     expect(JSON.stringify(stored)).not.toContain(SECRET_PASSWORD)
     expect(artifacts).toHaveLength(3)
     expect(artifacts[2]).toMatchObject({ nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
