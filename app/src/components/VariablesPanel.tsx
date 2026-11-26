@@ -43,8 +43,11 @@ function AddVariableToggle({
 }
 
 export default function VariablesPanel() {
-  const { variables, updateVariable, deleteVariablesWithCleanup } =
-    useWorkflow();
+  const {
+    availableVariables: variables,
+    updateVariable,
+    deleteVariablesWithCleanup,
+  } = useWorkflow();
   const provenanceMap = useVariableProvenanceStore((s) => s.provenance);
   const [tracingVar, setTracingVar] = useState<string | null>(null);
   const tips = usePanelTips("variables");

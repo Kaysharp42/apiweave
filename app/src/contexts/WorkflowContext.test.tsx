@@ -55,20 +55,28 @@ describe("WorkflowProvider", () => {
     expect(seen.at(-1)).toBe(before);
   });
 
-  it("merges extractor variables over manual ones, and replaces them on the next registration", async () => {
+  it("keeps extractor variables out of the persisted variables, and offers them alongside", async () => {
     const seen: Captured[] = [];
     // StrictMode runs reducers twice: a reducer that mutated a ref dropped
     // the second registration's result.
     await mount(seen, true);
+    const persisted = seen.at(-1)?.variables;
 
     act(() => seen.at(-1)?.registerExtractors({ token: "$.token" }));
-    expect(seen.at(-1)?.variables).toEqual({
+    // The same object: a save, the history and the live-update comparison
+    // all read `variables`, and none of them may see a derived name.
+    expect(seen.at(-1)?.variables).toBe(persisted);
+    expect(seen.at(-1)?.availableVariables).toEqual({
       manual: "kept",
       token: "$.token",
     });
 
     act(() => seen.at(-1)?.registerExtractors({ id: "$.id" }));
-    expect(seen.at(-1)?.variables).toEqual({ manual: "kept", id: "$.id" });
+    expect(seen.at(-1)?.variables).toBe(persisted);
+    expect(seen.at(-1)?.availableVariables).toEqual({
+      manual: "kept",
+      id: "$.id",
+    });
   });
 
   it("applies functional updates to the latest state", async () => {

@@ -3,9 +3,11 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { Workflow } from "@shared/types/Workflow";
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent";
 import type { Node } from "@xyflow/react";
-import { workflowToCanvas } from "../adapters/workflowCanvas";
+import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
-import useWorkflowLiveUpdates from "./useWorkflowLiveUpdates";
+import useWorkflowLiveUpdates, {
+  workflowContentEquals,
+} from "./useWorkflowLiveUpdates";
 
 const onWorkflowChangedMock = vi.hoisted(() => vi.fn());
 const toastWarningMock = vi.hoisted(() => vi.fn());
@@ -375,5 +377,36 @@ describe("useWorkflowLiveUpdates", () => {
     });
 
     expect(onWorkflow).not.toHaveBeenCalled();
+  });
+});
+
+describe("workflowContentEquals", () => {
+  it("treats a canvas serialised from a workflow as that workflow, whatever its rev", () => {
+    const stored = makeWorkflow(4);
+    const serialised = canvasToWorkflow(workflowToCanvas(stored), {
+      ...stored,
+      rev: 1,
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    });
+
+    expect(workflowContentEquals(serialised, stored)).toBe(true);
+  });
+
+  it("tells apart content a save would really change", () => {
+    const stored = makeWorkflow(4);
+    const canvas = workflowToCanvas(stored);
+
+    expect(
+      workflowContentEquals(
+        canvasToWorkflow({ ...canvas, variables: { seeded: 1 } }, stored),
+        stored,
+      ),
+    ).toBe(false);
+    expect(
+      workflowContentEquals(
+        canvasToWorkflow({ ...canvas, selectedEnvironmentId: "env-1" }, stored),
+        stored,
+      ),
+    ).toBe(false);
   });
 });

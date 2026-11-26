@@ -91,6 +91,19 @@ export function canvasDiffersFromWorkflow(
   );
 }
 
+/**
+ * Whether a canvas serialised for saving holds exactly the content of a
+ * server workflow, ignoring `rev` and `updatedAt`. Saving it would write
+ * nothing new — but would still cost every agent holding that `rev` a
+ * conflict.
+ */
+export function workflowContentEquals(
+  candidate: Workflow,
+  workflow: Workflow,
+): boolean {
+  return contentSignature(candidate) === normalizedContentSignature(workflow);
+}
+
 /** Only two events let the apply pass re-examine a snapshot it once deferred. */
 function applyPassIsDue(
   coalesceTimerFired: boolean,

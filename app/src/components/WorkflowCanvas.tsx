@@ -58,6 +58,7 @@ import { ContextMenu } from "./molecules/ContextMenu";
 import { RunFollowPill } from "./molecules/RunFollowPill";
 import { AppContext } from "../contexts/AppContext";
 import { useWorkflow } from "../contexts/WorkflowContext";
+import useExtractorRegistration from "../hooks/useExtractorRegistration";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
 import { LoadRunDialog } from "./organisms/LoadRunDialog";
@@ -80,7 +81,9 @@ import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import { useAcyclicConnections } from "../hooks/useAcyclicConnections";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
-import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
+import useWorkflowLiveUpdates, {
+  workflowContentEquals,
+} from "../hooks/useWorkflowLiveUpdates";
 import useCanvasPendingEdits from "../hooks/useCanvasPendingEdits";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
@@ -251,10 +254,7 @@ const deleteKeyCode = ["Delete", "Backspace"];
 // Framing one node through the full-graph options would zoom to 2.5x on it.
 const focusViewOptions = { ...fitViewOptions, maxZoom: 1 };
 
-// WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
-const extractorConfigIdMap = new WeakMap<object, number>();
-let nextExtractorConfigId = 0;
-// Same idea for full node configs, so the provenance signature only changes on
+// WeakMap IDs track node-config identity by ref, so the provenance signature only changes on
 // real config edits (add/remove extractor, new {{variables.X}} ref) — not drag.
 const configRefMap = new WeakMap<object, number>();
 let nextConfigRefId = 0;
@@ -613,41 +613,7 @@ function WorkflowCanvas({
 
   // ── Extractors effect ───────────────────────────────────────────────
 
-  const extractorsSig = useMemo(() => {
-    const parts: string[] = [];
-    for (const node of nodes) {
-      if (
-        (node.type === "http-request" || node.type === "sse" || node.type === "grpc") &&
-        node.data?.config?.extractors
-      ) {
-        const extractors = node.data.config.extractors as object;
-        let id = extractorConfigIdMap.get(extractors);
-        if (id === undefined) {
-          id = nextExtractorConfigId++;
-          extractorConfigIdMap.set(extractors, id);
-        }
-        parts.push(`${node.id}:${id}`);
-      }
-    }
-    return parts.join("|");
-  }, [nodes]);
-
-  useEffect(() => {
-    const extractorsFromNodes: Record<string, string> = {};
-    nodesRef.current.forEach((node) => {
-      if (
-        (node.type === "http-request" || node.type === "sse" || node.type === "grpc") &&
-        node.data?.config?.extractors
-      ) {
-        Object.entries(node.data.config.extractors).forEach(([name, value]) => {
-          if (typeof value === "string") {
-            extractorsFromNodes[name] = value;
-          }
-        });
-      }
-    });
-    registerExtractors(extractorsFromNodes);
-  }, [extractorsSig, registerExtractors]);
+  useExtractorRegistration(nodes, registerExtractors);
 
   // ── Variable provenance (feature 5.2) ───────────────────────────────
   // Rebuild the producer/consumer map whenever a node config actually changes
@@ -1448,6 +1414,20 @@ function WorkflowCanvas({
           selectedEnvironmentId:
             canonicalWorkflow.selectedEnvironmentId ?? null,
         };
+
+        // An auto-save of the content the server already has would only move
+        // `rev` under any agent that read it. Compared with the tab's copy at
+        // send time, not the render's `workflow`: a save queued behind
+        // another must compare with what that one wrote.
+        if (silent && !overwrite && workflowId) {
+          const serverCopy = useTabStore
+            .getState()
+            .tabs.find((tab) => tab.workflowId === workflowId)?.workflow;
+          if (serverCopy && workflowContentEquals(canonicalWorkflow, serverCopy)) {
+            useTabStore.getState().markClean(workflowId);
+            return true;
+          }
+        }
 
         const nodeCount = workflowPayload.nodes.length;
         const edgeCount = workflowPayload.edges.length;

@@ -4,9 +4,8 @@ import type { WorkflowVariables } from "./WorkflowVariables";
 export interface WorkflowState {
   variables: WorkflowVariables;
   /**
-   * The variables the canvas's extractors defined last time they were
-   * registered. Kept in state, not a ref, so the reducer stays pure: the next
-   * registration needs them to tell extractor variables from manual ones.
+   * The variables the canvas's extractors define, keyed by name. Derived from
+   * the graph and kept apart from `variables`, which is what a save writes.
    */
   extractorVariables: WorkflowVariables;
   collections: Project[];
