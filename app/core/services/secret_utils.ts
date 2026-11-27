@@ -743,19 +743,21 @@ function redactUrlQueryParams(
 const RUN_HISTORY_URL_BLANK = "<REDACTED>"
 
 /**
- * Query parameter names that carry a credential in a URL a browser lands on,
- * beyond what a config key name says: an OAuth authorization code, a signed
- * URL's signature, a bare API `key`, single sign-on tickets and assertions,
- * magic-link codes. Lowercased, matched exactly.
+ * Query parameter names whose values are harmless navigation state, so a
+ * stored run URL may keep them. Lowercased, matched exactly. Everything else
+ * has its value withheld: a block list kept missing credential names a page
+ * invents (a signed URL's `X-Goog-Signature`, an OAuth `oauth_verifier`, a
+ * session id under any vendor's spelling), so run history withholds by default
+ * and keeps only what it can name as plainly safe.
  */
-const URL_CREDENTIAL_PARAMS: ReadonlySet<string> = new Set([
-  "code", "key", "sig", "signature", "x-amz-signature", "ticket", "nonce",
-  "samlresponse", "samlrequest", "id_token_hint", "login_hint", "otp", "pin",
+const RUN_HISTORY_HARMLESS_PARAMS: ReadonlySet<string> = new Set([
+  "page", "per_page", "page_size", "pagesize", "limit", "offset", "sort",
+  "order", "orderby", "tab", "view", "lang", "locale", "hl",
 ])
 
 /** True if a query parameter of a stored run URL must not keep its value. */
 function isRunHistorySensitiveParam(key: string): boolean {
-  return isSyncSensitiveKey(key) || URL_CREDENTIAL_PARAMS.has(key.toLowerCase())
+  return !RUN_HISTORY_HARMLESS_PARAMS.has(key.toLowerCase())
 }
 
 /**
@@ -763,14 +765,13 @@ function isRunHistorySensitiveParam(key: string): boolean {
  * URL (a browser step's page, an inspected page, a request's metadata) goes
  * through, on top of the run's own secret-value masker.
  *
- * Same rule as every other URL this module redacts: plain parameters stay
- * legible so the evidence still says which page it was, while userinfo, the
- * fragment, secret-named parameters and credential-looking values are
- * withheld (the guide's "losing only embedded userinfo, a fragment, and
- * secret-named query parameters"). A `<SECRET>` the masker already wrote —
- * and the `<REDACTED>` blank itself — survive legible: the URL parser
- * percent-encodes their angle brackets on the round-trip a redaction forces,
- * so they are decoded back.
+ * Every parameter keeps its name and has its value withheld, except the few
+ * plainly navigational ones the allow list names, so the evidence still says
+ * which page it was without ever storing a credential a page put in its query
+ * string. Userinfo, the fragment and credential-looking path segments are
+ * withheld too. A `<SECRET>` the masker already wrote — and the `<REDACTED>`
+ * blank itself — survive legible: the URL parser percent-encodes their angle
+ * brackets on the round-trip a redaction forces, so they are decoded back.
  */
 export function redactUrlForRunHistory(value: string): string {
   const redacted = sanitizeUrlWithReferences(value, RUN_HISTORY_URL_BLANK, isRunHistorySensitiveParam)

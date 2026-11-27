@@ -26,11 +26,28 @@ export function createSecretMasker(values: Iterable<string>): <T>(value: T) => T
   if (secrets.length === 0) return (value) => value
 
   const variants = new Set<string>()
+  /** A URL parser's own encoding of the secret, if it is long enough to be worth masking. */
+  const addUrlForm = (form: string): void => {
+    if (form.length >= MIN_MASKED_SECRET_LENGTH) variants.add(form)
+  }
   for (const secret of secrets) {
     variants.add(secret)
     variants.add(encodeURIComponent(secret))
     variants.add(new URLSearchParams({ v: secret }).toString().slice(2))
     variants.add(JSON.stringify(secret).slice(1, -1))
+    // `new URL` encodes query and path segments differently from both encoders
+    // above — a space is `%20` but a slash stays `/` — which is exactly how a
+    // secret appears when a page puts one in its address.
+    try {
+      addUrlForm(new URL(`https://x.test/?q=${secret}`).search.slice(3))
+    } catch {
+      // A value the URL parser rejects keeps its other forms.
+    }
+    try {
+      addUrlForm(new URL(`https://x.test/${secret}`).pathname.slice(1))
+    } catch {
+      // A value the URL parser rejects keeps its other forms.
+    }
   }
   const pattern = new RegExp(
     [...variants].sort((a, b) => b.length - a.length).map(escapeRegExp).join("|"),

@@ -308,7 +308,7 @@ The step's result pane carries the evidence, kept for every step, pass or fail, 
 | Item | What it holds |
 | --- | --- |
 | Expected and found | For `expect-*`, what the step waited for and what the page showed last. A missing element reads as nothing found |
-| Page address and title | Where the page was after the step. The address keeps its path and its plain query parameters; the fragment, any login in the address and secret-named parameters are replaced with `<REDACTED>`, because they can carry tokens |
+| Page address and title | Where the page was after the step. The address keeps its path, and every query parameter keeps its name while its value is replaced with `<REDACTED>` — except a few plainly navigational ones such as `page` or `sort`; the fragment and any login in the address are dropped too, because they can carry tokens |
 | Playwright's message | Playwright's own account of the failure: which element matched, which action it waited on |
 | Page structure | The page's ARIA (accessibility) tree, capped at 64 KB — what the page offered to a locator, role by role |
 | Screenshot | A JPEG of the viewport, with password fields, every field a secret was typed into and every element showing a masked value painted over. Click it to open it full size, fitted to the window; Escape closes it and returns to the editor |

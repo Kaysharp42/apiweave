@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { createSecretMasker } from "../../runner/secret_masker"
 import {
   findRedactedPlaceholders,
   isSyncSensitiveKey,
@@ -419,26 +420,44 @@ describe("vault storage fields and extractor values", () => {
 })
 
 describe("redactUrlForRunHistory — what a stored run URL keeps", () => {
-  it("keeps plain routing parameters, so evidence says which page it was", () => {
+  it("keeps the value of a plainly navigational parameter, so evidence says which page it was", () => {
     expect(redactUrlForRunHistory("https://app.test/orders?status=open&page=2")).toBe(
-      "https://app.test/orders?status=open&page=2",
+      "https://app.test/orders?status=<REDACTED>&page=2",
     )
   })
 
-  it("redacts a secret-named parameter value while keeping its name and its plain neighbours", () => {
+  it("withholds every value, keeping every parameter name", () => {
     expect(redactUrlForRunHistory("https://app.test/orders?user=ada&token=literal-ticket-9&tab=all")).toBe(
-      "https://app.test/orders?user=ada&token=<REDACTED>&tab=all",
+      "https://app.test/orders?user=<REDACTED>&token=<REDACTED>&tab=all",
+    )
+    expect(redactUrlForRunHistory("https://app.test/orders?q=search+terms&lang=en&q=second")).toBe(
+      "https://app.test/orders?q=<REDACTED>&lang=en&q=<REDACTED>",
     )
   })
 
-  it("redacts the credentials a sign-in redirect or a signed URL carries", () => {
+  it("withholds the credentials a sign-in redirect or a signed URL carries", () => {
     expect(
       redactUrlForRunHistory(
         "https://app.test/callback?code=auth-code-1&state=xyz&session=s-1&sig=abc&key=k-1&SAMLResponse=PHNhbWw&X-Amz-Signature=f00",
       ),
     ).toBe(
-      "https://app.test/callback?code=<REDACTED>&state=xyz&session=<REDACTED>&sig=<REDACTED>&key=<REDACTED>&SAMLResponse=<REDACTED>&X-Amz-Signature=<REDACTED>",
+      "https://app.test/callback?code=<REDACTED>&state=<REDACTED>&session=<REDACTED>&sig=<REDACTED>&key=<REDACTED>&SAMLResponse=<REDACTED>&X-Amz-Signature=<REDACTED>",
     )
+  })
+
+  it("withholds values a key-name block list used to miss", () => {
+    const names = [
+      "X-Goog-Signature", "oauth_signature", "oauth_verifier", "token_hash", "oobCode",
+      "confirmation_code", "auth", "pwd", "hmac", "code_verifier", "jsessionid",
+      "PHPSESSID", "SAMLart",
+    ]
+    const url = `https://app.test/cb?${names.map((name, index) => `${name}=value-${index}`).join("&")}&page=3&per_page=50&orderby=name&locale=en`
+    const redacted = redactUrlForRunHistory(url)
+    for (const name of names) {
+      expect(redacted).toContain(`${name}=<REDACTED>`)
+      expect(redacted).not.toContain(`value-${names.indexOf(name)}`)
+    }
+    expect(redacted).toContain("page=3&per_page=50&orderby=name&locale=en")
   })
 
   it("redacts a credential-looking value under an innocuous name", () => {
@@ -454,18 +473,33 @@ describe("redactUrlForRunHistory — what a stored run URL keeps", () => {
     )
   })
 
-  it("keeps a masked value the run's masker already wrote, legible in path and query alike", () => {
+  it("keeps a masked value the run's masker wrote in a path legible, and withholds a query value", () => {
     // The masker replaces a resolved secret's own text with <SECRET> before a
     // URL is redacted; the redactor must not percent-encode that placeholder
-    // out of legibility, and must not treat it as credential material.
+    // out of legibility, and must not treat it as credential material. A query
+    // value is withheld whatever it says, so a masked secret there reads as the
+    // blank rather than as <SECRET>.
     expect(redactUrlForRunHistory("https://app.test/s/<SECRET>/orders?next=<SECRET>&tab=all")).toBe(
-      "https://app.test/s/<SECRET>/orders?next=<SECRET>&tab=all",
+      "https://app.test/s/<SECRET>/orders?next=<REDACTED>&tab=all",
     )
-    // A redaction elsewhere forces the URL's round-trip, and the masked value
-    // and the blank both come back legible, not percent-encoded.
+    // A redaction elsewhere forces the URL's round-trip, and the path's masked
+    // value and the blank both come back legible, not percent-encoded.
     expect(redactUrlForRunHistory("https://app.test/s/<SECRET>/orders?next=<SECRET>&token=literal-ticket-9")).toBe(
-      "https://app.test/s/<SECRET>/orders?next=<SECRET>&token=<REDACTED>",
+      "https://app.test/s/<SECRET>/orders?next=<REDACTED>&token=<REDACTED>",
     )
+  })
+
+  it("withholds an allow-listed parameter whose value still carries credential material", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
+    expect(redactUrlForRunHistory(`https://app.test/orders?page=${jwt}&sort=name`)).toBe(
+      "https://app.test/orders?page=<REDACTED>&sort=name",
+    )
+  })
+
+  it("stores a masked secret containing a space and a slash as <SECRET> or withholds it", () => {
+    const masked = createSecretMasker(["abc def/ghi"])("https://app.test/orders?q=abc%20def/ghi")
+    expect(masked).toBe("https://app.test/orders?q=<SECRET>")
+    expect(redactUrlForRunHistory(masked)).toBe("https://app.test/orders?q=<REDACTED>")
   })
 
   it("leaves a URL it cannot parse, or one with nothing to withhold, byte-for-byte", () => {

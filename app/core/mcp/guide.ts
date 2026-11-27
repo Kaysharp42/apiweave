@@ -863,8 +863,9 @@ an entry with its value replaced:
 The entry is still there, so you can tell "stored, value withheld" from "never
 saved". Request bodies are redacted leaf by leaf: a plain JSON body comes back
 as written, and only the fields that name or look like credentials are replaced.
-Cookie values are always withheld. URLs keep their shape, losing only embedded
-userinfo, a fragment, and secret-named query parameters.
+Cookie values are always withheld. URLs keep their shape: every query
+parameter keeps its name but loses its value, except a few plainly navigational
+ones, and embedded userinfo and the fragment are dropped.
 
 \`{{secrets.NAME}}\` references survive verbatim everywhere — a reference is not a
 secret, and seeing it is how you know which credential a request uses.
