@@ -8,7 +8,7 @@ const SETTLE_MAX_MS = 3_000
 
 /** The page a run left open, as `browser_inspect` returns it: every string already through the run's masker. */
 export interface InspectedPage {
-  /** Secret-named parameters, userinfo and the fragment withheld, as run history stores URLs. */
+  /** Every query value but the plainly navigational ones, userinfo and the fragment withheld, as run history stores URLs. */
   readonly url: string
   readonly title: string
   readonly ariaSnapshot?: string

@@ -18,10 +18,16 @@ export interface SettledPage {
   readonly ariaSnapshot?: string
   /**
    * True only when two reads `intervalMs` apart agreed. False when the cap ran
-   * out on a page that was still changing — or on one no read could settle —
-   * so the caller can say its evidence may be a moment of a moving page.
+   * out on a page that was still changing, or when no two reads could be
+   * compared.
    */
   readonly settled: boolean
+  /**
+   * True when the wait ended without two reads to compare — no read was taken,
+   * the page closed, or a read ran out of budget. It says "could not look",
+   * which is not the same claim as "the page was still changing".
+   */
+  readonly unreadable: boolean
 }
 
 /**
@@ -52,13 +58,16 @@ export async function settle(page: Page, maxMs: number, intervalMs: number = SET
       const budget = left()
       return within(page.locator("body").ariaSnapshot({ timeout: Math.min(READ_TIMEOUT_MS, budget) }), Math.min(READ_MAX_MS, budget), "")
     }
-    /** The last read and whether two agreed, unless no read could be taken: an empty snapshot is no evidence to reuse. */
-    const latest = (snapshot: string, settled: boolean): SettledPage =>
-      snapshot === "" ? { settled: false } : { ariaSnapshot: snapshot, settled }
+    /** The last read, unless no read could be taken: an empty snapshot is no evidence to reuse. */
+    const latest = (snapshot: string, settled: boolean, unreadable: boolean): SettledPage =>
+      snapshot === "" ? { settled: false, unreadable: true } : { ariaSnapshot: snapshot, settled, unreadable }
     let previous = await read()
+    // Whether two non-empty reads have already disagreed. Once they have, the
+    // page is known to be moving even if later reads run out of budget.
+    let stillMoving = false
     while (deadline > Date.now()) {
       await page.waitForTimeout(Math.min(intervalMs, left())).catch(() => undefined)
-      if (deadline <= Date.now()) return latest(previous, false)
+      if (deadline <= Date.now()) return latest(previous, false, !stillMoving)
       const budget = left()
       await within(page.waitForLoadState("load", { timeout: budget }), budget, undefined)
       const next = await read()
@@ -66,14 +75,16 @@ export async function settle(page: Page, maxMs: number, intervalMs: number = SET
       // one already read nor agrees with it. A page that closed under it has
       // nothing more to say, and waiting cannot change that, so stop there.
       if (next === "") {
-        if (page.isClosed()) return latest(previous, false)
+        if (page.isClosed()) return latest(previous, false, true)
         continue
       }
-      if (next === previous) return latest(previous, true)
+      if (next === previous) return latest(previous, true, false)
       previous = next
+      stillMoving = true
     }
-    return latest(previous, false)
+    // Two reads disagreed, or never got to: only the former is the page moving.
+    return latest(previous, false, !stillMoving)
   } catch {
-    return { settled: false }
+    return { settled: false, unreadable: true }
   }
 }

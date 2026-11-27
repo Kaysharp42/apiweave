@@ -1337,11 +1337,13 @@ export class WorkflowExecutor {
       { screenshot: true, ...(settled.ariaSnapshot !== undefined ? { ariaSnapshot: settled.ariaSnapshot } : {}) },
     )
     const notes: string[] = []
-    // The settle cap ran out on a page that was still changing: what follows
-    // is one moment of a moving page, and the reader must not take it for the
-    // page the step produced. (A failed step's own timeout usually waited out
-    // the change already; this fires most on a passed step's short settle.)
-    if (!settled.settled) notes.push("The page was still changing when its evidence was taken.")
+    // Two reads disagreed: the page really was still changing, and what
+    // follows is one moment of a moving page, which the reader must not take
+    // for the page the step produced. A page that could not be read at all says
+    // nothing about movement, so it gets no such note. (A failed step's own
+    // timeout usually waited out the change already; this fires most on a
+    // passed step's short settle.)
+    if (!settled.settled && !settled.unreadable) notes.push("The page was still changing when its evidence was taken.")
     if (evidence.note !== undefined) notes.push(evidence.note)
     let screenshotArtifactId: string | undefined
     if (evidence.screenshot !== undefined && this.deps.saveArtifact !== undefined) {
