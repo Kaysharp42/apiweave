@@ -22,9 +22,9 @@ import type { VariableWrite } from "../types/VariableWrite"
  * (dot keys and `[n]` indexes, the grammar `readDotPath` walks).
  */
 export const PLACEHOLDER_REFERENCE_RE =
-  /\{\{\s*(variables|env|secrets|data)\.([A-Za-z_][A-Za-z0-9_]*)((?:\.[A-Za-z0-9_-]+|\[\d+\])*)\s*\}\}/g
+  /\{\{\s*(variables|env|secrets|data)\.([A-Za-z0-9_-]+)((?:\.[A-Za-z0-9_-]+|\[\d+\])*)\s*\}\}/g
 
-const SCRIPT_CALL_RE = /\baw\.(variables|env|secrets)\.(get|set)\(\s*\\?["'`]([A-Za-z_][A-Za-z0-9_]*)\\?["'`]/g
+const SCRIPT_CALL_RE = /\baw\.(variables|env|secrets)\.(get|set)\(\s*\\?["'`]([A-Za-z0-9_-]+)\\?["'`]/g
 
 /** Every `{{scope.name…}}` placeholder in `text`, in order. */
 export function placeholderReferences(text: string): PlaceholderReference[] {

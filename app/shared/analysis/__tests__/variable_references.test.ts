@@ -13,7 +13,15 @@ describe("placeholderReferences", () => {
   })
 
   it("ignores node results, functions and malformed names", () => {
-    expect(placeholderReferences("{{login.response.body.id}} {{uuid()}} {{variables.1x}} {{variables.}}")).toEqual([])
+    expect(placeholderReferences("{{login.response.body.id}} {{uuid()}} {{variables.}}")).toEqual([])
+  })
+
+  it("accepts hyphenated and digit-leading root names, as the executor resolves them", () => {
+    expect(placeholderReferences("{{env.base-url}}/x {{variables.user-id.name}} {{data.1st}}")).toEqual([
+      { scope: "env", name: "base-url", path: "" },
+      { scope: "variables", name: "user-id", path: ".name" },
+      { scope: "data", name: "1st", path: "" },
+    ])
   })
 })
 
@@ -23,6 +31,13 @@ describe("scriptReferences", () => {
       { scope: "variables", name: "next", write: true },
       { scope: "env", name: "REGION", write: false },
       { scope: "secrets", name: "KEY", write: false },
+    ])
+  })
+
+  it("reads a hyphenated or digit-leading literal name", () => {
+    expect(scriptReferences('aw.variables.get("user-id"); aw.variables.set("2fa", true)')).toEqual([
+      { scope: "variables", name: "user-id", write: false },
+      { scope: "variables", name: "2fa", write: true },
     ])
   })
 })

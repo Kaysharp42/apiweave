@@ -285,12 +285,13 @@ describe("RunScheduler", () => {
       await new Promise((resolve) => setTimeout(resolve, 300))
 
       const persistedRun = runs.getById(runId)
-      // BASE_URL comes from the child (override wins); REGION is inherited from the base
-      // untouched. A plain parameter stays legible in the stored request URL,
-      // so this now proves both resolutions directly.
+      // BASE_URL comes from the child (override wins); REGION is inherited from
+      // the base untouched. The stored evidence keeps the host but withholds
+      // every query value, so the URL shows both resolutions happened and the
+      // query's value stays out of run history.
       expect(persistedRun?.results[0]).toMatchObject({
         nodeId: "http_1",
-        request: { url: "ftp://169.254.169.254/child-override?region=eu" },
+        request: { url: "ftp://169.254.169.254/child-override?region=<REDACTED>" },
       })
     })
 
@@ -1770,6 +1771,21 @@ describe("requestDestinations", () => {
       { hosts: ["https://one.example.net", "https://two.example.net"] },
       { rows: [{ url: "https://row.example.com" }] },
     )).toEqual(["two.example.net", "env.example.org", "row.example.com", "{{variables.hosts[7]}}/w"])
+  })
+
+  it("resolves a hyphenated or digit-leading name, as the executor does", () => {
+    const nodes = [
+      { nodeId: "a", type: "http-request", config: { url: "{{env.base-url}}/x" } },
+      { nodeId: "b", type: "http-request", config: { url: "{{variables.user-id}}/y" } },
+      { nodeId: "c", type: "http-request", config: { url: "{{data.1st}}/z" } },
+    ] as unknown as Parameters<typeof requestDestinations>[0]
+
+    expect(requestDestinations(
+      nodes,
+      { "base-url": "https://api.example.test" },
+      { "user-id": "https://vars.example.test" },
+      { "1st": "https://data.example.test" },
+    )).toEqual(["api.example.test", "vars.example.test", "data.example.test"])
   })
 })
 

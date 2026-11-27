@@ -262,8 +262,8 @@ describe("resume planning", () => {
   it("needs a masked variable read through a path, unless a scope node sets it first", () => {
     const node = (nodeId: string, type: string, config: Record<string, unknown>) => ({ nodeId, type, config }) as unknown as WorkflowNode
     const reader = node("r", "http-request", { url: "https://api.test/{{variables.session.id}}/{{variables.keys[0]}}" })
-    const scriptReader = node("s", "http-request", { url: "https://api.test", scripts: { preRequest: 'aw.variables.get("other")' } })
-    expect(maskedVariablesRead([reader, scriptReader], new Set(["r", "s"]), ["session", "keys", "other", "unread"])).toEqual(["session", "keys", "other"])
+    const scriptReader = node("s", "http-request", { url: "https://api.test", scripts: { preRequest: 'aw.variables.get("other"); aw.variables.get("user-id")' } })
+    expect(maskedVariablesRead([reader, scriptReader], new Set(["r", "s"]), ["session", "keys", "other", "user-id", "unread"])).toEqual(["session", "keys", "other", "user-id"])
 
     // A browser extract and a script both set a variable inside the scope.
     const extract = node("e", "browser", { action: "extract", from: "text", locator: { kind: "css", value: ".id" }, variable: "session" })
