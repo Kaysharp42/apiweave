@@ -244,6 +244,37 @@ interface EdgeIntegrityContext {
   readonly existingNodeIds?: ReadonlySet<string>
 }
 
+/**
+ * {@link assertEdgeIntegrity} for `update`, which replaces the whole edge list.
+ * The canvas saves by sending the whole graph, so an edge unchanged from the
+ * stored one is not this write's request. A stored graph can hold more than one
+ * edge under an id, so every stored copy is kept, not just the last a map from
+ * id to edge would have held.
+ */
+function assertWholeGraphEdgeIntegrity(
+  existing: Workflow,
+  edges: readonly WorkflowEdge[],
+  nodes: readonly WorkflowNode[],
+): void {
+  const storedEdges = new Map<string, WorkflowEdge[]>()
+  for (const edge of existing.edges) {
+    const copies = storedEdges.get(edge.edgeId)
+    if (copies === undefined) storedEdges.set(edge.edgeId, [edge])
+    else copies.push(edge)
+  }
+  assertEdgeIntegrity(
+    edges,
+    nodes,
+    edges.map((edge, index) => ({
+      edge,
+      field: "edges",
+      index,
+      carriedOver: takeCarriedOverEdge(storedEdges.get(edge.edgeId), edge),
+    })),
+    { existingNodeIds: new Set(existing.nodes.map((node) => node.nodeId)) },
+  )
+}
+
 function assertSentEndpointsExist(nodes: readonly WorkflowNode[], sent: readonly SentEdge[], context: EdgeIntegrityContext): void {
   const nodeIds = new Set(nodes.map((node) => node.nodeId))
   const removed = new Set(context.removedNodeIds ?? [])
@@ -602,29 +633,7 @@ export class WorkflowService {
     if ("nodes" in patch) {
       this.assertCallWorkflowTargetsInWorkspace(patch.nodes, workspaceId, workflowId)
     }
-    if (patch.edges !== undefined) {
-      // The canvas saves by sending the whole graph, so an edge unchanged from
-      // the stored one is not this write's request — see `assertEdgeIntegrity`.
-      // A stored graph can hold more than one edge under an id, so every stored
-      // copy is kept, not just the last the map would have held.
-      const storedEdges = new Map<string, WorkflowEdge[]>()
-      for (const edge of existing.edges) {
-        const copies = storedEdges.get(edge.edgeId)
-        if (copies === undefined) storedEdges.set(edge.edgeId, [edge])
-        else copies.push(edge)
-      }
-      assertEdgeIntegrity(
-        patch.edges,
-        patch.nodes ?? existing.nodes,
-        patch.edges.map((edge, index) => ({
-          edge,
-          field: "edges",
-          index,
-          carriedOver: takeCarriedOverEdge(storedEdges.get(edge.edgeId), edge),
-        })),
-        { existingNodeIds: new Set(existing.nodes.map((node) => node.nodeId)) },
-      )
-    }
+    if (patch.edges !== undefined) assertWholeGraphEdgeIntegrity(existing, patch.edges, patch.nodes ?? existing.nodes)
     let next: WorkflowUpdate = patch
     if (options?.layout === true && (patch.nodes !== undefined || patch.edges !== undefined)) {
       const nextNodes = patch.nodes ?? existing.nodes
