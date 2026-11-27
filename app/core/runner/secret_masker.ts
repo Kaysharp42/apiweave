@@ -26,9 +26,19 @@ export function createSecretMasker(values: Iterable<string>): <T>(value: T) => T
   if (secrets.length === 0) return (value) => value
 
   const variants = new Set<string>()
-  /** A URL parser's own encoding of the secret, if it is long enough to be worth masking. */
-  const addUrlForm = (form: string): void => {
-    if (form.length >= MIN_MASKED_SECRET_LENGTH) variants.add(form)
+  /**
+   * Add a URL parser's encoding of the secret, but only when it represents the
+   * whole value: the parser stops a query at `#` and a path at `?`/`#`, and
+   * normalises `..`, so a shortened form (a prefix of a longer secret) would
+   * mask unrelated text that happens to start the same way.
+   */
+  const addUrlForm = (secret: string, form: string): void => {
+    if (form.length < MIN_MASKED_SECRET_LENGTH) return
+    try {
+      if (decodeURIComponent(form) === secret) variants.add(form)
+    } catch {
+      // Not decodable: keep the other forms.
+    }
   }
   for (const secret of secrets) {
     variants.add(secret)
@@ -39,12 +49,12 @@ export function createSecretMasker(values: Iterable<string>): <T>(value: T) => T
     // above — a space is `%20` but a slash stays `/` — which is exactly how a
     // secret appears when a page puts one in its address.
     try {
-      addUrlForm(new URL(`https://x.test/?q=${secret}`).search.slice(3))
+      addUrlForm(secret, new URL(`https://x.test/?q=${secret}`).search.slice(3))
     } catch {
       // A value the URL parser rejects keeps its other forms.
     }
     try {
-      addUrlForm(new URL(`https://x.test/${secret}`).pathname.slice(1))
+      addUrlForm(secret, new URL(`https://x.test/${secret}`).pathname.slice(1))
     } catch {
       // A value the URL parser rejects keeps its other forms.
     }
