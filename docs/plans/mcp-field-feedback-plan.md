@@ -259,6 +259,30 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   gRPC TLS tests and 2 `executor_browser` screenshot-evidence tests, which
   also fail intermittently on the base commit `3aca4e67` (2 of 4 runs).
 - **2026-11-26 — round 1 PR opened:** #227.
+- **2026-11-27 — PR #227 review (round 1b).** An external review raised 11
+  findings; verified against the code, 9 confirmed and 2 partly right (a
+  same-node pre-request warning is correct: placeholders resolve before the
+  pre-request script). Fixed on the branch (DeepSeek Flash, coordinator
+  review), each with a test that failed first:
+  - Stored evidence URLs withhold every query value except an allow list of
+    navigation parameters (replaces D1's per-parameter block list, which kept
+    missing credential names); the masker also matches the URL parser's own
+    encoding of a secret, when it holds the whole value.
+  - Hyphenated and digit-leading root names are references again (approved
+    hosts, rerun masked-variable check).
+  - `select` read-back: whitespace-normalised labels, `<label>` locators,
+    navigating change handlers, several values on a single select, one shared
+    deadline.
+  - A canvas save carries over a stored repeated edgeId, each stored copy once.
+  - The canvas's suggestions and name checks see extractor names again; no
+    Edit on extractor-only rows.
+  - A post-response refresh of a variable the node reads is not a second
+    producer, and does not hide a missing source.
+  - "Page still changing" only when two reads disagreed.
+  - `{{variables.}}` stays literal; over-long ambiguous candidates are left out
+    whole; `{{prev.…}}` mappings are typed, and the typed path refuses a
+    masked or truncated rerun seed as the text path does.
+  Full suite: 5 468 passed, 0 failed.
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`,
