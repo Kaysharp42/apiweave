@@ -739,6 +739,26 @@ function redactUrlQueryParams(
   return queryChanged
 }
 
+/** A URL's scheme and authority up to its last `@`: the userinfo a URL can embed. */
+const URL_USERINFO_RE = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/?#]*@/
+
+/**
+ * A URL as run history keeps it — what every captured evidence URL (a browser
+ * step's page, an inspected page, a request's metadata) goes through, after
+ * the run's own secret-value masker.
+ *
+ * Only embedded userinfo (`user:password@`) is dropped: it is credential
+ * syntax by definition. The path, query and fragment are kept exactly as
+ * visited, because they are what says which page it was and which filters
+ * were applied. A value a server puts in an address — a sign-in code, a signed
+ * link, a session id — is therefore stored as it was; the run's own
+ * `{{secrets.*}}` values are masked wherever they appear. The tutorial and
+ * the MCP guide say so where testers and agents read run history.
+ */
+export function redactUrlForRunHistory(value: string): string {
+  return value.replace(URL_USERINFO_RE, "$1")
+}
+
 /**
  * Deep export/read sanitizer for arbitrary workflow-shaped JSON (node configs,
  * `nodeTemplates`, full workflow/project payloads). Unlike {@link sanitizeVariablesForExport}

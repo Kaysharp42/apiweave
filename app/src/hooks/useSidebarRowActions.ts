@@ -73,7 +73,7 @@ export function useSidebarRowActions(
   const submitRenameProject = async (name: string): Promise<void> => {
     const scope = scoped("Select a workspace before renaming projects.");
     if (!scope || !renameProject) return;
-    const projectId = renameProject.projectId ?? renameProject.collectionId;
+    const projectId = renameProject.collectionId;
     try {
       await apiweave.projects.update(scope, projectId, { name });
       toast.success(`Project renamed to "${name}"`);
@@ -182,8 +182,7 @@ export function useSidebarRowActions(
       setMoveProjectToWorkspace(null);
       return;
     }
-    const projectId =
-      moveProjectToWorkspace.projectId ?? moveProjectToWorkspace.collectionId;
+    const projectId = moveProjectToWorkspace.collectionId;
     const { name } = moveProjectToWorkspace;
     // Read the members BEFORE the move, while they still answer to this
     // workspace's list — afterwards they are gone from it.

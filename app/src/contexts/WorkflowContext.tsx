@@ -93,32 +93,13 @@ function workflowReducer(
     }
     case "update-variables":
       return { ...current, variables: action.value };
-    case "register-extractors": {
-      if (shallowEqual(current.extractorVariables, action.value)) {
-        return current;
-      }
-
-      const prevExtractorVarNames = Object.keys(current.extractorVariables);
-      const manualVariables: WorkflowVariables = {};
-      Object.entries(current.variables).forEach(([key, value]) => {
-        if (!prevExtractorVarNames.includes(key)) {
-          manualVariables[key] = value;
-        }
-      });
-
-      const merged = {
-        ...manualVariables,
-        ...action.value,
-      };
-
-      return {
-        ...current,
-        extractorVariables: action.value,
-        variables: shallowEqual(current.variables, merged)
-          ? current.variables
-          : merged,
-      };
-    }
+    case "register-extractors":
+      // Never touches `variables`: an extractor's name is derived from the
+      // graph, and writing it into the persisted map made the canvas differ
+      // from every snapshot that did not seed it, so autosave bumped `rev`.
+      return shallowEqual(current.extractorVariables, action.value)
+        ? current
+        : { ...current, extractorVariables: action.value };
     default:
       return current;
   }
@@ -287,10 +268,16 @@ export const WorkflowProvider = ({
 
   // Memoized so a provider re-render that changes nothing here does not
   // re-render every consumer — the canvas and each HTTP node among them.
+  const availableVariables = useMemo<WorkflowVariables>(
+    () => ({ ...state.variables, ...state.extractorVariables }),
+    [state.variables, state.extractorVariables],
+  );
+
   const contextValue = useMemo<WorkflowContextValue>(
     () => ({
       workflowId,
       variables: state.variables,
+      availableVariables,
       collections: state.collections,
       isLoadingCollections: state.isLoadingCollections,
       currentCollectionId: state.currentCollectionId,
@@ -309,6 +296,7 @@ export const WorkflowProvider = ({
     [
       workflowId,
       state.variables,
+      availableVariables,
       state.collections,
       state.isLoadingCollections,
       state.currentCollectionId,

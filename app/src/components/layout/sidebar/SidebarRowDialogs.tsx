@@ -25,8 +25,7 @@ export function SidebarRowDialogs({
   const movingProjectId =
     targets.moveProjectToWorkspace === null
       ? null
-      : (targets.moveProjectToWorkspace.projectId ??
-        targets.moveProjectToWorkspace.collectionId);
+      : targets.moveProjectToWorkspace.collectionId;
 
   return (
     <>

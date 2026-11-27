@@ -2,6 +2,8 @@ import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
+import { PLACEHOLDER_REFERENCE_RE } from "@shared/analysis/variable_references"
+import { readDotPath } from "@shared/extractors/extractorPath"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunIteration } from "@shared/types/RunIteration"
 import type { Run } from "@shared/types/Run"
@@ -20,7 +22,7 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVariables, withBrowserChainStart, type ResumeSeed } from "./resume"
-import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
+import { extractSecretRefsFromString, redactUrlForRunHistory, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
 import { BROWSER_STEP_PREFIX, BrowserSession, type BrowserLaunchSettings } from "./browser/session"
@@ -975,11 +977,8 @@ export function requestDestinations(
   })
   for (const url of urls) {
     if (typeof url !== "string" || url.length === 0) continue
-    const filled = url.replace(/\{\{\s*(env|variables|data)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (match, scope: string, key: string) => {
-      const value = key.split(".").reduce<unknown>(
-        (current, part) => (typeof current === "object" && current !== null ? (current as Record<string, unknown>)[part] : undefined),
-        scopes[scope],
-      )
+    const filled = url.replace(PLACEHOLDER_REFERENCE_RE, (match, scope: string, name: string, path: string) => {
+      const value = scope === "secrets" ? undefined : readDotPath(scopes[scope], `${name}${path}`)
       return typeof value === "string" || typeof value === "number" ? String(value) : match
     })
     try {
@@ -1030,10 +1029,15 @@ function agentRunApprovalFingerprint(
 }
 
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {
-  // Redact secret-looking keys/values only (same posture as the failure path and
-  // per-node snapshots). Real extracted values are kept for the trusted local run
-  // history — the MCP run projection never exposes variables, so there is nothing
-  // to mask them from over the wire.
+  // The key-based redaction every stored copy gets, layered on the secret-value
+  // mask `recordOutcome` has already applied to this output: a value the run
+  // resolved from `{{secrets.X}}` — copied into a variable by a script, an
+  // extractor or a mapping — is `<SECRET>` in nested strings before it gets
+  // here, and a secret-named key (`token`) keeps no value either way. Ordinary
+  // values stay: run history keeps what a run produced, and the MCP `runs_get`
+  // opt-in reads back exactly this stored set, masked the same way. The failure
+  // path below cannot reach this with a resolved secret — it re-stores the
+  // caller-supplied starting variables (nothing mid-run writes that column).
   return sanitizeVariablesForExport(output.extractedVariables as Record<string, JsonValue>)
 }
 
@@ -1059,15 +1063,11 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
   if (request === null || typeof request !== "object" || Array.isArray(request)) return request ?? null
   const url = request["url"]
   if (typeof url !== "string") return request
-  try {
-    const parsed = new URL(url)
-    // The URL parser percent-encodes a masked path segment; keep it legible.
-    const pathname = parsed.pathname.replaceAll(encodeURIComponent(SECRET_PLACEHOLDER), SECRET_PLACEHOLDER)
-    const safeUrl = `${parsed.protocol}//${parsed.host}${pathname}${parsed.search ? "?<REDACTED>" : ""}`
-    return { ...request, url: safeUrl }
-  } catch {
-    return { ...request, url: "<URL>" }
-  }
+  // Per parameter, on top of the masker that already ran: plain parameters
+  // stay legible so the evidence still says which page it was, while
+  // userinfo, the fragment, secret-named and credential-looking parameters
+  // are withheld.
+  return { ...request, url: redactUrlForRunHistory(url) }
 }
 
 const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [

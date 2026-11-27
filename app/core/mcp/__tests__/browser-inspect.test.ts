@@ -246,7 +246,8 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
     const inspection = result as BrowserInspection
     expect(inspection.status).toBe("completed")
     expect(inspection.stoppedBeforeNodeId).toBeUndefined()
-    expect(inspection.page?.url).toBe(`${base}/dashboard?<REDACTED>`)
+    // The inspected page's URL is kept as visited, query included.
+    expect(inspection.page?.url).toBe(`${base}/dashboard?user=ada%40example.com`)
     expect(inspection.page?.ariaSnapshot?.preview).toContain("<SECRET>")
     const image = content.find((item) => item.type === "image")
     expect(image?.mimeType).toBe("image/jpeg")
@@ -290,15 +291,25 @@ describe("browser_inspect over MCP", { timeout: BROWSER_TEST_TIMEOUT_MS }, () =>
     expect(second.isError).toBe(false)
     const done = second.result as BrowserInspection
     expect(done).toMatchObject({ runId: pending.runId, terminal: true, status: "completed" })
-    expect(done.page?.url).toBe(`${base}/dashboard?<REDACTED>`)
+    expect(done.page?.url).toBe(`${base}/dashboard?user=ada%40example.com`)
     expect(done.page?.ariaSnapshot?.preview).toContain('heading "Welcome"')
     // One run, one approval: the continuation only waits on the run it was given.
     expect(approvals).toBe(1)
     expect(runs.getById(pending.runId)?.status).toBe("completed")
 
-    const again = await call("browser_inspect", { runId: pending.runId })
-    expect(again.isError).toBe(true)
-    expect(JSON.stringify(again.content)).toMatch(/browser_inspect with a workflowId/)
+    // D2: the finished page stays readable by its runId — no second run, no
+    // second approval — until it expires (10 minutes after its last read).
+    const again = await call("browser_inspect", { runId: pending.runId, waitMs: 0 })
+    expect(again.isError).toBe(false)
+    const reread = again.result as BrowserInspection
+    expect(reread).toMatchObject({
+      runId: pending.runId,
+      terminal: true,
+      status: "completed",
+      page: { url: `${base}/dashboard?user=ada%40example.com`, title: "Dashboard" },
+    })
+    expect(reread.page?.ariaSnapshot?.preview).toContain('heading "Welcome"')
+    expect(approvals).toBe(1)
   })
 
   it("refuses runId together with workflowId", async () => {

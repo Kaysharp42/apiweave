@@ -507,7 +507,7 @@ operators.
 | Field | What it does |
 | --- | --- |
 | `target workflow` | The workflow to run. The picker lists workflows in the current workspace and excludes the current one |
-| `input mapping` | `target variable = caller expression`. Each entry names a variable the sub-workflow will read as `{{variables.NAME}}`, set from an expression resolved in the *caller's* context |
+| `input mapping` | `target variable = caller expression`. Each entry names a variable the sub-workflow will read as `{{variables.NAME}}`, set from an expression resolved in the *caller's* context. A value that is exactly one placeholder (`{{variables.record}}`) passes the value with its type, so an object stays an object and the sub-workflow reads `{{variables.record.title}}`; a template mixing text and placeholders becomes text |
 | `output mapping` | `caller variable = sub-workflow variable`. Each entry copies one of the sub-workflow's final variables back into the caller's scope |
 
 | `for each` | Optional. Runs the target once per item: `items`, `item variable`, `index variable`, `concurrency` (1 to 16, default 1) and `stop on failure` (default on) |
@@ -516,8 +516,9 @@ operators.
 
 How the call behaves:
 
-- **It runs inline, inside the current run.** There is no second entry in run history. The calling node's result carries a summary: the target, its status, how many nodes it had, how many failed, and which output variables were mapped back. Open the node to see it.
-- **The sub-workflow shares the run's environment and secrets.** It resolves `{{env.*}}` and `{{secrets.*}}` on its own, so those need no mapping. Only workflow variables (`{{variables.*}}`) have to be passed, because each execution keeps its own variable map.
+- **Each call is its own run of the target**, listed in the target's History. The calling node's result carries a summary: the target, its status, the child run, how many nodes it had, how many failed, and which output variables were mapped back. Open the node to see it.
+- **The sub-workflow shares the run's environment and secrets.** It resolves `{{env.*}}` and `{{secrets.*}}` on its own, so those need no mapping. Only workflow variables (`{{variables.*}}`) have to be passed, because each execution keeps its own variable map: the sub-workflow sees its own variables plus the mapped inputs, nothing else of the caller's.
+- **An input that does not resolve fails the call.** A placeholder in an input mapping that is not set in the caller fails the calling node with `inputMapping.<name>: {{…}} is not set in the caller`, instead of handing the sub-workflow the placeholder as text.
 - **Secrets cannot be passed through an input mapping.** A `{{secrets.NAME}}` on the right-hand side fails the node rather than copying a secret value into a plain child variable. Let the sub-workflow read the secret directly.
 - **The caller's variables only change where you asked.** An output mapping entry is applied when the sub-workflow actually produced that variable; anything you did not map stays inside the sub-workflow.
 - **A failed sub-workflow fails the calling node**, which then follows its own **Continue on failure** setting like any other failure.

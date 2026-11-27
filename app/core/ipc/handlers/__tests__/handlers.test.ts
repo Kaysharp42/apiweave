@@ -518,3 +518,45 @@ describe("IPC handlers — no secret plaintext in read responses (QA: task-13-ha
     expect(listed.items.every((item) => Object.keys(item.secrets).length === 0)).toBe(true)
   })
 })
+
+describe("workflows.diagnose — variables a calling workflow passes in", () => {
+  const node = (nodeId: string, type: string, x: number, config: Record<string, unknown> = {}) =>
+    ({ nodeId, type, position: { x, y: 0 }, config })
+  const edges = (ids: readonly string[]) => ids.slice(1).map((target, index) => ({ edgeId: `e${index}`, source: ids[index]!, target }))
+
+  async function sourceMissing(workspaceId: string, workflowId: string): Promise<unknown[]> {
+    const diagnosis = await ok<{ diagnostics: { code: string; evidence?: { variableName?: unknown } }[] }>("workflows", "diagnose", { workspaceId, workflowId })
+    return diagnosis.diagnostics.filter((item) => item.code === "variable_source_missing").map((item) => item.evidence?.variableName).sort()
+  }
+
+  it("counts a caller's inputMapping keys and forEach variables as set in the called workflow", async () => {
+    const { workspaceId } = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Calls" })
+    const child = await ok<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "Per case",
+      nodes: [
+        node("start", "start", 0),
+        node("read", "http-request", 100, { method: "GET", url: "https://api.example.test/{{variables.case.title}}/{{variables.i}}/{{variables.tenant}}/{{variables.stray}}" }),
+        node("end", "end", 200),
+      ],
+      edges: edges(["start", "read", "end"]),
+    })
+    expect(await sourceMissing(workspaceId, child.workflowId)).toEqual(["case", "i", "stray", "tenant"])
+
+    await ok("workflows", "create", {
+      workspaceId,
+      name: "Every case",
+      nodes: [
+        node("start", "start", 0),
+        node("call", "workflow", 100, {
+          targetWorkflowId: child.workflowId,
+          inputMapping: { tenant: "north" },
+          forEach: { items: "[{\"title\":\"one\"}]", itemVariable: "case", indexVariable: "i" },
+        }),
+        node("end", "end", 200),
+      ],
+      edges: edges(["start", "call", "end"]),
+    })
+    expect(await sourceMissing(workspaceId, child.workflowId)).toEqual(["stray"])
+  })
+})

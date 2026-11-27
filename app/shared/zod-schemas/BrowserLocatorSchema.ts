@@ -110,7 +110,7 @@ const locatorBase = z.object({
     .min(-1)
     .max(1_000)
     .optional()
-    .describe("Pick one of several matches by index, zero-based (`locator.nth(n)`). -1 means the last match."),
+    .describe("Pick one of several matches by index, zero-based (`locator.nth(n)`). -1 means the last match. Matches are in DOM order (for role locators, accessibility-tree order), which shifts when an element is hidden or removed, so an index can silently land on another element. In stacked overlays prefer a `css` locator on the element's `name` or `id`."),
   frame: z
     .string()
     .min(1)

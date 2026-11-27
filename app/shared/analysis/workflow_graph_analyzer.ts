@@ -10,13 +10,14 @@ import type { WorkflowDiagnosis } from "../types/WorkflowDiagnosis"
 import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutCanvasOnlyNodes } from "../graph/frames"
+import { duplicateConnections } from "../graph/edgeConnection"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
 import { isQueryPath, isXPath, isValidJsonPath, isValidXPath } from "../extractors/extractorPath"
+import { placeholderReferences, scriptReferences, variableWrites } from "./variable_references"
 
-const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const FUNCTION_CALL_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
 const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> = {
@@ -82,38 +83,19 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
       consumers: entry.consumers,
     }
   }
-  // A `{ variableName: path }` object: each string entry produces that variable.
-  const addMappedProducers = (node: VariableProvenanceNode, mapping: unknown): void => {
-    if (mapping === null || typeof mapping !== "object" || Array.isArray(mapping)) return
-    for (const [variableName, path] of Object.entries(mapping as Readonly<Record<string, unknown>>)) {
-      if (typeof path === "string") addProducer(node, variableName, path)
-    }
-  }
 
   for (const node of nodes) {
     const config = node.config as Readonly<Record<string, unknown>> | undefined
-    addMappedProducers(node, config?.["extractors"])
-
-    // A browser `extract` step writes the variable it names.
-    if (node.type === "browser" && config?.["action"] === "extract" && typeof config["variable"] === "string") {
-      const from = typeof config["from"] === "string" ? config["from"] : "text"
-      const path = from === "attribute" && typeof config["attribute"] === "string" ? `page.attribute.${config["attribute"]}` : `page.${from}`
-      addProducer(node, config["variable"], path)
-    }
-
-    // A Call Workflow node's `outputMapping` names each variable it writes into
-    // the CALLER's scope; the value is the child variable it copies from.
-    if (node.type === "workflow") addMappedProducers(node, config?.["outputMapping"])
+    for (const write of variableWrites(node)) addProducer(node, write.name, write.path)
 
     const references = new Map<string, Set<string>>()
+    // A placeholder reads its root variable: `{{variables.case.items[0]}}` reads `case`.
     forEachConfigString(config, (rootKey, value) => {
-      VARIABLE_REF_RE.lastIndex = 0
-      let match: RegExpExecArray | null
-      while ((match = VARIABLE_REF_RE.exec(value)) !== null) {
-        const variableName = match[1]!
-        const fields = references.get(variableName) ?? new Set<string>()
+      for (const ref of placeholderReferences(value)) {
+        if (ref.scope !== "variables") continue
+        const fields = references.get(ref.name) ?? new Set<string>()
         fields.add(rootKey)
-        references.set(variableName, fields)
+        references.set(ref.name, fields)
       }
     })
     for (const [variableName, fields] of references) {
@@ -369,6 +351,7 @@ export const WORKFLOW_DIAGNOSTIC_CODES = [
   "missing_end_node",
   "duplicate_node_id",
   "duplicate_edge_id",
+  "duplicate_edge",
   "dangling_edge",
   "edge_source_handle_ignored",
   "stream_edge_handle_invalid",
@@ -591,6 +574,38 @@ function addEdgeSourceHandleDiagnostics(
   }
 }
 
+/**
+ * Pushes one error per edge that joins the same two nodes through the same
+ * handles as an earlier edge. The two edges are one branch drawn twice, and the
+ * runner follows both edges, concurrently — the target runs once per duplicate,
+ * so any side effect it has happens more than once.
+ *
+ * A different `sourceHandle` (an assertion's `pass` and `fail`) or a different
+ * `targetHandle` (two inputs of one merge node) is a different connection, never
+ * a duplicate. A graph with repeated `edgeId`s is a separate problem, reported
+ * by `duplicate_edge_id`.
+ */
+function addDuplicateEdgeDiagnostics(edges: readonly WorkflowEdge[], diagnostics: WorkflowDiagnostic[]): void {
+  for (const [first, edge] of duplicateConnections(edges)) {
+    diagnostics.push(diagnostic(
+      "duplicate_edge",
+      "error",
+      "topology",
+      [edge.source, edge.target],
+      `Edges "${first.edgeId}" and "${edge.edgeId}" join the same nodes through the same handles; the run follows both, so ${edge.target} runs once per duplicate.`,
+      {
+        edgeId: edge.edgeId,
+        duplicateOfEdgeId: first.edgeId,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      },
+      { kind: "remove_duplicate_edge", edgeId: edge.edgeId },
+    ))
+  }
+}
+
 /** Pushes one warning listing every node that cannot be reached from a start node. */
 function addUnreachableNodeDiagnostics(
   starts: readonly string[],
@@ -633,6 +648,7 @@ function addCycleDiagnostics(successors: ReadonlyMap<string, ReadonlySet<string>
 function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   addDuplicateNodeIdDiagnostics(workflow.nodes, diagnostics)
   addDuplicateEdgeIdDiagnostics(workflow.edges, diagnostics)
+  addDuplicateEdgeDiagnostics(workflow.edges, diagnostics)
   const starts = addStartAndEndNodeDiagnostics(workflow.nodes, diagnostics)
 
   const { nodesById, successors } = buildGraph(workflow.nodes, workflow.edges)
@@ -867,10 +883,40 @@ function addExpectedStatusMigrationDiagnostics(workflow: WorkflowGraphInput, dia
   }
 }
 
+/**
+ * The `nodeId`/variable pairs whose post-response script write refreshes a
+ * value the same node already reads. Placeholders resolve before the request,
+ * so writing the refetched value back is not a second producer; a pre-request
+ * write is a producer, because the node's own placeholders already read the old
+ * value.
+ */
+function refreshProducerKeys(nodes: readonly VariableProvenanceNode[]): Set<string> {
+  const keys = new Set<string>()
+  for (const node of nodes) {
+    const config = node.config as Readonly<Record<string, unknown>> | undefined
+    if (config === undefined) continue
+    const reads = new Set<string>()
+    forEachConfigString(config, (_rootKey, value) => {
+      for (const ref of placeholderReferences(value)) if (ref.scope === "variables") reads.add(ref.name)
+      for (const ref of scriptReferences(value)) if (ref.scope === "variables" && !ref.write) reads.add(ref.name)
+    })
+    for (const write of variableWrites(node)) {
+      if (write.field === "scripts" && write.path === "scripts.postResponse" && reads.has(write.name)) {
+        keys.add(`${node.nodeId}\u0000${write.name}`)
+      }
+    }
+  }
+  return keys
+}
+
 function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const { successors } = buildGraph(workflow.nodes, workflow.edges)
   const provenance = analyzeVariableProvenance(workflow.nodes)
+  const refreshes = refreshProducerKeys(workflow.nodes)
+  const isRefresh = (producer: { readonly nodeId: string; readonly path: string }, variableName: string): boolean =>
+    producer.path === "scripts.postResponse" && refreshes.has(`${producer.nodeId}\u0000${variableName}`)
   const variables = workflow.variables ?? {}
+  const callerVariables = new Set(workflow.callerVariableNames ?? [])
   for (const node of workflow.nodes) {
     if (!isResponseNode(node)) continue
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
@@ -896,34 +942,39 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
 
   for (const [variableName, entry] of Object.entries(provenance)) {
-    const hasManualValue = Object.prototype.hasOwnProperty.call(variables, variableName)
-    if (!hasManualValue && entry.producers.length === 0 && entry.consumers.length > 0) {
+    // A value passed in by a calling workflow is set before any node runs, as a manual one is.
+    const hasManualValue = Object.prototype.hasOwnProperty.call(variables, variableName) || callerVariables.has(variableName)
+    // A refresh re-reads a value the node already had; it is not a source, so
+    // it neither hides a missing one nor counts as a second producer.
+    const producers = entry.producers.filter((producer) => !isRefresh(producer, variableName))
+    if (!hasManualValue && producers.length === 0 && entry.consumers.length > 0) {
       diagnostics.push(diagnostic(
         "variable_source_missing",
         "warning",
         "dataflow",
         entry.consumers.map((consumer) => consumer.nodeId),
-        "A referenced variable has no manual value or extractor producer.",
+        "A referenced variable has no manual value, caller input or producer (extractor, browser extract, Call Workflow output or script).",
         { variableName },
         { kind: "define_variable_or_extractor", variableName },
       ))
     }
-    if (entry.producers.length > 1) {
+    if (producers.length > 1) {
       diagnostics.push(diagnostic(
         "variable_producer_duplicate",
         "warning",
         "dataflow",
-        entry.producers.map((producer) => producer.nodeId),
-        "More than one extractor produces the same variable.",
-        { variableName, count: entry.producers.length },
+        producers.map((producer) => producer.nodeId),
+        "More than one node produces the same variable.",
+        { variableName, count: producers.length },
         { kind: "keep_single_variable_producer", variableName },
       ))
     }
     for (const producer of entry.producers) {
+      const refresh = isRefresh(producer, variableName)
       const downstream = traverse([producer.nodeId], successors)
       const invalidConsumers = entry.consumers
         .filter((consumer) =>
-          (consumer.nodeId === producer.nodeId && !hasManualValue)
+          (consumer.nodeId === producer.nodeId && !hasManualValue && !refresh)
             || (consumer.nodeId !== producer.nodeId && !downstream.has(consumer.nodeId)),
         )
         .map((consumer) => consumer.nodeId)

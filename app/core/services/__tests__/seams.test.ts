@@ -63,13 +63,10 @@ describe("Project === Collection alias (QA: task-7-seams)", () => {
     expect(bundle.project.projectId).toBe(collection.collectionId)
   })
 
-  it("explicit projectId is preserved on the collection row", async () => {
-    const ws = seedWorkspace("explicit-proj")
-    const collection = collections.create({ workspaceId: ws, name: "Legacy", projectId: "p1" })
-    expect(collection.projectId).toBe("p1")
-
-    const fetched = collections.getById(collection.collectionId)
-    expect(fetched?.projectId).toBe("p1")
+  it("a project's id is its collectionId; the row carries no projectId", () => {
+    const ws = seedWorkspace("no-project-id")
+    const collection = collections.create({ workspaceId: ws, name: "Plain" })
+    expect(collection).not.toHaveProperty("projectId")
   })
 })
 

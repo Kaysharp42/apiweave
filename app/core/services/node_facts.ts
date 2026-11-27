@@ -2,6 +2,7 @@ import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { NodeReferenceUse } from "@shared/types/NodeReferenceUse"
 import { sanitizeUrlWithReferences } from "./secret_utils"
 import { isSecretKey } from "@shared/credentials/credentials"
+import { placeholderReferences, scriptReferences, variableWrites } from "@shared/analysis/variable_references"
 
 /**
  * Safe facts about one stored node: what it calls and which placeholder
@@ -20,12 +21,6 @@ export interface NodeReference extends NodeReferenceUse {
   /** `variables.token`, `env.BASE_URL`, `secrets.API_KEY`. */
   readonly ref: string
 }
-
-const PLACEHOLDER_REF_RE = /\{\{\s*(variables|env|secrets)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
-// A script names what it reads or writes by literal: `aw.secrets.get("NAME")`,
-// `aw.variables.set("NAME", …)`. The JSON-escaped quote form matches too, as in
-// `scriptSecretNames`.
-const SCRIPT_CALL_RE = /\baw\.(variables|env|secrets)\.(get|set)\(\s*\\?["'`]([A-Za-z_][A-Za-z0-9_]*)\\?["'`]/g
 
 /** The `ref` filter grammar: a namespace and one name, nothing else. */
 export const REFERENCE_FILTER_RE = /^(variables|env|secrets)\.[A-Za-z_][A-Za-z0-9_]*$/
@@ -86,8 +81,9 @@ function safeDecodeUri(path: string): string {
 /**
  * Every placeholder reference the node uses, deduplicated by (ref, field,
  * role). `field` is the config key it sits under (`url`, `headers`, `body`,
- * `auth`, `scripts`, `inputMapping`, …). Producers: extractor names,
- * `outputMapping` keys and `aw.variables.set`. Everything else consumes.
+ * `auth`, `scripts`, `inputMapping`, …). Producers: `variableWrites`
+ * (extractors, a Call Workflow's `outputMapping`, a browser extract,
+ * `aw.variables.set`) and a script's `aw.env.set`. Everything else consumes.
  */
 export function nodeReferences(node: WorkflowNode): NodeReference[] {
   const config = node.config as Readonly<Record<string, unknown>> | undefined
@@ -96,9 +92,7 @@ export function nodeReferences(node: WorkflowNode): NodeReference[] {
   const add: AddReference = (ref, field, role) => {
     found.set(`${ref}\u0000${field}\u0000${role}`, { ref, field, role })
   }
-  // A browser extract step writes the variable named in `variable`, which holds
-  // no `{{…}}` placeholder for the scan below to find.
-  if (node.type === "browser" && node.config?.action === "extract") add(`variables.${node.config.variable}`, "variable", "produces")
+  for (const write of variableWrites(node)) add(`variables.${write.name}`, write.field, "produces")
   for (const [field, value] of Object.entries(config)) collectFieldReferences(field, value, add)
   return [...found.values()]
 }
@@ -106,21 +100,21 @@ export function nodeReferences(node: WorkflowNode): NodeReference[] {
 type AddReference = (ref: string, field: string, role: NodeReference["role"]) => void
 
 function collectFieldReferences(field: string, value: unknown, add: AddReference): void {
-  if (field === "extractors" || field === "outputMapping") {
-    if (isRecord(value)) for (const name of Object.keys(value)) add(`variables.${name}`, field, "produces")
-    return
-  }
+  // What a node writes into `variables` comes from `variableWrites`; these
+  // fields name variables rather than read them.
+  if (field === "extractors" || field === "outputMapping") return
   if (field === "scripts") {
     forEachString(value, (text) => {
-      for (const match of text.matchAll(SCRIPT_CALL_RE)) {
-        add(`${match[1]}.${match[3]}`, field, match[2] === "set" ? "produces" : "consumes")
+      for (const ref of scriptReferences(text)) {
+        if (!(ref.scope === "variables" && ref.write)) add(`${ref.scope}.${ref.name}`, field, ref.write ? "produces" : "consumes")
       }
     })
     return
   }
   if (field === "assertions") collectAssertionVariables(value, add)
   forEachString(value, (text) => {
-    for (const match of text.matchAll(PLACEHOLDER_REF_RE)) add(`${match[1]}.${match[2]}`, field, "consumes")
+    // A placeholder reads its root name: `{{variables.case.title}}` reads `variables.case`.
+    for (const ref of placeholderReferences(text)) if (ref.scope !== "data") add(`${ref.scope}.${ref.name}`, field, "consumes")
   })
 }
 
@@ -128,7 +122,8 @@ function collectAssertionVariables(value: unknown, add: AddReference): void {
   if (!Array.isArray(value)) return
   for (const item of value) {
     if (isRecord(item) && item["source"] === "variables" && typeof item["path"] === "string" && item["path"] !== "") {
-      add(`variables.${item["path"]}`, "assertions", "consumes")
+      // A path walks into the variable it names: `case.items[0]` reads `case`.
+      add(`variables.${/^[^.[]*/.exec(item["path"])![0]}`, "assertions", "consumes")
     }
   }
 }

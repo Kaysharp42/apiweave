@@ -22,6 +22,11 @@ export function extractNeedsLocator(from: BrowserStepDraft["from"]): boolean {
   return from === "text" || from === "value" || from === "attribute";
 }
 
+/** The comparison a step uses when its config names none: a field value is compared whole, text and URLs by substring. */
+export function defaultMatch(action: BrowserAction): BrowserStepDraft["match"] {
+  return action === "expect-value" ? "equals" : "contains";
+}
+
 const DEFAULT_LOCATOR: BrowserLocator = { kind: "role", role: "button", name: "" };
 
 export function emptyDraft(action: BrowserAction = "click"): BrowserStepDraft {
@@ -33,7 +38,7 @@ export function emptyDraft(action: BrowserAction = "click"): BrowserStepDraft {
     text: "",
     key: "Enter",
     values: [""],
-    match: "contains",
+    match: defaultMatch(action),
     visible: true,
     from: "text",
     attribute: "",
@@ -151,7 +156,13 @@ export function configFromDraft(draft: BrowserStepDraft): Record<string, unknown
     case "expect-text":
       return { action: "expect-text", locator: draft.locator, text: draft.text, match: draft.match, ...common };
     case "expect-value":
-      return { action: "expect-value", locator: draft.locator, value: draft.value, ...common };
+      return {
+        action: "expect-value",
+        locator: draft.locator,
+        value: draft.value,
+        ...(draft.match !== "equals" ? { match: draft.match } : {}),
+        ...common,
+      };
     case "expect-url":
       return { action: "expect-url", url: draft.url, match: draft.match, ...common };
     case "extract":
@@ -199,7 +210,7 @@ export function browserStepSummary(config: Readonly<Record<string, unknown>> | u
     case "expect-text":
       return { operation: `expect text ${draft.match}`, argument: quoted(draft.text) };
     case "expect-value":
-      return { operation: "expect value", argument: quoted(draft.value) };
+      return { operation: draft.match === "equals" ? "expect value" : `expect value ${draft.match}`, argument: quoted(draft.value) };
     case "expect-url":
       return { operation: `expect URL ${draft.match}`, argument: draft.url };
     case "extract":

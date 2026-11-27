@@ -528,6 +528,8 @@ export const requestsAndDataChapter: TutorialChapter = {
           title: "Know where secrets never travel",
           instruction:
             "Secret values are scrubbed before any result is persisted, never appear in .aweproject exports, never leave this machine, and are never returned by any read API or MCP tool.",
+          detail:
+            "Only values the run took from {{secrets.*}} are masked. A value a site puts in an address itself (a sign-in code, a signed download link, a session id in the URL) is not one of your secrets, so run history keeps it as it was, and agents connected over MCP can read it. Report files leave the query out of every address.",
         },
       ],
       example: {

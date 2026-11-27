@@ -1,4 +1,5 @@
 import { analyzeWorkflowGraph, buildGraph, traverse } from "@shared/analysis/workflow_graph_analyzer"
+import { callerSuppliedVariableNames } from "@shared/analysis/variable_references"
 import { isCanvasOnlyNode } from "@shared/graph/frames"
 import type { Environment } from "@shared/types/Environment"
 import type { Run } from "@shared/types/Run"
@@ -7,7 +8,7 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowDebugContext } from "@shared/types/WorkflowDebugContext"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
-import { NotFoundError } from "../ipc/errors"
+import { NotFoundError, ValidationError } from "../ipc/errors"
 import {
   DEBUG_CONTEXT_BROWSER_TEXT_BYTES,
   DEBUG_CONTEXT_DEFAULT_ERROR_BYTES,
@@ -24,7 +25,11 @@ import type { WorkflowService } from "./workflow_service"
 
 export interface DebugContextRequest {
   readonly workspaceId: string
-  readonly workflowId: string
+  /**
+   * The workflow to inspect. Optional when a `runId` is given: the run row
+   * names its own workflow, and that one is inspected.
+   */
+  readonly workflowId?: string
   readonly runId?: string
   readonly nodeIds?: readonly string[]
   readonly issueLimit?: number
@@ -35,9 +40,10 @@ export interface DebugContextRequest {
  * One-call debug orchestration for a known workflow (MCP optimization phase 3).
  *
  * The graph is read ONCE and that snapshot is analyzed; the run is resolved
- * ONCE (explicit `runId`, otherwise the latest failed run) and threaded
- * through every section, so sub-reads cannot disagree about which run or
- * revision they describe. Current workflow `rev` is returned separately from
+ * ONCE (explicit `runId` — which alone also names the workflow through its
+ * run row — otherwise the latest failed run of the named workflow) and
+ * threaded through every section, so sub-reads cannot disagree about which run
+ * or revision they describe. Current workflow `rev` is returned separately from
  * the `workflowRev` the run recorded when it started, and graph correlation
  * compares that revision with the current one — a past run is never assumed to
  * describe the graph now on canvas.
@@ -56,8 +62,12 @@ export class DebugContextService {
 
 // fallow-ignore-next-line complexity
   async debugContext(request: DebugContextRequest): Promise<WorkflowDebugContext> {
-    const workflow = await this.workflows.get(request.workspaceId, request.workflowId)
     const run = await this.resolveRun(request.workspaceId, request.workflowId, request.runId)
+    const workflowId = request.workflowId ?? run?.workflowId
+    if (workflowId === undefined) {
+      throw new ValidationError("Pass a workflowId, or a runId to debug the workflow that run belongs to.")
+    }
+    const workflow = await this.workflows.get(request.workspaceId, workflowId)
     const runSelection = {
       policy: (request.runId !== undefined ? "explicit" : "latest-failed") as "explicit" | "latest-failed",
       runId: run?.runId ?? null,
@@ -65,7 +75,9 @@ export class DebugContextService {
 
     const resultsByNode = new Map((run?.results ?? []).map((result) => [result.nodeId, result]))
     const failureSummary = summarizeFailures(workflow, run, resultsByNode)
-    const diagnosis = compactDiagnosis(workflow, run, request.issueLimit ?? DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT)
+    const callers = await this.workflows.listCallers(request.workspaceId, workflowId)
+    const callerVariableNames = callerSuppliedVariableNames(callers.flatMap((caller) => caller.nodes), workflowId)
+    const diagnosis = compactDiagnosis(workflow, callerVariableNames, run, request.issueLimit ?? DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT)
 
     const requested = dedupe(request.nodeIds ?? [])
     const byId = new Map(workflow.nodes.map((node) => [node.nodeId, node]))
@@ -118,22 +130,29 @@ export class DebugContextService {
       budgetLimitBytes: INLINE_RESULT_BUDGET_BYTES,
       nextReads: [],
     }
-    return fitBudget(response, workflow, request.workspaceId, request.workflowId, run?.runId ?? null, environment)
+    return fitBudget(response, workflow, request.workspaceId, workflowId, run?.runId ?? null, environment)
   }
 
   /**
    * Explicit run-selection policy: a named run must belong to this workflow
-   * (existence-hiding, like `workflows.diagnose`), otherwise the latest failed
-   * run — which may not exist, and that is a valid empty context, not an error.
+   * when one was named (existence-hiding, like `workflows.diagnose`); a `runId`
+   * alone names its own workflow, so there is nothing to mismatch. Otherwise the
+   * latest failed run — which may not exist, and that is a valid empty
+   * context, not an error.
    */
-  private async resolveRun(workspaceId: string, workflowId: string, runId: string | undefined): Promise<Run | null> {
+  private async resolveRun(
+    workspaceId: string,
+    workflowId: string | undefined,
+    runId: string | undefined,
+  ): Promise<Run | null> {
     if (runId !== undefined) {
       const run = await this.runs.get(workspaceId, runId)
-      if (run.workflowId !== workflowId) {
+      if (workflowId !== undefined && run.workflowId !== workflowId) {
         throw new NotFoundError(`run ${runId} not found`)
       }
       return run
     }
+    if (workflowId === undefined) return null
     return (await this.runs.getLatestFailed(workspaceId, workflowId)) ?? null
   }
 
@@ -299,11 +318,12 @@ function summarizeFailures(
  */
 function compactDiagnosis(
   workflow: Workflow,
+  callerVariableNames: readonly string[],
   run: Run | null,
   issueLimit: number,
 ): WorkflowDebugContext["diagnosis"] {
   const full = analyzeWorkflowGraph(
-    { workflowId: workflow.workflowId, nodes: workflow.nodes, edges: workflow.edges, variables: workflow.variables },
+    { workflowId: workflow.workflowId, nodes: workflow.nodes, edges: workflow.edges, variables: workflow.variables, callerVariableNames },
     ...(run === null ? [] : [run]),
   )
   const items = full.diagnostics.slice(0, Math.max(0, issueLimit)).map((item) => ({

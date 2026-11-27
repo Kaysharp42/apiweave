@@ -47,7 +47,7 @@ export function ProjectItem({
   onAssignWorkflowToProject,
 }: ProjectItemProps) {
   const contextMenu = useContextMenu();
-  const projectId = project.projectId ?? project.collectionId;
+  const projectId = project.collectionId;
   const projectWorkflows = Array.isArray(workflows)
     ? workflows.filter((wf) => wf.collectionId === projectId)
     : [];
@@ -160,7 +160,7 @@ export function ProjectItem({
               hideProject
               collections={
                 projects.map((p) => ({
-                  collectionId: p.projectId ?? p.collectionId,
+                  collectionId: p.collectionId,
                   name: p.name,
                 })) as Project[]
               }

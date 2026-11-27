@@ -17,11 +17,11 @@ import type { LoadRun } from "@shared/types/LoadRun"
  * safe classes before a run is stored, and a report never sees anything else.
  * It goes further than run history on purpose, because a report is a file that
  * leaves the app: it carries no request or response headers or bodies and no
- * variables — only names, statuses, timings, request method and URL (already
- * stripped of its query), response status codes and assertion rules, plus a
- * script's test results and the console output its author chose to print, and
- * a failed browser step's compared values and page URL (also without its
- * query). A page's own content — its screenshot and ARIA snapshot — is only
+ * variables — only names, statuses, timings, request method and URL (its
+ * query and fragment withheld here, see `reportUrl`), response status codes and
+ * assertion rules, plus a script's test results and the console output its
+ * author chose to print, and a failed browser step's compared values and page
+ * URL (also without its query and fragment). A page's own content — its screenshot and ARIA snapshot — is only
  * ever linked, as files the caller wrote beside the report.
  *
  * Mapping: one `<testsuite>` per workflow run (a single run gives one, a
@@ -455,12 +455,29 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   ]
 }
 
+/**
+ * A URL as a report shows it: origin and path, with the query and fragment
+ * withheld. Run history keeps an address whole, as the run visited it; a
+ * report is a file that leaves the app, and a server can put a sign-in code
+ * or a signed link in an address that the run's secret masker never knew.
+ */
+function reportUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.origin === "null") return url.split(/[?#]/, 1)[0]!
+    return `${parsed.origin}${parsed.pathname}${parsed.search === "" ? "" : "?<REDACTED>"}${parsed.hash === "" ? "" : "#<REDACTED>"}`
+  } catch {
+    const [base] = url.split(/[?#]/, 1)
+    return base === url ? url : `${base}?<REDACTED>`
+  }
+}
+
 /** The request line, the response status code, and each attempt a retrying node made. */
 function requestLines(result: RunResult): string[] {
   const lines: string[] = []
   const method = field(result.request, "method")
   const url = field(result.request, "url")
-  if (typeof url === "string") lines.push(typeof method === "string" ? `${method} ${url}` : url)
+  if (typeof url === "string") lines.push(typeof method === "string" ? `${method} ${reportUrl(url)}` : reportUrl(url))
   const code = statusCodeOf(result)
   if (code !== undefined) lines.push(`Status ${code}`)
   if (result.attempts !== undefined) {
@@ -477,10 +494,12 @@ function requestLines(result: RunResult): string[] {
 function browserLines(result: RunResult): string[] {
   const browser = result.browser
   if (browser === undefined) return []
+  // A page-address check compares addresses: they leave the app the same way the page's own does.
+  const compared = (value: string): string => (browser.action === "expect-url" ? reportUrl(value) : value)
   return [
-    ...(browser.expected === undefined ? [] : [`Expected: ${JSON.stringify(browser.expected)}`]),
-    ...(browser.actual === undefined ? [] : [`Found: ${JSON.stringify(browser.actual)}`]),
-    ...(browser.url === undefined ? [] : [`Page: ${browser.url}`]),
+    ...(browser.expected === undefined ? [] : [`Expected: ${JSON.stringify(compared(browser.expected))}`]),
+    ...(browser.actual === undefined ? [] : [`Found: ${JSON.stringify(compared(browser.actual))}`]),
+    ...(browser.url === undefined ? [] : [`Page: ${reportUrl(browser.url)}`]),
     ...(browser.evidenceNote === undefined ? [] : [browser.evidenceNote]),
   ]
 }

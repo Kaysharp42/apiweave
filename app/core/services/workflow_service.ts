@@ -37,6 +37,7 @@ import type { ScopeResolver } from "./scope_resolver"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { duplicateConnections, edgeConnectionKey } from "@shared/graph/edgeConnection"
 
 /** A subset change to a stored graph — see {@link WorkflowService.patch}. */
 export interface WorkflowGraphPatch {
@@ -151,6 +152,210 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
     ...(patch.tags !== undefined ? { tags: [...patch.tags] } : {}),
+  }
+}
+
+/**
+ * One edge the caller sent, and where in the request it was sent.
+ *
+ * `carriedOver` is set only by `update`, which replaces the whole edge list and
+ * is how the canvas autosaves: an edge identical to the stored one of the same
+ * id was not authored by this write, it was re-transmitted with the graph.
+ */
+interface SentEdge {
+  readonly edge: WorkflowEdge
+  readonly field: "edges" | "upsertEdges"
+  readonly index: number
+  readonly carriedOver: boolean
+}
+
+function describeSentEdge(sent: SentEdge): string {
+  return `${sent.field}[${sent.index}] ("${sent.edge.edgeId}")`
+}
+
+/** An edge as an agent reads it, for a message naming the connection a duplicate reuses. */
+function describeConnection(edge: WorkflowEdge): string {
+  const sourceHandle = edge.sourceHandle === undefined || edge.sourceHandle === "" ? "" : ` [${edge.sourceHandle}]`
+  const targetHandle = edge.targetHandle === undefined || edge.targetHandle === "" ? "" : ` → ${edge.targetHandle}`
+  return `${edge.source}${sourceHandle} → ${edge.target}${targetHandle}`
+}
+
+/**
+ * Whether a whole-graph write re-transmits a stored edge unchanged. Handles and
+ * the label compare as null when absent, so the canvas's `null` spelling and a
+ * stored omission are the same edge.
+ *
+ * A stored graph may itself hold several edges under one id (written before the
+ * check existed, or imported through the repository). A match is consumed from
+ * `stored`, so each stored copy can be carried over by one sent edge only: two
+ * stored copies never excuse three exact copies in one request.
+ */
+function takeCarriedOverEdge(stored: WorkflowEdge[] | undefined, sent: WorkflowEdge): boolean {
+  if (stored === undefined) return false
+  const index = stored.findIndex((candidate) =>
+    edgeConnectionKey(candidate) === edgeConnectionKey(sent)
+    && (candidate.label ?? null) === (sent.label ?? null),
+  )
+  if (index < 0) return false
+  stored.splice(index, 1)
+  return true
+}
+
+/**
+ * The one edge check every write path runs over the edges a caller explicitly
+ * sends: both endpoints must exist in the graph being written, no two edges may
+ * carry the same `edgeId`, and no two may be the same connection.
+ *
+ * `resultEdges` is the edge list that would be stored, so a duplicate is caught
+ * against a stored edge as well as against another sent one.
+ *
+ * `update` replaces the whole edge list, so the canvas resends every edge on
+ * every save. A sent edge identical to the stored one is therefore marked
+ * `carriedOver`: it is exempt from the duplicate rule, and from the endpoint
+ * rule when that endpoint was already missing before the write (`existingNodeIds`).
+ * Without that, a graph already holding a duplicate — written before this check
+ * existed, or imported through the repository — could never be saved from the
+ * canvas again, and the overlapping edges are invisible there to fix. A
+ * carried-over edge whose endpoint this update removes is still the caller's
+ * own change, and is rejected; so is any new or changed edge. Everything a
+ * write does not carry over must be sound, and `workflow_diagnose` reports the
+ * rest.
+ *
+ * `removedNodeIds` lets the message say a missing endpoint was removed by this
+ * very patch. An upserted edge to a node this patch removes used to be dropped
+ * silently, so the caller saw the edge as sent and found the branch broken;
+ * stored edges incident to a removed node are still dropped without an error
+ * when the caller does not send them.
+ */
+function assertEdgeIntegrity(
+  resultEdges: readonly WorkflowEdge[],
+  nodes: readonly WorkflowNode[],
+  sent: readonly SentEdge[],
+  context: EdgeIntegrityContext = {},
+): void {
+  if (sent.length === 0) return
+  assertSentEndpointsExist(nodes, sent, context)
+  assertSentEdgeIdsUnique(sent)
+  assertNoAuthoredDuplicateConnection(resultEdges, sent)
+}
+
+interface EdgeIntegrityContext {
+  readonly removedNodeIds?: readonly string[]
+  readonly existingNodeIds?: ReadonlySet<string>
+}
+
+/**
+ * {@link assertEdgeIntegrity} for `update`, which replaces the whole edge list.
+ * The canvas saves by sending the whole graph, so an edge unchanged from the
+ * stored one is not this write's request. A stored graph can hold more than one
+ * edge under an id, so every stored copy is kept, not just the last a map from
+ * id to edge would have held.
+ */
+function assertWholeGraphEdgeIntegrity(
+  existing: Workflow,
+  edges: readonly WorkflowEdge[],
+  nodes: readonly WorkflowNode[],
+): void {
+  const storedEdges = new Map<string, WorkflowEdge[]>()
+  for (const edge of existing.edges) {
+    const copies = storedEdges.get(edge.edgeId)
+    if (copies === undefined) storedEdges.set(edge.edgeId, [edge])
+    else copies.push(edge)
+  }
+  assertEdgeIntegrity(
+    edges,
+    nodes,
+    edges.map((edge, index) => ({
+      edge,
+      field: "edges",
+      index,
+      carriedOver: takeCarriedOverEdge(storedEdges.get(edge.edgeId), edge),
+    })),
+    { existingNodeIds: new Set(existing.nodes.map((node) => node.nodeId)) },
+  )
+}
+
+function assertSentEndpointsExist(nodes: readonly WorkflowNode[], sent: readonly SentEdge[], context: EdgeIntegrityContext): void {
+  const nodeIds = new Set(nodes.map((node) => node.nodeId))
+  const removed = new Set(context.removedNodeIds ?? [])
+
+  for (const item of sent) {
+    for (const endpoint of ["source", "target"] as const) {
+      const nodeId = item.edge[endpoint]
+      if (!endpointRejected(item, nodeId, nodeIds, context.existingNodeIds)) continue
+      const removedInPatch = removed.has(nodeId)
+      throw new ValidationError(
+        `${describeSentEdge(item)}: ${endpoint} node "${nodeId}" ${missingEndpointAdvice(removedInPatch)}`,
+        { edgeIndex: item.index, edgeId: item.edge.edgeId, endpoint, nodeId, removedInPatch },
+      )
+    }
+  }
+}
+
+/**
+ * Whether a sent edge's endpoint `nodeId` fails the write. A stored dangling
+ * edge carried over by a whole-graph save is a diagnosis on the next read, not
+ * something this write introduced.
+ */
+function endpointRejected(item: SentEdge, nodeId: string, nodeIds: ReadonlySet<string>, existingNodeIds: ReadonlySet<string> | undefined): boolean {
+  if (nodeIds.has(nodeId)) return false
+  return !(item.carriedOver && existingNodeIds !== undefined && !existingNodeIds.has(nodeId))
+}
+
+function missingEndpointAdvice(removedInPatch: boolean): string {
+  return removedInPatch
+    ? "was removed by this patch. Remove the edge in the same patch, or keep the node."
+    : "is not a node in the resulting workflow. Add or upsert that node in the same write, or point the edge at a node that exists."
+}
+
+/**
+ * An edgeId is the stored edge's identity, so a repeat inside one request
+ * means one of the two edges would silently replace the other.
+ */
+function assertSentEdgeIdsUnique(sent: readonly SentEdge[]): void {
+  const sentById = new Map<string, SentEdge[]>()
+  for (const item of sent) {
+    const group = sentById.get(item.edge.edgeId)
+    if (group === undefined) {
+      sentById.set(item.edge.edgeId, [item])
+      continue
+    }
+    group.push(item)
+    // A repeat where every copy is carried over predates this write: the
+    // canvas only re-transmitted a stored defect. One new or changed copy makes
+    // the request ambiguous, and that copy is the one the message names.
+    const authored = group.filter((candidate) => !candidate.carriedOver)
+    if (authored.length === 0) continue
+    const duplicate = authored[authored.length - 1]!
+    const previous = group.find((candidate) => candidate.index !== duplicate.index)!
+    throw new ValidationError(
+      `${describeSentEdge(duplicate)}: edgeId "${duplicate.edge.edgeId}" is already used by ${describeSentEdge(previous)}. Give each connection its own edgeId; reusing one replaces that edge.`,
+      { edgeIndex: duplicate.index, edgeId: duplicate.edge.edgeId, duplicateOfEdgeIndex: previous.index },
+    )
+  }
+}
+
+function assertNoAuthoredDuplicateConnection(resultEdges: readonly WorkflowEdge[], sent: readonly SentEdge[]): void {
+  const sentByEdgeId = new Map(sent.map((item) => [item.edge.edgeId, item]))
+  for (const [first, edge] of duplicateConnections(resultEdges)) {
+    // Blame the edge this write actually authored; when both are carried over,
+    // the duplicate predates the write.
+    const duplicate = [sentByEdgeId.get(edge.edgeId), sentByEdgeId.get(first.edgeId)]
+      .find((item) => item !== undefined && !item.carriedOver)
+    if (duplicate === undefined) continue
+    const counterpart = duplicate.edge.edgeId === edge.edgeId ? first : edge
+    throw new ValidationError(
+      `${describeSentEdge(duplicate)}: edge "${duplicate.edge.edgeId}" is the same connection as edge "${counterpart.edgeId}" (${describeConnection(counterpart)}). Two edges joining the same nodes through the same handles run their target once per duplicate; remove one, or use a different handle (an assertion's pass/fail, a merge node's input).`,
+      {
+        edgeIndex: duplicate.index,
+        edgeId: duplicate.edge.edgeId,
+        duplicateEdgeId: counterpart.edgeId,
+        source: counterpart.source,
+        target: counterpart.target,
+        sourceHandle: counterpart.sourceHandle ?? null,
+        targetHandle: counterpart.targetHandle ?? null,
+      },
+    )
   }
 }
 
@@ -282,6 +487,12 @@ export class WorkflowService {
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
     this.assertCallWorkflowTargetsInWorkspace(input.nodes, workspaceId, undefined)
+    const createdEdges = input.edges ?? []
+    assertEdgeIntegrity(
+      createdEdges,
+      input.nodes ?? [],
+      createdEdges.map((edge, index) => ({ edge, field: "edges", index, carriedOver: false })),
+    )
     // Every node in a create is new, so an unlabelled browser step is named
     // after its action here too — the same default a patch upsert gets.
     const authored = input.nodes?.map((node) => {
@@ -305,6 +516,12 @@ export class WorkflowService {
   ): Promise<{ items: readonly Workflow[]; total: number }> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.workflows.listByWorkspace(workspaceId, includeAttached)
+  }
+
+  /** The workspace's workflows that call `workflowId` through a Call Workflow node. */
+  async listCallers(workspaceId: string, workflowId: string): Promise<readonly Workflow[]> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    return this.workflows.listCallers(workspaceId, workflowId)
   }
 
   /**
@@ -416,6 +633,7 @@ export class WorkflowService {
     if ("nodes" in patch) {
       this.assertCallWorkflowTargetsInWorkspace(patch.nodes, workspaceId, workflowId)
     }
+    if (patch.edges !== undefined) assertWholeGraphEdgeIntegrity(existing, patch.edges, patch.nodes ?? existing.nodes)
     let next: WorkflowUpdate = patch
     if (options?.layout === true && (patch.nodes !== undefined || patch.edges !== undefined)) {
       const nextNodes = patch.nodes ?? existing.nodes
@@ -451,6 +669,14 @@ export class WorkflowService {
 
     const next = mergeGraphPatch(existing, patch)
     this.assertCallWorkflowTargetsInWorkspace(next.nodes, workspaceId, workflowId)
+    if (patch.upsertEdges !== undefined) {
+      assertEdgeIntegrity(
+        next.edges ?? [],
+        next.nodes,
+        patch.upsertEdges.map((edge, index) => ({ edge, field: "upsertEdges", index, carriedOver: false })),
+        { removedNodeIds: patch.removeNodeIds ?? [] },
+      )
+    }
 
     // Revision-aware auto-layout on the snapshot being saved — never on a
     // redacted or pre-dispatch copy. The service reads the stored (unredacted)

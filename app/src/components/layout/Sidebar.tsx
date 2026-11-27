@@ -230,7 +230,7 @@ export function Sidebar() {
   };
 
   const handleExportProject = (project: Project) => {
-    setExportingCollectionId(project.projectId ?? project.collectionId);
+    setExportingCollectionId(project.collectionId);
     setExportingCollectionName(project.name);
   };
 

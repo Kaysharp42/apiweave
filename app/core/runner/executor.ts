@@ -24,7 +24,7 @@ import type { Validator } from "@cfworker/json-schema"
 import { ASSERTION_VALUE_TYPES, parseSchemaValue } from "@shared/analysis/assertion_expected"
 import type { SchemaViolation } from "@shared/types/SchemaViolation"
 import { SECRET_PLACEHOLDER, extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
-import type { ResumeSeed } from "./resume"
+import { isMasked, type ResumeSeed } from "./resume"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
@@ -48,7 +48,7 @@ import type { JsonrpcBody } from "@shared/types/JsonrpcBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { WORKFLOW_CALL_FOR_EACH_MAX_CONCURRENCY, WORKFLOW_CALL_FOR_EACH_MAX_ITERATIONS } from "@shared/zod-schemas/WorkflowCallForEachSchema"
-import { isQueryPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { isQueryPath, readDotPath, resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findSoapFault } from "@shared/extractors/xmlDocument"
 import type { SoapBody } from "@shared/types/SoapBody"
 import type { SoapFault } from "@shared/types/SoapFault"
@@ -289,6 +289,12 @@ function substituteJsonTemplate(text: string, resolve: (match: string, rawPath: 
  */
 function placeholderText(value: unknown): string {
   return typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)
+}
+
+/** `{{nodeId.response.body.id}}` split into the node id and the path into its result (`""` for the whole result). */
+function splitNodePath(varPath: string): { readonly nodeId: string; readonly path: string } {
+  const dot = varPath.indexOf(".")
+  return dot === -1 ? { nodeId: varPath, path: "" } : { nodeId: varPath.slice(0, dot), path: varPath.slice(dot + 1) }
 }
 
 function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean {
@@ -1286,7 +1292,9 @@ export class WorkflowExecutor {
    * it gets the fuller wait `browser_inspect` gives a page a run left open.
    * A failed step has usually waited its own timeout out already, so the
    * fuller cap costs nothing on a page that is stable by then: it bites only
-   * when the page is genuinely still moving, which is when it matters.
+   * when the page is genuinely still moving, which is when it matters — and
+   * when the cap runs out anyway, the step's `evidenceNote` says the page was
+   * still changing when its evidence was taken.
    */
   private static readonly PASSED_SETTLE_MS = 1_000
   private static readonly PASSED_SETTLE_INTERVAL_MS = 150
@@ -1294,7 +1302,9 @@ export class WorkflowExecutor {
 
   /**
    * A step's ARIA snapshot and stored screenshot, pass or fail, or a note
-   * saying what is missing. Taken of the page as settled, not as the step's
+   * saying what is missing — including that the page was still moving when
+   * its evidence was taken, so a click that starts a slow change does not
+   * look like a no-op. Taken of the page as settled, not as the step's
    * action left it, and never able to fail the step it documents.
    */
   private async browserEvidence(
@@ -1326,7 +1336,15 @@ export class WorkflowExecutor {
       this.deps.maskedValues?.() ?? Object.values(this.deps.secrets ?? {}),
       { screenshot: true, ...(settled.ariaSnapshot !== undefined ? { ariaSnapshot: settled.ariaSnapshot } : {}) },
     )
-    const notes = evidence.note !== undefined ? [evidence.note] : []
+    const notes: string[] = []
+    // Two reads disagreed: the page really was still changing, and what
+    // follows is one moment of a moving page, which the reader must not take
+    // for the page the step produced. A page that could not be read at all says
+    // nothing about movement, so it gets no such note. (A failed step's own
+    // timeout usually waited out the change already; this fires most on a
+    // passed step's short settle.)
+    if (!settled.settled && !settled.unreadable) notes.push("The page was still changing when its evidence was taken.")
+    if (evidence.note !== undefined) notes.push(evidence.note)
     let screenshotArtifactId: string | undefined
     if (evidence.screenshot !== undefined && this.deps.saveArtifact !== undefined) {
       try {
@@ -2864,8 +2882,9 @@ export class WorkflowExecutor {
     outputMapping: Record<string, string>,
     cancelSignal?: AbortSignal,
   ): Promise<NodeResult> {
-    const inputVariables = this.resolveInputVariables(inputMapping)
-    const { output, runId } = await this.runChildIteration(targetWorkflowId, target, inputVariables, cancelSignal)
+    const input = this.resolveInputVariables(inputMapping)
+    if ("error" in input) return { status: "error", error: input.error }
+    const { output, runId } = await this.runChildIteration(targetWorkflowId, target, input.variables, cancelSignal)
     const childOutput = output
 
     for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
@@ -2983,6 +3002,7 @@ export class WorkflowExecutor {
     // The input mapping is resolved once in the caller's context: it does not
     // depend on the item, which arrives through the item/index variables.
     const baseInput = this.resolveInputVariables(inputMapping)
+    if ("error" in baseInput) return { status: "error", error: baseInput.error }
 
     const outcomes: ForEachIterationOutcome[] = []
     let cancelled = false
@@ -2995,7 +3015,7 @@ export class WorkflowExecutor {
         nextIndex += 1
         if (index >= capped.length) return
 
-        const inputVariables = { ...baseInput }
+        const inputVariables = { ...baseInput.variables }
         if (forEach.itemVariable) inputVariables[forEach.itemVariable] = capped[index]
         if (forEach.indexVariable) inputVariables[forEach.indexVariable] = index
 
@@ -3139,13 +3159,30 @@ export class WorkflowExecutor {
    * here so a secret value is never downgraded into a plain child variable
    * when the child can already reach it directly and more safely via
    * {{secrets.*}}.
+   *
+   * A placeholder that does not resolve in the caller fails the call here,
+   * naming the key: passed on as literal text it only failed later, inside
+   * the child, as if the mapping had never arrived. A value that is exactly
+   * one placeholder passes the raw value, so an object, array, number or
+   * boolean keeps its type; a mixed template is text.
    */
-  private resolveInputVariables(inputMapping: Record<string, string>): Record<string, unknown> {
+  private resolveInputVariables(
+    inputMapping: Record<string, string>,
+  ): { readonly variables: Record<string, unknown> } | { readonly error: string } {
     const inputVariables: Record<string, unknown> = {}
     for (const [targetVarName, sourceExpr] of Object.entries(inputMapping)) {
-      inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
+      let unresolved: string | undefined
+      const text = sourceExpr.replace(PLACEHOLDER_RE, (placeholder) => {
+        const value = this.substituteVariables(placeholder, { allowSecrets: false })
+        if (value === placeholder) unresolved ??= placeholder
+        return value
+      })
+      if (unresolved !== undefined) return { error: `inputMapping.${targetVarName}: ${unresolved} is not set in the caller` }
+      const single = /^\{\{([^}]+)\}\}$/.exec(sourceExpr.trim())
+      const raw = single ? this.resolvePlaceholderValue(single[1]!.trim()) : undefined
+      inputVariables[targetVarName] = raw ?? text
     }
-    return inputVariables
+    return { variables: inputVariables }
   }
 
   /**
@@ -3185,48 +3222,37 @@ export class WorkflowExecutor {
   private resolvePlaceholderValue(varPath: string): unknown {
     const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
     if (scope) return this.readScopedValue(scope[1]!, scope[2]!)
-    const firstPart = varPath.split(".")[0]!
-    const nodeResult = this.results.get(firstPart)
-    return nodeResult ? this.readRawPath(nodeResult, varPath.split(".").slice(1)) : undefined
-  }
-
-  /** Walk a scope map (`env`, `variables`, `data`) by dotted path, returning the raw value. */
-  private readScopedValue(scopeName: string, path: string): unknown {
-    const name = path.split(".")[0]!
-    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
-      throw new Error(`${RERUN_REFUSED} {{variables.${name}}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
+    if (varPath.startsWith("prev")) {
+      const entry = this.prevEntry(varPath)
+      if (entry === undefined) return undefined
+      const value = readDotPath(entry.result, entry.path)
+      this.refuseUnreadableSeed(entry.nodeId, entry.result, `{{${varPath}}}`, isMasked(value))
+      return value
     }
-    let value: unknown =
-      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
-    for (const part of path.split(".")) {
-      if (typeof value !== "object" || value === null) return undefined
-      value = (value as Record<string, unknown>)[part]
-    }
+    const { nodeId, path } = splitNodePath(varPath)
+    const nodeResult = this.results.get(nodeId)
+    if (nodeResult === undefined) return undefined
+    const value = readDotPath(nodeResult, path)
+    this.refuseUnreadableSeed(nodeId, nodeResult, `{{${varPath}}}`, isMasked(value))
     return value
   }
 
-  /** Walk an object/array by dotted path, returning the raw value (not stringified). */
-  private readRawPath(value: unknown, pathParts: readonly string[]): unknown {
-    let current: unknown = value
-    for (const part of pathParts) {
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        const index = Number.parseInt(arrayMatch[2]!, 10)
-        if (typeof current === "object" && current !== null && key in current) {
-          current = (current as Record<string, unknown>)[key]
-          if (Array.isArray(current) && index >= 0 && index < current.length) current = current[index]
-          else return undefined
-        } else {
-          return undefined
-        }
-      } else if (typeof current === "object" && current !== null) {
-        current = (current as Record<string, unknown>)[part]
-      } else {
-        return undefined
-      }
+  /**
+   * The raw value `path` (`case.title`, `items[0].id`) addresses in a scope
+   * map (`env`, `variables`, `data`), or undefined. A variable masked in a
+   * rerun's source run and not set since is refused, not read.
+   */
+  private readScopedValue(scopeName: string, path: string): unknown {
+    const name = /^[^.[]*/.exec(path)![0]
+    // An empty path (`{{variables.}}`) or a path with no root name
+    // (`{{variables.[0]}}`) names no value: read as written rather than
+    // handing back the whole scope.
+    if (name === "") return undefined
+    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
+      throw new Error(`${RERUN_REFUSED} {{variables.${name}}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
     }
-    return current
+    const root = scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
+    return readDotPath(root, path)
   }
 
   /**
@@ -3323,14 +3349,17 @@ export class WorkflowExecutor {
 
       // Environment variables, workflow variables, the iteration's data row
       const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
-      if (scope) return this.resolveScopedPlaceholder(scope[1]!, scope[2]!, match)
+      if (scope) {
+        const value = this.readScopedValue(scope[1]!, scope[2]!)
+        return value !== undefined && value !== null ? placeholderText(value) : match
+      }
 
       if (varPath.startsWith("prev")) return this.resolvePrevPlaceholder(varPath, match)
 
       // Direct node ID access
-      const firstPart = varPath.split(".")[0]!
-      const nodeResult = this.results.get(firstPart)
-      return nodeResult ? this.readResult(firstPart, nodeResult, varPath.split(".").slice(1), match) : match
+      const { nodeId, path } = splitNodePath(varPath)
+      const nodeResult = this.results.get(nodeId)
+      return nodeResult ? this.readResult(nodeId, nodeResult, path, match) : match
     }
 
     return options.json ? substituteJsonTemplate(text, resolve) : text.replace(PLACEHOLDER_RE, resolve)
@@ -3351,34 +3380,47 @@ export class WorkflowExecutor {
     return String(func(...paramList))
   }
 
-  /** `{{env.…}}`, `{{variables.…}}` or `{{data.…}}`: `path` walked from the named scope. */
-  private resolveScopedPlaceholder(scopeName: string, path: string, match: string): string {
-    const name = path.split(".")[0]!
-    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
-      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
-    }
-    let value: unknown =
-      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
-    for (const part of path.split(".")) {
-      if (typeof value !== "object" || value === null) return match
-      value = (value as Record<string, unknown>)[part]
-    }
-    return value !== undefined && value !== null ? placeholderText(value) : match
-  }
-
-  /** `{{prev.…}}` reads the last result (a rerun entry's own predecessor); `{{prev[i].…}}` the i-th of the merged branches, else of all results. */
-  private resolvePrevPlaceholder(varPath: string, match: string): string {
+  /**
+   * The result and path a `{{prev.…}}` placeholder addresses: the last result
+   * (a rerun entry's own predecessor), or `{{prev[i].…}}` the i-th of the
+   * merged branches, else of all results. Shared by the text resolver and the
+   * raw-value resolver so both read the same entry.
+   */
+  private prevEntry(varPath: string): { readonly nodeId: string; readonly result: NodeResult; readonly path: string } | undefined {
     const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
     if (indexMatch) {
       const branchIndex = Number.parseInt(indexMatch[1]!, 10)
       const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
       const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
-      return entry ? this.readResult(entry[0], entry[1], indexMatch[2]!.split("."), match) : match
+      return entry ? { nodeId: entry[0], result: entry[1], path: indexMatch[2]! } : undefined
     }
-
+    const path = varPath.slice(5)
+    if (path === "") return undefined
     const entryPrev = this.entryPrev.getStore()
     const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
-    return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
+    return last ? { nodeId: last[0], result: last[1], path } : undefined
+  }
+
+  /** `{{prev.…}}` as text, refusing a value the source run masked. */
+  private resolvePrevPlaceholder(varPath: string, match: string): string {
+    const entry = this.prevEntry(varPath)
+    return entry ? this.readResult(entry.nodeId, entry.result, entry.path, match) : match
+  }
+
+  /**
+   * Refuse a value read from a node whose result was seeded from a rerun's
+   * source run when that stored copy cannot stand in for the live one: a
+   * response too large to store whole, or text the masker wrote. Shared by the
+   * text reader and the raw-value reader.
+   */
+  private refuseUnreadableSeed(nodeId: string, result: NodeResult, expression: string, masked: boolean): void {
+    if (!this.seededNodeIds.has(nodeId)) return
+    if (result.response?.truncated === true) {
+      throw new Error(`${RERUN_REFUSED} ${expression} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
+    }
+    if (masked) {
+      throw new Error(`${RERUN_REFUSED} ${expression} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
+    }
   }
 
   /**
@@ -3386,42 +3428,11 @@ export class WorkflowExecutor {
    * the stored copy, so a value that was masked or cut short there is refused
    * rather than sent as `<SECRET>` or as half a body.
    */
-  private readResult(nodeId: string, result: NodeResult, pathParts: string[], match: string): string {
-    const text = this.resolveDottedPath(result, pathParts, match)
-    if (!this.seededNodeIds.has(nodeId)) return text
-    if (result.response?.truncated === true) {
-      throw new Error(`${RERUN_REFUSED} ${match} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
-    }
-    if (text.includes(SECRET_PLACEHOLDER)) {
-      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
-    }
+  private readResult(nodeId: string, result: NodeResult, path: string, match: string): string {
+    const value = readDotPath(result, path)
+    const text = value !== undefined && value !== null ? placeholderText(value) : match
+    this.refuseUnreadableSeed(nodeId, result, match, text.includes(SECRET_PLACEHOLDER))
     return text
-  }
-
-  private resolveDottedPath(value: unknown, pathParts: string[], fallback: string): string {
-    let current: unknown = value
-    for (const part of pathParts) {
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        const index = Number.parseInt(arrayMatch[2]!, 10)
-        if (typeof current === "object" && current !== null && key in current) {
-          current = (current as Record<string, unknown>)[key]
-          if (Array.isArray(current) && index >= 0 && index < current.length) {
-            current = current[index]
-          } else {
-            return fallback
-          }
-        } else {
-          return fallback
-        }
-      } else if (typeof current === "object" && current !== null) {
-        current = (current as Record<string, unknown>)[part]
-      } else {
-        return fallback
-      }
-    }
-    return current !== undefined && current !== null ? placeholderText(current) : fallback
   }
 
   // -------------------- Extraction --------------------
@@ -3472,35 +3483,9 @@ export class WorkflowExecutor {
     return resolution.failureReason === null ? resolution.value : undefined
   }
 
+  /** `path` read from `obj`; an empty path or a missing object reads undefined. */
   private getNestedValue(obj: unknown, path: string): unknown {
-    if (!obj || !path) return undefined
-    const parts = path.split(".")
-    let value: unknown = obj
-    for (let index = 0; index < parts.length; index++) {
-      const part = parts[index]!
-      const arrayMatch = part.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)\]$/)
-      if (arrayMatch) {
-        const key = arrayMatch[1]!
-        const index = Number.parseInt(arrayMatch[2]!, 10)
-        if (typeof value === "object" && value !== null && key in value) {
-          value = (value as Record<string, unknown>)[key]
-          if (Array.isArray(value) && index >= 0 && index < value.length) {
-            value = value[index]
-          } else {
-            return undefined
-          }
-        } else {
-          return undefined
-        }
-      } else if (typeof value === "object" && value !== null) {
-        value = (value as Record<string, unknown>)[part]
-      } else {
-        return undefined
-      }
-      if (value === undefined) return undefined
-      if (value === null && index < parts.length - 1) return undefined
-    }
-    return value
+    return !obj || !path ? undefined : readDotPath(obj, path)
   }
 
   // -------------------- Key-value field normalization --------------------

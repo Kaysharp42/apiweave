@@ -49,18 +49,22 @@ follows edges; nothing runs unless an edge leads to it.
    \`workflows_nodeSchema\` for one node type's config fields.
 3. **Write one branch end to end** with \`workflows_create\` or
    \`workflows_patch\`, then copy it. Patch by id with \`expectedRevision\` from
-   the rev you read; a conflict means re-read and recompute. Insert a node and
-   rewire it in one patch: new node, old edge removals, replacement edges.
+   the rev you read; a conflict means re-read and recompute. \`workflows_create\`
+   takes \`collectionId\` (a project, listed under Projects; without it the
+   workflow is under Workflows). Tell the user the workspace and project names.
 4. **Read the write's \`diagnosis\`.** Fix every \`error\` first
    (\`apiweave://guide/diagnostics\`); \`status: "unavailable"\` means saved but
    unchecked, never clean. A validation error's path names the node's index.
 5. **Only then \`runs_create\`.** It sends real HTTP; everything above is free.
-   A wait timeout returns the runId for \`runs_wait\` and never cancels the run.
+   \`terminal: false\` (a timeout, a long browser run) means call \`runs_wait\`
+   with the runId again until it is true; it never cancels. Two runs signing in
+   with the same account can end each other's session: wait for one to finish
+   before starting another that shares its login.
    A run using stored secrets waits for the user's approval;
    \`deniedByUser: true\` means they refused — say so, do not retry.
-   A load run is not an agent tool: ask the user for Run options → Load
-   run… in the app, or the CLI \`apiweave run <path> --workflow <name>
-   --concurrency 20 --iteration-count 200 --threshold "p95<500"\`.
+   A load run is not an agent tool: ask the user for Run options → Load run…,
+   or the CLI \`apiweave run <path> --workflow <name> --concurrency 20
+   --iteration-count 200 --threshold "p95<500"\`.
    Before writing a browser step, read the page with \`browser_inspect\`.
 6. **Debug** with \`workflows_debugContext\` (one bounded call: failed nodes,
    diagnosis, configs, placeholders, error previews), then
@@ -69,9 +73,8 @@ follows edges; nothing runs unless an edge leads to it.
 7. **Assertions.** After a run, \`assertion_suggest\` derives rules with
    verified paths from a real response; \`assertion_apply\` writes them.
 
-If the repository has a \`graphify-out/\` folder, use
-\`graphify query "<route or handler>"\` for the code under test instead of
-grepping (graphify for the code, the tools above for the workflows).
+With a \`graphify-out/\` folder, use \`graphify query "<route or handler>"\` for
+the code under test instead of grepping; the tools above are for workflows.
 
 ## Minimal working graph
 
@@ -116,7 +119,9 @@ Every node is \`{ nodeId, type, config?, label?, position? }\`. \`label\` is the
 name the canvas shows — set it on every node you add; a browser node without
 one is named after its action. \`position\` is
 canvas layout only — execution order comes from the edges, never from position
-or array order. The write tools advertise \`config\` as an open object:
+or array order. \`description\`, \`position\`, \`label\` and \`parentId\` are node
+fields, never keys of \`config\` (only browser steps have a \`description\`).
+The write tools advertise \`config\` as an open object:
 \`workflows_nodeSchema\` returns one type's config fields as JSON Schema, and a
 rejected config names its node's list index and field in the error path.
 
@@ -132,7 +137,7 @@ rejected config names its node's list index and field in the error path.
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
-| \`workflow\` | runs another workflow in this workspace inline | 1 in, 1 out |
+| \`workflow\` | runs another workflow in this workspace as a child run | 1 in, 1 out |
 
 ### http-request
 
@@ -274,7 +279,13 @@ assertion are fine). A Call Workflow child shares the page.
 then \`testId\`, then \`placeholder\`/\`text\`/\`alt\`/\`title\`; \`css\` last, and
 never \`kind: "selector"\` (recorder output); either, or \`css\` picked by \`nth\`,
 raises an analyzer notice.
-Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`.
+Narrow with \`hasText\`, \`nth\`, \`within\` and \`frame\`. A role \`name\` matches
+as a substring: in stacked overlays use \`exact: true\` plus \`nth: -1\`, or a
+\`css\` locator on the element's \`name\`/\`id\`, since \`nth\` order shifts when
+elements hide. A popover can close between steps (blur, outside click), so act
+on it right after opening it. A visually hidden radio or checkbox cannot be
+clicked: click its label or \`press\` Space. A custom select wrapper is not a
+native \`<select>\`: after \`select\`, \`expect-text\` the visible control.
 
 \`{{secrets.NAME}}\` is allowed **only in a fill's value**, and a password is
 always that reference, never a literal; \`{{env.*}}\` for the URL and the test
@@ -286,8 +297,11 @@ workflow headless and returns the page it ends on — URL, title and the masked
 ARIA snapshot — which is where the next step starts. The snapshot is scoped
 (\`scope\`, default \`"auto"\`): the open dialog when the page has one, else the
 main landmark, else the whole page — the part a locator lives in, not the
-banner and navigation that open every snapshot. \`maxBytes\`/\`start\`/\`end\`
-window the scoped text; the response's \`scope\` and \`totalBytes\` say what was
+banner and navigation that open every snapshot. When the applied scope left
+content out — another dialog, or anything outside the main landmark — the
+response's \`scopeNote\` says so; \`scope: "page"\` shows the whole page.
+\`maxBytes\`/\`start\`/\`end\` window the scoped text; the response's \`scope\` and
+\`totalBytes\` say what was
 extracted and how big it is, so you can window it. Take that step's locator
 from the snapshot, the tree Playwright's own recorder picks locators from:
 \`button "Sign in"\` is \`{"kind": "role", "role": "button", "name": "Sign in"}\`,
@@ -301,18 +315,33 @@ browser step had run: add a \`navigate\` first (there is no \`url\` mode).
 Its wait is bounded (\`waitMs\`, default 10000, max 30000): \`terminal: false\`
 means the run has not finished, possibly waiting for the user's approval —
 pass that \`runId\` back to keep waiting, which starts no new run and asks for
-no second approval. \`deniedByUser: true\` means they refused or did not answer
-— say so, do not retry. A timeout or disconnect never cancels the run (only
-\`runs_cancel\` does).
+no second approval. \`deniedByUser: true\`: say so, do not retry. Only
+\`runs_cancel\` cancels a run.
 
 **Read a finished run's page.** Every executed browser step — passed or failed —
 stores its URL, title, masked ARIA snapshot and a screenshot, readable without a
 rerun: \`runs_getNodeResult\` with \`nodeIds: [<step>]\` and \`sections: ["browser"]\`
-(+ \`screenshot: true\`). The snapshot there carries the same \`scope\` default
-and the same \`maxBytes\`/\`start\`/\`end\` windowing over the scoped text. For the
-page *before* step X, read the step before X. Prefer that stored evidence; use
+(+ \`screenshot: true\`), with the same \`scope\` and \`maxBytes\`/\`start\`/\`end\`
+as \`browser_inspect\`. For the page *before* step X, read the step before X. Prefer that stored evidence; use
 \`browser_inspect\` only when the page must be re-observed after the workflow
 changed, because it replays every earlier node for real.
+
+**A click is not the change it starts.** A click that kicks off a slow request
+is done the moment the click lands, while the page is still moving: such a step
+passes and its evidence carries \`evidenceNote: "The page was still changing
+when its evidence was taken."\`. Do not read that page at once and call the
+click a no-op — follow it with \`expect-visible\` on the element the change
+produces (the saved row, the confirmation) and a generous \`timeoutMs\`, and
+assert there. A save the application refuses shows a message while the click
+still passes: assert the page it shows after a successful save (URL, heading),
+never the click.
+
+**\`browser_inspect\` replays side effects.** A page cannot be seeded from an
+earlier run, so every inspection runs the browser chain from its first step
+again: a step that submits, deletes or pays does so on every call. When a
+finished run already shows the page you want, read the side-effecting step's
+own stored evidence (above) instead of inspecting again; \`beforeNodeId\` stops
+*before* a named step, but the steps before it still run for real.
 
 **Repair.** A browser step's evidence is in \`workflows_debugContext\`, or in
 \`runs_getNodeResult\` with \`sections: ["browser"]\`: \`expected\` vs \`actual\`,
@@ -388,14 +417,22 @@ specific branch by index: \`{{prev[0].response.body.id}}\`.
 }
 \`\`\`
 
-Runs inline inside the current run — no separate run history entry. The
-sub-workflow shares the environment and secrets, so only \`variables\` need
-mapping. \`inputMapping\` maps a target variable name to an expression resolved in
-the **caller's** context; \`outputMapping\` maps a caller variable name to a
-sub-workflow variable name. A \`{{secrets.NAME}}\` on the right-hand side of an
-input mapping is rejected — let the sub-workflow read the secret itself. The
-target must live in the same workspace and cannot be the calling workflow.
-Recursion is capped at 8 levels.
+Each call runs the target as its own child run, listed in the callee's run
+history; the node's \`call\` evidence names it (\`runId\`). Variables are
+isolated both ways: the child sees only its own stored variables plus the
+mapped inputs (and, under \`forEach\`, the item and index); the caller gets back
+only the \`outputMapping\` keys — nothing else the child sets. Environment and
+secrets are shared. \`inputMapping\` maps a target variable name to an
+expression resolved in the **caller's** context: a value that is exactly one
+placeholder (\`{{variables.record}}\`) passes the raw value, so an object,
+array, number or boolean keeps its type and the child reads
+\`{{variables.record.title}}\`; a mixed template (\`"id-{{variables.n}}"\`)
+becomes text. A placeholder not set in the caller fails the call node
+(\`inputMapping.<key>: {{…}} is not set in the caller\`). \`outputMapping\` maps a
+caller variable name to a child variable name. A \`{{secrets.NAME}}\` on the
+right-hand side of an input mapping is rejected — let the child read the
+secret itself. The target must live in the same workspace and cannot be the
+calling workflow. Recursion is capped at 8 levels.
 
 \`forEach\` runs the target once per element instead of once:
 
@@ -432,10 +469,6 @@ mid-run. This is the single most common authoring mistake, and
 \`workflow_diagnose\` reports it as \`assertion_branch_handle_invalid\` — an error
 you can see before running anything.
 
-That rule constrains which handle an edge that *exists* must use — it does not
-require an edge on *every* handle. Leaving \`fail\` unconnected is normal: the run
-still records the failed assertion and stops that branch there.
-
 Except for stream nodes — SSE, WebSocket and a server-streaming gRPC call
 (\`callType: "server-streaming"\`), whose edges use \`ready\`/\`complete\` — and
 visual \`group\`/\`note\` nodes (no handles), all other node types have one output;
@@ -465,6 +498,15 @@ description and tags:
 compare-and-swap: if someone edited the workflow meanwhile you get a conflict
 instead of silently clobbering their change. Removing a node also removes the
 edges attached to it.
+
+An \`edgeId\` is the edge's identity, not a label: a **new** connection needs a new
+\`edgeId\`, and reusing one replaces that edge, including its source and target.
+Two edges joining the same two nodes through the same handles are refused — the
+run would follow both and execute the target twice.
+
+A single chain — including one chain of browser steps — has one edge fewer than
+it has nodes. After removing nodes, read the outline back and confirm the chain
+is still joined end to end.
 
 ### Insert a node and rewire in one patch
 
@@ -543,9 +585,25 @@ either the workflow's \`variables\` map or an upstream node's \`extractors\`:
 
 then downstream: \`{ "key": "Authorization", "value": "Bearer {{variables.token}}" }\`.
 
-\`workflow_diagnose\` reports a \`{{variables.x}}\` with no producer as
-\`variable_source_missing\`, and a producer that is not actually upstream of its
-consumer as \`variable_producer_not_upstream\`.
+A path walks into an object or array value, with \`[n]\` for array indexes — the
+same grammar in \`variables.*\`, \`env.*\` and \`data.*\`:
+
+\`\`\`text
+{{variables.case.title}}
+{{variables.ids[0]}}
+{{variables.cars[0].brand}}
+\`\`\`
+
+An index past the end does not resolve. Nested arrays (\`[0][1]\`) are not
+addressable.
+
+\`workflow_diagnose\` reports a \`{{variables.x}}\` (or \`{{variables.x.y}}\`)
+with no producer as \`variable_source_missing\`, and a producer that is not
+actually upstream of its consumer as \`variable_producer_not_upstream\`.
+Producers are extractors, browser \`extract\` steps, a Call Workflow's
+\`outputMapping\` and a script's \`aw.variables.set("x", …)\` (literal name
+only). In a workflow other workflows call, their \`inputMapping\` keys and
+\`forEach\` item and index variables count as set.
 
 ## Dynamic functions
 
@@ -718,6 +776,7 @@ Clear every \`error\` before running.
 | \`missing_start_node\` / \`duplicate_start_node\` | a workflow needs exactly one \`start\` |
 | \`missing_end_node\` | a workflow needs at least one \`end\`; separate terminal paths may use separate end nodes |
 | \`duplicate_node_id\` / \`duplicate_edge_id\` | ids must be unique |
+| \`duplicate_edge\` | two edges join the same nodes through the same handles, so the run follows both and executes the target once per duplicate — remove one; a different \`sourceHandle\` (an assertion's pass/fail) or \`targetHandle\` (a merge input) is a different connection, not a duplicate |
 | \`dangling_edge\` | an edge references a nodeId that does not exist |
 | \`edge_source_handle_ignored\` | an edge from a single-output node sets a \`sourceHandle\`; the canvas does not draw it (a run still follows it) — warning |
 | \`stream_edge_handle_invalid\` | an edge from an SSE, WebSocket or server-streaming gRPC node does not use \`ready\` or \`complete\`. The run never follows it, so the branch never runs. |
@@ -824,8 +883,8 @@ usually omit it — patch only touches the nodes you name.
 
 Runs are metadata only: status, timing, aggregate counts and failed-node
 detail with the *type* and *state* of actual values but never the values
-themselves. No response bodies, headers, cookies, URLs or variable values
-cross this bridge on any run tool except three. \`runs_getNodeResult\` returns
+themselves. No response bodies, headers, cookies or URLs cross this bridge
+on any run tool except three. \`runs_getNodeResult\` returns
 bounded evidence for up to 50 nodes of a run — selected sections, an
 extractor-grammar path into the response record (body, headers, fault,
 trailers), capped text previews with explicit truncation accounting, a Call
@@ -839,10 +898,20 @@ masked ARIA snapshot. \`browser_inspect\` returns the page its run left open —
 URL, title and masked ARIA snapshot — and with \`screenshot: true\` the
 viewport JPEG, painted over the same way. All three run the same
 secret-redaction pass every other read gets, and bodies travel as previews,
-never whole. One exception in the run summaries themselves: a failed browser
+never whole. A URL in run evidence is kept as the run visited or sent it —
+path, query and fragment — losing only embedded userinfo, so a filter reads as
+it was; a value the run resolved from a secret reads \`<SECRET>\`, but one a
+server put in an address (a sign-in code, a signed link) is stored as it was.
+One exception in the run summaries themselves: a failed browser
 step in \`runs_create\`, \`runs_wait\` or \`runs_get\` carries its action, page URL
 and title and the runner's own failure message, plus a \`nextRead\` pointing at
-its evidence. Everything else about runs stays metadata-only; to see other
+its evidence. A second, opt-in: \`runs_get\` with \`variables: true\` also
+returns the run's stored variables — the final set once it has finished
+(\`outputMapping\`, \`aw.variables.set\` and extractor values; a Call Workflow
+child run's own variables read the same way by its runId) — held to 8 KiB,
+with entries that did not fit named in \`omittedVariableNames\`. They were
+masked before storage, so a value the run resolved from a secret reads
+\`<SECRET>\`. Everything else about runs stays metadata-only; to see other
 payloads, open the run in the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response
@@ -888,8 +957,8 @@ Focused context, cheapest first: \`workflows_search\` (summaries, never graphs;
 then nodes -> \`workflows_debugContext\` for a failure (one bounded call) ->
 \`runs_getNodeResult\` for evidence slices; \`browser_inspect\` returns the page
 a browser step left open, before you write the next step.
-Read ${GUIDE_URI_PREFIX}start-here before building or editing;
-\`server_info\` lists the other guides.`
+Read ${GUIDE_URI_PREFIX}start-here before building or editing (\`guides_get\` if
+your client cannot read resources); \`server_info\` lists the other guides.`
 
 export const MCP_GUIDES: readonly McpGuide[] = [
   {

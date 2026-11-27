@@ -221,7 +221,8 @@ loaded from the network.
 A report is built from the stored run, after secret values have been masked.
 Because it is a file meant to leave the app, it goes further than run history:
 it carries no request or response headers or bodies and no variables, and URLs
-keep only their path (the query string reads `<REDACTED>`). Open the run in
+keep only their origin and path (a query string or fragment reads `<REDACTED>`,
+though run history keeps the address whole). Open the run in
 APIWeave for the full evidence.
 
 ## 6. Rerun from a node, or rerun failed branches

@@ -5,6 +5,7 @@ import {
   isValidJsonPath,
   isXPath,
   isValidXPath,
+  readDotPath,
   resolveExtractorPath,
 } from "../extractors/extractorPath"
 
@@ -272,5 +273,26 @@ describe("resolveExtractorPath XPath", () => {
   test("keeps the dot and JSONPath grammars intact", () => {
     expect(resolveExtractorPath(soapResult, "response.statusCode")).toEqual({ value: 200, failureReason: null })
     expect(resolveExtractorPath(soapResult, "$.response.statusCode")).toEqual({ value: 200, failureReason: null })
+  })
+})
+
+describe("readDotPath", () => {
+  const value = { arr: ["a", "b"], cars: [{ brand: "Northwind" }], a: { b: [{ c: 1 }, { c: 2 }] }, nothing: null }
+
+  test("walks keys and [n] indexes, the grammar every placeholder uses", () => {
+    expect(readDotPath(value, "arr[0]")).toBe("a")
+    expect(readDotPath(value, "cars[0].brand")).toBe("Northwind")
+    expect(readDotPath(value, "a.b[1].c")).toBe(2)
+    expect(readDotPath(value, "arr.1")).toBe("b")
+    expect(readDotPath(value, "nothing")).toBeNull()
+    expect(readDotPath(value, "")).toBe(value)
+  })
+
+  test("reads undefined for a path that does not resolve", () => {
+    expect(readDotPath(value, "arr[2]")).toBeUndefined()
+    expect(readDotPath(value, "missing.x")).toBeUndefined()
+    expect(readDotPath(value, "nothing.x")).toBeUndefined()
+    expect(readDotPath(value, "cars.brand[0]")).toBeUndefined()
+    expect(readDotPath(undefined, "x")).toBeUndefined()
   })
 })

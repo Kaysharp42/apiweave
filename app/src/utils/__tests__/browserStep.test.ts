@@ -15,6 +15,8 @@ describe("browser step draft", () => {
     { action: "expect-visible", locator: role, visible: false },
     { action: "expect-text", locator: { kind: "role", role: "heading" }, text: "Welcome", match: "equals", timeoutMs: 5000 },
     { action: "expect-url", url: "/dashboard", match: "contains" },
+    { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "abc" },
+    { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "ab", match: "contains" },
     { action: "extract", locator: { kind: "css", value: "a.order" }, from: "attribute", attribute: "data-id", variable: "orderId" },
     { action: "extract", from: "title", variable: "pageTitle", description: "Remember the title", continueOnFail: true },
   ])("round-trips %j unchanged", (config) => {
@@ -31,6 +33,12 @@ describe("browser step draft", () => {
   it("keeps the locator when the action changes, and stores only the new action's fields", () => {
     const draft = { ...draftFromConfig({ action: "click", locator: role, dialog: "accept" }), action: "fill" as const, value: "hello" };
     expect(configFromDraft(draft)).toEqual({ action: "fill", locator: role, value: "hello" });
+  });
+
+  it("compares a field value whole unless the step says otherwise", () => {
+    expect(draftFromConfig({ action: "expect-value", value: "x" }).match).toBe("equals");
+    expect(draftFromConfig({ action: "expect-text", text: "x" }).match).toBe("contains");
+    expect(browserStepSummary({ action: "expect-value", value: "x", match: "matches" }).operation).toBe("expect value matches");
   });
 
   it("starts a new step from defaults for a missing or unknown config", () => {

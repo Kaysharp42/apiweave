@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Crosshair, Globe, Settings } from "lucide-react";
 import { Input } from "../atoms/Input";
 import { Select } from "../atoms/Select";
@@ -13,6 +13,7 @@ import { BROWSER_ACTIONS } from "@shared/browser/browser_action_labels";
 import {
   actionNeedsLocator,
   configFromDraft,
+  defaultMatch,
   draftFromConfig,
   extractNeedsLocator,
 } from "../../utils/browserStep";
@@ -42,14 +43,36 @@ const EXTRACT_SOURCES: readonly { readonly value: BrowserStepDraft["from"]; read
   { value: "title", label: "the page title" },
 ];
 
-function MatchSelect({ value, onChange }: { value: BrowserStepDraft["match"]; onChange: (match: BrowserStepDraft["match"]) => void }) {
+/** A select over a fixed table of options; `onChange` only ever receives one of their values. */
+function OptionSelect<T extends string>({ options, value, onChange }: {
+  options: readonly { readonly value: T; readonly label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
   return (
     <Select value={value} onChange={(event) => {
-      const next = MATCH_OPTIONS.find((option) => option.value === event.target.value);
+      const next = options.find((option) => option.value === event.target.value);
       if (next) onChange(next.value);
     }}>
-      {MATCH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
     </Select>
+  );
+}
+
+/** An expect step's two fields: how to compare, then the expected text. */
+function ExpectFields({ subject, expectedLabel, hint, draft, update, children }: {
+  subject: string;
+  expectedLabel: string;
+  hint?: string | undefined;
+  draft: BrowserStepDraft;
+  update: (patch: Partial<BrowserStepDraft>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_1fr]">
+      <FormField label={subject}><OptionSelect options={MATCH_OPTIONS} value={draft.match} onChange={(match) => update({ match })} /></FormField>
+      <FormField label={expectedLabel} {...(hint !== undefined ? { hint } : {})}>{children}</FormField>
+    </div>
   );
 }
 
@@ -115,38 +138,27 @@ function ActionFields({ draft, update }: { draft: BrowserStepDraft; update: (pat
       return <Toggle label="Expect it to be hidden instead" checked={!draft.visible} onChange={(event) => update({ visible: !event.target.checked })} />;
     case "expect-text":
       return (
-        <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_1fr]">
-          <FormField label="The text"><MatchSelect value={draft.match} onChange={(match) => update({ match })} /></FormField>
-          <FormField label="Expected text" hint="Spaces and line breaks are compared loosely.">
-            <TemplateInput value={draft.text} onValueChange={(text) => update({ text })} placeholder="Welcome" />
-          </FormField>
-        </div>
+        <ExpectFields subject="The text" expectedLabel="Expected text" hint="Spaces and line breaks are compared loosely." draft={draft} update={update}>
+          <TemplateInput value={draft.text} onValueChange={(text) => update({ text })} placeholder="Welcome" />
+        </ExpectFields>
       );
     case "expect-value":
       return (
-        <FormField label="Expected value" hint="What the field holds, compared exactly.">
+        <ExpectFields subject="The value" expectedLabel="Expected value" hint="What the field holds." draft={draft} update={update}>
           <TemplateInput value={draft.value} onValueChange={(value) => update({ value })} />
-        </FormField>
+        </ExpectFields>
       );
     case "expect-url":
       return (
-        <div className="grid gap-4 md:grid-cols-[minmax(0,14rem)_1fr]">
-          <FormField label="The address"><MatchSelect value={draft.match} onChange={(match) => update({ match })} /></FormField>
-          <FormField label="Expected address">
-            <TemplateInput value={draft.url} onValueChange={(url) => update({ url })} placeholder="/dashboard" className="font-mono" />
-          </FormField>
-        </div>
+        <ExpectFields subject="The address" expectedLabel="Expected address" draft={draft} update={update}>
+          <TemplateInput value={draft.url} onValueChange={(url) => update({ url })} placeholder="/dashboard" className="font-mono" />
+        </ExpectFields>
       );
     case "extract":
       return (
         <div className="grid gap-4 md:grid-cols-2">
           <FormField label="Read">
-            <Select value={draft.from} onChange={(event) => {
-              const from = EXTRACT_SOURCES.find((source) => source.value === event.target.value);
-              if (from) update({ from: from.value });
-            }}>
-              {EXTRACT_SOURCES.map((source) => <option key={source.value} value={source.value}>{source.label}</option>)}
-            </Select>
+            <OptionSelect options={EXTRACT_SOURCES} value={draft.from} onChange={(from) => update({ from })} />
           </FormField>
           <FormField label="Into the variable" hint="Later steps read it as {{variables.NAME}}.">
             <Input value={draft.variable} onChange={(event) => update({ variable: event.target.value })} placeholder="orderId" className="font-mono" />
@@ -217,12 +229,7 @@ export function BrowserConfigPanel({ initialConfig, workingDataRef, activeTab }:
       <Card title="Step" icon={GlobeCardIcon}>
         <div className="space-y-4">
           <FormField label="What this step does">
-            <Select value={draft.action} onChange={(event) => {
-              const action = BROWSER_ACTIONS.find((entry) => entry.value === event.target.value);
-              if (action) update({ action: action.value });
-            }}>
-              {BROWSER_ACTIONS.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
-            </Select>
+            <OptionSelect options={BROWSER_ACTIONS} value={draft.action} onChange={(action) => update({ action, match: defaultMatch(action) })} />
           </FormField>
           <ActionFields draft={draft} update={update} />
         </div>

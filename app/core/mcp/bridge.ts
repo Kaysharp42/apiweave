@@ -13,7 +13,7 @@ import {
 import type { IpcRouter } from "../ipc/router"
 import { RUN_WAIT_DEFAULT_MS } from "../services/read_budgets"
 import { RunArtifactSchema } from "@shared/zod-schemas/RunArtifactSchema"
-import { projectRunToolResult } from "./run-projection"
+import { projectRunToolResult, type RunToolReadOptions } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
 import { encodeMcpResult } from "./result-encoding"
 import {
@@ -265,7 +265,7 @@ async function dispatchAsTool(
         structuredContent: response,
       }
     }
-    const { data, image } = withoutImage(spec, projectResult(spec, result.data))
+    const { data, image } = withoutImage(spec, projectResult(spec, result.data, payload))
     const text = encodeMcpResult(data)
     if (spec.domain === "workflows" && spec.action === "get" && payload["view"] === "full" && Buffer.byteLength(text) > WORKFLOW_FULL_VIEW_MAX_BYTES) {
       const error = projectMcpError(
@@ -313,10 +313,10 @@ function withoutImage(spec: McpToolSpec, data: unknown): { data: unknown; image?
   return image.success ? { data: rest, image: image.data } : { data: rest }
 }
 
-function projectResult(spec: McpToolSpec, data: unknown): unknown {
+function projectResult(spec: McpToolSpec, data: unknown, payload: Record<string, unknown>): unknown {
   switch (spec.resultProjection) {
     case "run":
-      return projectRunToolResult(data)
+      return projectRunToolResult(data, runToolReadOptions(spec, payload))
     case "workflowSearch":
       return projectWorkflowSearchPage(data)
     case "runHistory":
@@ -324,6 +324,18 @@ function projectResult(spec: McpToolSpec, data: unknown): unknown {
     default:
       return data
   }
+}
+
+/**
+ * The MCP-only options a run projection honours. `runs_get`'s `variables`
+ * opt-in is one: the flag changes what the projection carries, not what the
+ * shared handler returns, so it is read here from the tool payload — the one
+ * place that knows a call came from an agent.
+ */
+function runToolReadOptions(spec: McpToolSpec, payload: Record<string, unknown>): RunToolReadOptions {
+  return spec.domain === "runs" && spec.action === "get" && payload["variables"] === true
+    ? { variables: true }
+    : {}
 }
 
 /**

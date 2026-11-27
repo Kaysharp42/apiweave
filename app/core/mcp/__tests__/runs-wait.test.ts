@@ -734,3 +734,140 @@ describe("H10 — an agent's run that would send secrets needs the user's approv
     expect(run.error).not.toContain("not allowed to send secrets")
   })
 })
+
+describe("FB-019 — runs_get opt-in returns a run's final variables, masked", () => {
+  // The post-response script only runs against a real response, so a tiny
+  // local server echoes one back; it never sees or names anything real.
+  async function startEchoServer(): Promise<{ port: number; close: () => void }> {
+    const { createServer } = await import("node:http")
+    const server = createServer((_req, res) => {
+      res.setHeader("content-type", "application/json")
+      res.end(JSON.stringify({ name: "Rex" }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    return { port: (server.address() as { port: number }).port, close: () => server.close() }
+  }
+
+  it("returns script-set and extractor values, with a secret copied into a variable masked", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const echo = await startEchoServer()
+    const workflowId = workflowRepository.create({
+      workspaceId: workspace.workspaceId,
+      name: "final-variables-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "call",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: {
+            method: "GET",
+            url: `http://127.0.0.1:${echo.port}/pets`,
+            headers: [{ key: "X-Key", value: "{{secrets.API_KEY}}" }],
+            extractors: { petName: "body.name" },
+            scripts: { postResponse: 'aw.variables.set("note", "kept")\naw.variables.set("leaked", aw.secrets.get("API_KEY"))' },
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+      ] as never,
+      edges: [
+        { edgeId: "e1", source: "start", target: "call" },
+        { edgeId: "e2", source: "call", target: "end" },
+      ] as never,
+    }).workflowId
+
+    // Over plain IPC (no agent): the run resolves the stored secret without
+    // the approval gate, which is for agent-started runs only.
+    const run = await dispatchOk<{ runId: string; status: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId,
+      waitMs: 5000,
+    })
+    expect(run.status).toBe("completed")
+    echo.close()
+
+    const client = await connectClient()
+    const withoutOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId },
+    })
+    const plain = JSON.parse(textOf(withoutOptIn as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+    expect(plain).not.toHaveProperty("variables")
+
+    const withOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, variables: true },
+    })
+    const text = textOf(withOptIn as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      variables: { values: Record<string, unknown>; omittedVariableNames: string[]; budgetBytes: number; budgetLimitBytes: number }
+    }
+    // The script-set values and the extractor value arrive; the resolved
+    // secret the script copied into a variable was masked before storage.
+    expect(parsed.variables.values).toMatchObject({ note: "kept", petName: "Rex", leaked: "<SECRET>" })
+    expect(parsed.variables.omittedVariableNames).toEqual([])
+    expect(parsed.variables.budgetBytes).toBeLessThanOrEqual(parsed.variables.budgetLimitBytes)
+    expect(text).not.toContain("s3cr3t")
+    await client.close()
+  })
+
+  it("returns a caller's outputMapping values, and a child run's own variables by its runId", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const childId = workflowRepository.create({
+      workspaceId: workspace.workspaceId,
+      name: "child-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+      ] as never,
+      edges: [{ edgeId: "e1", source: "start", target: "end" }] as never,
+      variables: { issuedId: "sub-value" },
+    }).workflowId
+    const parentId = workflowRepository.create({
+      workspaceId: workspace.workspaceId,
+      name: "caller-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call1", type: "workflow", position: { x: 1, y: 0 }, config: { targetWorkflowId: childId, outputMapping: { callerId: "issuedId" } } },
+        { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+      ] as never,
+      edges: [
+        { edgeId: "e1", source: "start", target: "call1" },
+        { edgeId: "e2", source: "call1", target: "end" },
+      ] as never,
+    }).workflowId
+
+    const run = await dispatchOk<{ runId: string; status: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId: parentId,
+      waitMs: 5000,
+    })
+    expect(run.status).toBe("completed")
+    // The Call Workflow child is an ordinary run row; an agent reaches its
+    // runId through the call node's evidence.
+    const childRunId = runRepository.getById(run.runId)?.results.find((result) => result.nodeId === "call1")?.subWorkflow?.runId
+    expect(typeof childRunId).toBe("string")
+
+    const client = await connectClient()
+    const callerRead = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, variables: true },
+    })
+    const caller = JSON.parse(textOf(callerRead as { content: Array<{ type: string; text?: string }> })) as {
+      variables: { values: Record<string, unknown> }
+    }
+    expect(caller.variables.values).toMatchObject({ callerId: "sub-value" })
+
+    const childRead = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: childRunId as string, variables: true },
+    })
+    const child = JSON.parse(textOf(childRead as { content: Array<{ type: string; text?: string }> })) as {
+      variables: { values: Record<string, unknown> }
+    }
+    // The child's own final variables, not the caller's mapped view of them.
+    expect(child.variables.values).toMatchObject({ issuedId: "sub-value" })
+    expect(child.variables.values).not.toHaveProperty("callerId")
+    await client.close()
+  })
+})

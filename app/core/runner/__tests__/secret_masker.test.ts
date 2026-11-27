@@ -22,6 +22,22 @@ describe("createSecretMasker", () => {
     expect(mask('{"pw":"p@ss w\\"rd/1"}')).toBe('{"pw":"<SECRET>"}')
   })
 
+  it("masks the URL parser's own encoding, which leaves a slash in a query or path", () => {
+    const mask = createSecretMasker(["abc def/ghi"])
+    // `new URL` percent-encodes the space but keeps the slash, the one form
+    // none of the encoders above produce.
+    expect(mask("https://x.test/?q=abc%20def/ghi")).toBe("https://x.test/?q=<SECRET>")
+    expect(mask("https://x.test/abc%20def/ghi")).toBe("https://x.test/<SECRET>")
+  })
+
+  it("adds a URL form only when the parser kept the whole secret", () => {
+    // The query form stops at `#` and would be just "pass": masking that would
+    // rewrite every unrelated "passage" in stored text.
+    const mask = createSecretMasker(["pass#word123"])
+    expect(mask("passage pass#word123")).toBe("passage <SECRET>")
+    expect(mask("https://x.test/?q=pass%23word123")).toBe("https://x.test/?q=<SECRET>")
+  })
+
   it("masks a Basic credential whose decoded form contains a secret", () => {
     const mask = createSecretMasker(["s3cretpw"])
     const header = `Basic ${Buffer.from("admin:s3cretpw").toString("base64")}`

@@ -57,7 +57,7 @@ export function workflowMoveWarnings(
   if (workflow.collectionId) {
     const currentProject = projects.find(
       (project) =>
-        (project.projectId ?? project.collectionId) === workflow.collectionId,
+        project.collectionId === workflow.collectionId,
     );
     warnings.push(
       currentProject

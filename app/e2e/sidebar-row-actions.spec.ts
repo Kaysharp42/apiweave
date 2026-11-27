@@ -32,7 +32,6 @@ const TEAM = {
 
 const PROJECT = {
   collectionId: "project-checkout",
-  projectId: "project-checkout",
   workspaceId: PERSONAL.workspaceId,
   name: "Checkout",
   description: null,

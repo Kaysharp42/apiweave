@@ -369,6 +369,24 @@ describe("Phase 3 — one call explains a known failure", () => {
     expect(context.failureSummary.failedNodeCount).toBe(0)
   })
 
+  it("derives the workflow from the run row when only a runId is given", async () => {
+    const seed = await seedFailure()
+    const context = await debugContext({ workspaceId: seed.workspaceId, runId: seed.runId })
+    // Same context as the workflowId form: the run row names its workflow.
+    expect(context.workflow).toMatchObject({ workflowId: seed.workflowId, workspaceId: seed.workspaceId })
+    expect(context.runSelection).toEqual({ policy: "explicit", runId: seed.runId })
+    expect(context.run).toMatchObject({ runId: seed.runId, workflowId: seed.workflowId, status: "failed" })
+    expect(context.failureSummary.failedNodeIds).toEqual(["login"])
+    const evidence = context.evidence.find((item) => item.nodeId === "login")
+    expect(evidence?.moreDetail.args).toMatchObject({ workspaceId: seed.workspaceId, runId: seed.runId })
+  })
+
+  it("requires one of workflowId and runId", async () => {
+    const workspaceId = await seedWorkspace()
+    const error = await dispatchErr("workflows", "debugContext", { workspaceId })
+    expect(error.code).toBe("validation")
+  })
+
   it("latest-failed skips newer non-failed runs and picks the newest failure", async () => {
     const seed = await seedFailure()
     await tickMs()
@@ -409,6 +427,33 @@ describe("Phase 3 — one call explains a known failure", () => {
 })
 
 describe("Phase 3 — empty, denied and stale cases are explicit", () => {
+  it("diagnoses a called workflow with the variables its callers pass in counted as set", async () => {
+    const workspaceId = await seedWorkspace()
+    const position = { x: 0, y: 0 }
+    const child = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "per-item",
+      nodes: [
+        { nodeId: "start", type: "start", position, config: {} },
+        { nodeId: "read", type: "http-request", position, config: { method: "GET", url: "https://api.example.test/{{variables.item.id}}" } },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "read" }],
+    })
+    const missing = async () => (await debugContext({ workspaceId, workflowId: child.workflowId })).diagnosis.items.filter((item) => item.code === "variable_source_missing")
+    expect(await missing()).toHaveLength(1)
+
+    await dispatchOk("workflows", "create", {
+      workspaceId,
+      name: "every-item",
+      nodes: [
+        { nodeId: "start", type: "start", position, config: {} },
+        { nodeId: "call", type: "workflow", position, config: { targetWorkflowId: child.workflowId, forEach: { items: "[1]", itemVariable: "item" } } },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "call" }],
+    })
+    expect(await missing()).toEqual([])
+  })
+
   it("returns a valid empty context when no failed run exists", async () => {
     const workspaceId = await seedWorkspace()
     const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "never-ran" })

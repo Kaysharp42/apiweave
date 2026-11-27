@@ -32,7 +32,7 @@ export interface RunInputSources {
 /**
  * `{{env.PATH}}` and `{{secrets.NAME}}` as the executor reads them: whatever
  * sits between the scope and the closing braces, spaces trimmed. An env path
- * is walked by dots, so the variable it needs is its first segment; a secret
+ * is walked by dot keys and `[n]` indexes, so the variable it needs is its root; a secret
  * resolves only when the whole name is an identifier (see `secret_utils`).
  */
 const REFERENCE_RE = /\{\{\s*(env|secrets)\.([^{}]*?)\s*\}\}/g
@@ -142,7 +142,8 @@ function* textReferences(text: string): Generator<string> {
   for (const match of text.matchAll(REFERENCE_RE)) {
     const path = match[2]!
     if (match[1] === "env") {
-      const name = path.split(".")[0]!
+      // The root the runner reads: everything before the first `.` key or `[n]` index.
+      const name = /^[^.[]*/.exec(path)![0]
       if (name !== "") yield `env:${name}`
     } else if (SECRET_NAME_RE.test(path)) {
       yield `secret:${path}`

@@ -43,6 +43,11 @@ const match = z
   .optional()
   .describe('How to compare: "equals" is the whole string, "contains" is a substring, "matches" is a JavaScript regular expression. Defaults to "contains" at run time.')
 
+const valueMatch = z
+  .enum(["equals", "contains", "matches"])
+  .optional()
+  .describe('How to compare the field value: "equals" is the whole string, "contains" is a substring, "matches" is a JavaScript regular expression. Defaults to "equals" at run time, unlike `expect-text`.')
+
 /**
  * One browser action: a single step in a web page, run by a real browser. The
  * runner turns it into one Playwright call, so a workflow reads as a list of
@@ -160,6 +165,7 @@ export const BrowserNodeDataSchema = z
         value: z
           .string()
           .describe("Expected value of the form field, read with `locator.inputValue()`. Supports `{{env.*}}`, `{{variables.*}}` and `{{prev.*}}` placeholders. `{{secrets.*}}` is refused here."),
+        match: valueMatch,
         ...stepBase,
       })
       .strict(),

@@ -74,4 +74,53 @@ describe("useAutoSave", () => {
     hook.unmount();
     expect(save).toHaveBeenCalledTimes(1);
   });
+
+  // FB-006: display state the canvas derives onto a node must not read as an
+  // edit, or applying an agent's snapshot is followed by a save of it.
+  it("ignores derived node data and edge appearance, but not a resize", () => {
+    const save = vi.fn(() => Promise.resolve());
+    const config = { url: "https://example.test" };
+    const hook = renderHook<
+      () => Promise<void>,
+      { nodes: unknown[]; edges: unknown[] }
+    >(
+      ({ nodes, edges }) =>
+        useAutoSave({
+          workflowId: "wf1",
+          autoSaveEnabled: true,
+          nodes,
+          edges,
+          workflowVariables: vars,
+          saveWorkflow: save,
+        }),
+      {
+        initialProps: {
+          nodes: [{ id: "a", type: "group", width: 300, data: { label: "A", config } }],
+          edges: [{ id: "e", source: "a", target: "b" }],
+        },
+      },
+    );
+
+    hook.rerender({
+      nodes: [
+        {
+          id: "a",
+          type: "group",
+          width: 300,
+          measured: { width: 301 },
+          data: { label: "A", config, branchCount: 2, executionStatus: "success" },
+        },
+      ],
+      edges: [{ id: "e", source: "a", target: "b", animated: true }],
+    });
+    act(() => vi.advanceTimersByTime(2000));
+    expect(save).not.toHaveBeenCalled();
+
+    hook.rerender({
+      nodes: [{ id: "a", type: "group", width: 420, data: { label: "A", config } }],
+      edges: [{ id: "e", source: "a", target: "b" }],
+    });
+    act(() => vi.advanceTimersByTime(700));
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

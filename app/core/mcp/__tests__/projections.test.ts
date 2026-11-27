@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { projectMcpError } from "../error-projection"
 import { encodeMcpResult } from "../result-encoding"
+import { projectRunVariables } from "../run-projection"
 import { compactWorkflowDiagnosis, projectWorkflowWrite, unavailableWorkflowDiagnosis } from "../projections/workflow-write"
 
 describe("MCP compact write projections", () => {
@@ -151,3 +152,29 @@ function diagnostic(code: string, severity: "error" | "warning" | "notice") {
     confidence: "high" as const,
   }
 }
+
+describe("MCP run variables section", () => {
+  it("keeps stored order and whole values, and reports the budget honestly", () => {
+    const section = projectRunVariables({ b: 2, a: "one", nested: { deep: ["x", null, true] } }, 8192)
+    expect(Object.keys(section.values)).toEqual(["b", "a", "nested"])
+    expect(section.values).toEqual({ b: 2, a: "one", nested: { deep: ["x", null, true] } })
+    expect(section.omittedVariableNames).toEqual([])
+    // Quoted key + colon + JSON-encoded value: the bytes the entry occupies.
+    expect(section.budgetBytes).toBe(
+      Buffer.byteLength(JSON.stringify("b"), "utf8") + 1 + Buffer.byteLength("2", "utf8")
+        + 1 + Buffer.byteLength(JSON.stringify("a"), "utf8") + 1 + Buffer.byteLength(JSON.stringify("one"), "utf8")
+        + 1 + Buffer.byteLength(JSON.stringify("nested"), "utf8") + 1 + Buffer.byteLength(JSON.stringify({ deep: ["x", null, true] }), "utf8"),
+    )
+    expect(section.budgetBytes).toBeLessThanOrEqual(section.budgetLimitBytes)
+  })
+
+  it("drops an oversized entry without starving the rest, and names what it dropped", () => {
+    const section = projectRunVariables(
+      { huge: "y".repeat(12 * 1024), small: "fits", alsoBig: { blob: "z".repeat(9 * 1024) }, tail: 7 },
+      8192,
+    )
+    expect(section.values).toEqual({ small: "fits", tail: 7 })
+    expect(section.omittedVariableNames).toEqual(["huge", "alsoBig"])
+    expect(section.budgetBytes).toBeLessThanOrEqual(8192)
+  })
+})

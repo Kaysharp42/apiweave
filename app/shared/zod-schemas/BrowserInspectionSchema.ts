@@ -4,9 +4,11 @@ import { RunArtifactSchema } from "./RunArtifactSchema"
 
 /**
  * What `browser.inspect` returns: the run it made or resumed, and the page that
- * run left open. Every page string went through the run's masker; the URL has
- * its query and fragment redacted. A run still pending or running at the wait
- * deadline returns no page (terminal: false) and is continued by runId.
+ * run left open. Every page string went through the run's masker; the URL keeps
+ * plain query parameters, with userinfo, the fragment and secret-named
+ * parameters withheld. A run still pending or running at the wait deadline
+ * returns no page (terminal: false) and is continued by runId; a finished
+ * run's page stays readable by its runId until the kept page expires.
  */
 export const BrowserInspectionSchema = z
   .object({

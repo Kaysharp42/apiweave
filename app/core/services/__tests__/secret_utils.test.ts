@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
+import { createSecretMasker } from "../../runner/secret_masker"
 import {
   findRedactedPlaceholders,
   isSyncSensitiveKey,
+  redactUrlForRunHistory,
   sanitizeAgentReadValue,
   sanitizeExportValue,
   sanitizeUrlWithReferences,
@@ -414,5 +416,32 @@ describe("vault storage fields and extractor values", () => {
     expect(
       sanitizeExportValue({ extractors: { token: "response.body.token", bad: "Bearer abc.123" } }),
     ).toEqual({ extractors: { token: "response.body.token", bad: "<SECRET>" } })
+  })
+})
+
+describe("redactUrlForRunHistory — what a stored run URL keeps", () => {
+  it("keeps the path, every query value and the fragment exactly as visited", () => {
+    const url = "https://app.test/orders/2026?q=red%20shoes&status=open&from=2026-01-01&code=abc123&state=xyz#/list?tab=all"
+    expect(redactUrlForRunHistory(url)).toBe(url)
+  })
+
+  it("drops embedded userinfo, and nothing else", () => {
+    expect(redactUrlForRunHistory("https://ada:hunter2@app.test/v1?page=2#top")).toBe("https://app.test/v1?page=2#top")
+    expect(redactUrlForRunHistory("https://ada@app.test/v1")).toBe("https://app.test/v1")
+    // The authority ends at the first `/`, `?` or `#`: an `@` after it is data, and a password may hold `@` itself.
+    expect(redactUrlForRunHistory("https://a:p@ss@app.test/u/ada@example.test?to=b@example.test")).toBe(
+      "https://app.test/u/ada@example.test?to=b@example.test",
+    )
+  })
+
+  it("leaves the masker's <SECRET> legible, wherever it sits", () => {
+    const masked = createSecretMasker(["abc def/ghi"])("https://app.test/s/abc%20def/ghi?q=abc%20def/ghi")
+    expect(masked).toBe("https://app.test/s/<SECRET>?q=<SECRET>")
+    expect(redactUrlForRunHistory(masked)).toBe(masked)
+  })
+
+  it("leaves a URL it cannot parse, or one with no userinfo, byte-for-byte", () => {
+    expect(redactUrlForRunHistory("about:blank")).toBe("about:blank")
+    expect(redactUrlForRunHistory("not a url")).toBe("not a url")
   })
 })

@@ -1,4 +1,5 @@
 import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer"
+import { callerSuppliedVariableNames } from "@shared/analysis/variable_references"
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowDiagnosis } from "@shared/types/WorkflowDiagnosis"
@@ -31,7 +32,9 @@ export class WorkflowAnalysisService {
   async diagnose(workspaceId: string, workflowId: string, runId?: string): Promise<WorkflowDiagnosis> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
     const browserStepWorkflowIds = await this.browserStepWorkflowIds(workspaceId, workflow)
-    const input = { ...workflow, browserStepWorkflowIds }
+    const callers = await this.workflows.listCallers(workspaceId, workflowId)
+    const callerVariableNames = callerSuppliedVariableNames(callers.flatMap((caller) => caller.nodes), workflowId)
+    const input = { ...workflow, browserStepWorkflowIds, callerVariableNames }
     if (runId === undefined) return analyzeWorkflowGraph(input)
 
     const run = await this.runs.get(workspaceId, runId)

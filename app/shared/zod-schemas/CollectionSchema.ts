@@ -7,7 +7,6 @@ export const CollectionSchema = z
   .object({
     collectionId: z.string().min(1),
     workspaceId: z.string().min(1),
-    projectId: z.string().nullable().optional(),
     name: z.string().min(1),
     description: z.string().nullable().optional(),
     color: z.string().nullable().optional(),

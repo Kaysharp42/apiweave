@@ -19,11 +19,20 @@ interface Snapshot {
   vars: Record<string, unknown> | null;
 }
 
-// Module-level WeakMap assigns a stable numeric ID to each data object by reference.
-// The dataId alone drives "did the node's editable content change?" — position is
-// tracked separately in the signature, so a drag fires the debounced save.
-const dataIdMap = new WeakMap<object, number>();
-let nextDataId = 0;
+// Stable numeric id per node `config` object, by reference. Config edits
+// always replace the object, so its id answers "did the stored config change?"
+// without walking it on every drag frame.
+const configIdMap = new WeakMap<object, number>();
+let nextConfigId = 0;
+
+function configId(config: object | undefined): number {
+  if (!config) return -1;
+  const existing = configIdMap.get(config);
+  if (existing !== undefined) return existing;
+  const id = nextConfigId++;
+  configIdMap.set(config, id);
+  return id;
+}
 
 export default function useAutoSave({
   workflowId,
@@ -49,30 +58,36 @@ export default function useAutoSave({
     vars: null,
   });
 
+  // Signatures cover exactly what a save writes (`canvasToWorkflow`), and
+  // nothing the canvas derives for display — branch counts, run status, edge
+  // appearance. A derived write after a snapshot lands would otherwise read as
+  // an edit and save, moving `rev` under every agent that read it.
   const nodesSig = useMemo(() => {
     const parts: string[] = [];
     for (const n of nodes) {
       const node = n as {
         id?: string;
-        data?: object;
+        type?: string;
+        parentId?: string;
+        // Explicit attributes only: React Flow writes them on a resize, and
+        // keeps its own measurements in `measured`.
+        width?: number;
+        height?: number;
+        data?: { label?: unknown; config?: object };
         position?: { x?: number; y?: number };
       };
-      let dataId: number;
-      if (node.data) {
-        const existing = dataIdMap.get(node.data);
-        if (existing !== undefined) {
-          dataId = existing;
-        } else {
-          dataId = nextDataId++;
-          dataIdMap.set(node.data, dataId);
-        }
-      } else {
-        dataId = -1;
-      }
-      // ponytail: include position so drag/auto-layout fires the debounced save.
-      // The 700ms debounce absorbs per-frame churn during continuous drag.
       parts.push(
-        `${node.id ?? "?"}:${dataId}:${node.position?.x ?? 0},${node.position?.y ?? 0}`,
+        JSON.stringify([
+          node.id ?? "?",
+          node.type ?? "",
+          node.parentId ?? "",
+          typeof node.data?.label === "string" ? node.data.label : null,
+          configId(node.data?.config),
+          node.position?.x ?? 0,
+          node.position?.y ?? 0,
+          node.width ?? null,
+          node.height ?? null,
+        ]),
       );
     }
     return parts.join("|");
@@ -85,13 +100,21 @@ export default function useAutoSave({
         id?: string;
         source?: string;
         target?: string;
+        sourceHandle?: string | null;
+        targetHandle?: string | null;
         label?: unknown;
-        animated?: boolean;
+        data?: { label?: unknown };
       };
-      // ponytail: include label + animated so edge edits (assertion pass/fail text,
-      // branch label) re-fire the debounced save.
       parts.push(
-        `${edge.id ?? "?"}:${edge.source ?? "?"}:${edge.target ?? "?"}:${typeof edge.label === "string" ? edge.label : ""}:${edge.animated ? 1 : 0}`,
+        JSON.stringify([
+          edge.id ?? "?",
+          edge.source ?? "?",
+          edge.target ?? "?",
+          edge.sourceHandle ?? null,
+          edge.targetHandle ?? null,
+          typeof edge.label === "string" ? edge.label : null,
+          typeof edge.data?.label === "string" ? edge.data.label : null,
+        ]),
       );
     }
     return parts.join("|");

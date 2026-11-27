@@ -93,6 +93,55 @@ const unsettledPage = (ms: number): string => `<!doctype html><title>Before</tit
 
 const arrivedPage = (): string => `<!doctype html><title>Arrived</title><h1>Arrived</h1><p>The page settled here.</p>`
 
+/**
+ * Widgets that misbehave the way real pages do: a select whose change handler
+ * puts the old value back, a combobox popover that closes when focus leaves,
+ * and a visually hidden radio.
+ */
+const widgetsPage = (): string => `<!doctype html><title>Widgets</title>
+<label for="plan">Plan</label>
+<select id="plan"><option value="free">Free</option><option value="pro">Pro</option></select>
+<label for="locked">Locked</label>
+<select id="locked"><option value="a">Alpha</option><option value="b">Beta</option></select>
+<input id="combo" aria-label="Country" autocomplete="off">
+<ul id="pop" hidden><li><button id="pick">Norway</button></li></ul>
+<button>Save draft</button><button>Save</button>
+<script>
+document.getElementById('locked').addEventListener('change', (event) => { event.target.value = 'a' })
+const combo = document.getElementById('combo'), pop = document.getElementById('pop')
+combo.addEventListener('focus', () => { pop.hidden = false })
+combo.addEventListener('blur', () => { setTimeout(() => { if (!pop.contains(document.activeElement)) pop.hidden = true }, 0) })
+</script>`
+
+/**
+ * Selects that expose the read-back's assumptions: an option whose value holds
+ * a non-breaking space, a label written with a double space, a change handler
+ * that navigates, a multi-select and a single select asked for several values.
+ */
+const selectsPage = (): string => `<!doctype html><title>Selects</title>
+<label for="country">Country</label>
+<select id="country"><option>United&nbsp;States</option><option>Canada</option></select>
+<label for="city">City</label>
+<select id="city"><option value="ny">New  York</option><option value="la">Los Angeles</option></select>
+<label for="go">Go</label>
+<select id="go" onchange="location.href='/arrived'"><option value="stay">Stay</option><option value="leave">Leave</option></select>
+<label for="tags">Tags</label>
+<select id="tags" multiple><option>a</option><option>b</option><option>c</option></select>
+<label for="single">Single</label>
+<select id="single"><option value="1">One</option><option value="2">Two</option></select>
+<label for="late">Late</label>
+<select id="late"><option value="stay">Stay</option></select>
+<script>
+setTimeout(() => {
+  const late = document.getElementById('late')
+  const option = document.createElement('option')
+  option.value = 'leave'
+  option.textContent = 'Leave'
+  late.append(option)
+  late.addEventListener('change', () => { late.value = 'stay' })
+}, 2000)
+</script>`
+
 let channel: BrowserChannel | undefined
 let server: Server
 let base: string
@@ -112,6 +161,10 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(loginPage())
     } else if (path === "/dashboard") {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
+    } else if (path === "/widgets") {
+      response.writeHead(200, { "content-type": "text/html" }).end(widgetsPage())
+    } else if (path === "/selects") {
+      response.writeHead(200, { "content-type": "text/html" }).end(selectsPage())
     } else if (path === "/unsettled") {
       const ms = Number(new URLSearchParams((request.url ?? "").split("?")[1] ?? "").get("ms") ?? "300")
       response.writeHead(200, { "content-type": "text/html" }).end(unsettledPage(ms))
@@ -327,7 +380,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       action: "expect-text",
       expected: "Welcome ada@example.com",
       actual: "Welcome ada@example.com",
-      url: `${base}/dashboard?<REDACTED>`,
+      // The URL is kept as visited, query included: it says which page this
+      // was and what it was asked for.
+      url: `${base}/dashboard?user=ada%40example.com`,
       title: "Dashboard",
       // A passed step keeps its evidence too: the fifth browser step's screenshot.
       screenshotArtifactId: "artifact-5",
@@ -356,6 +411,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-4" })
     expect(failed.browser?.ariaSnapshot).toContain('textbox "Password": <SECRET>')
     expect(failed.browser?.ariaSnapshot).toContain("ada@example.com")
+    // A fill records what it typed; a password never.
+    expect(result(stored, "email")?.browser?.actual).toBe("ada@example.com")
+    expect(result(stored, "password")?.browser?.actual).toBe("<SECRET>")
     expect(JSON.stringify(stored)).not.toContain(typed)
     // Every browser step kept its evidence; the failed check is the fourth.
     expect(artifacts).toHaveLength(4)
@@ -377,6 +435,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(failed.browser).toMatchObject({ expected: "Welcome", actual: "Sign in", screenshotArtifactId: "artifact-3" })
     expect(failed.browser?.evidenceNote).toBeUndefined()
     expect(failed.browser?.ariaSnapshot).toContain('textbox "Email": <SECRET>')
+    expect(result(stored, "email")?.browser?.actual).toBe("<SECRET>")
     expect(JSON.stringify(stored)).not.toContain(SECRET_PASSWORD)
     expect(artifacts).toHaveLength(3)
     expect(artifacts[2]).toMatchObject({ nodeId: "greets", kind: "screenshot", mime: "image/jpeg" })
@@ -393,6 +452,18 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
     expect(result(stored, "open")?.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
     expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
+  })
+
+  it("keeps a step's evidence URL as visited: filters and the fragment stay legible", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/dashboard?status=open&q=red%20shoes&code=abc123#/list` }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
+    // Nothing in the query is judged by its name: run history keeps what the page's address said.
+    expect(result(stored, "open")?.browser?.url).toBe(`${base}/dashboard?status=open&q=red%20shoes&code=abc123#/list`)
   })
 
   it("takes no evidence of a step that passed when the run is cancelled while its page settles", async () => {
@@ -447,6 +518,14 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     // outlast the churn, and the check then reads the arrived page itself.
     expect(failed.browser).toMatchObject({ url: `${base}/arrived`, title: "Arrived" })
     expect(failed.browser?.ariaSnapshot).toContain('heading "Arrived"')
+    // FB-043: the passed navigate's own settle ran out while the page was
+    // still moving, and its evidence says so — a click that starts a slow
+    // change no longer looks like a no-op. (The navigate's 1s settle window
+    // lies wholly inside the 3s churn, so this is deterministic; the failed
+    // step's fuller settle is not asserted either way.)
+    expect(result(stored, "open")?.browser?.evidenceNote).toBe(
+      "The page was still changing when its evidence was taken.",
+    )
   })
 
   it("answers a confirm() only when the step says so", async () => {
@@ -514,7 +593,129 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
 
     const stored = await run(workflowId)
 
-    expect(result(stored, "field")?.error).toBe("Browser step: getByRole('textbox') matches 2 elements; add hasText, nth or within to pick one")
+    expect(result(stored, "field")?.error).toBe(
+      "Browser step: getByRole('textbox') matches 2 elements (getByRole('textbox', { name: 'Email' }); getByRole('textbox', { name: 'Password' })); add hasText, nth or within to pick one",
+    )
+  })
+
+  it("compares an expect-value by equality unless it asks for contains", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/dashboard` }),
+      step("part", { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "ab", match: "contains" }),
+      step("pattern", { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "^a.c$", match: "matches" }),
+      step("whole", { action: "expect-value", locator: { kind: "label", value: "Query" }, value: "ab", timeoutMs: 300 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "part")?.status, result(stored, "part")?.error).toBe("passed")
+    expect(result(stored, "pattern")?.status, result(stored, "pattern")?.error).toBe("passed")
+    expect(result(stored, "whole")?.error).toContain("did not equal the expected value")
+  })
+
+  it("passes a select the page keeps, and fails one whose handler puts the old value back", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/widgets` }),
+      step("keeps", { action: "select", locator: { kind: "label", value: "Plan" }, values: ["Pro"] }),
+      step("reverts", { action: "select", locator: { kind: "label", value: "Locked" }, values: ["b"], timeoutMs: 600 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "keeps")?.status, result(stored, "keeps")?.error).toBe("passed")
+    expect(result(stored, "keeps")?.browser).toMatchObject({ expected: "Pro", actual: "Pro" })
+    expect(result(stored, "reverts")?.error).toContain("did not hold the selected option")
+    expect(result(stored, "reverts")?.browser).toMatchObject({ expected: "b", actual: "Alpha" })
+  })
+
+  it("reads back a select by its control when the locator finds the label", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("picked", { action: "select", locator: { kind: "css", value: 'label[for="country"]' }, values: ["Canada"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "picked")?.status, result(stored, "picked")?.error).toBe("passed")
+    expect(result(stored, "picked")?.browser).toMatchObject({ expected: "Canada", actual: "Canada" })
+  })
+
+  it("matches a select value after collapsing whitespace, as selectOption did", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("nbsp", { action: "select", locator: { kind: "label", value: "Country" }, values: ["United States"] }),
+      step("spaces", { action: "select", locator: { kind: "label", value: "City" }, values: ["New York"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "nbsp")?.status, result(stored, "nbsp")?.error).toBe("passed")
+    expect(result(stored, "spaces")?.status, result(stored, "spaces")?.error).toBe("passed")
+  })
+
+  it("passes a select whose change handler navigates away before the read-back", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("leave", { action: "select", locator: { kind: "label", value: "Go" }, values: ["leave"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "leave")?.status, result(stored, "leave")?.error).toBe("passed")
+  })
+
+  it("reports the step's configured timeout when selecting spent the read-back's share", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("late", { action: "select", locator: { kind: "label", value: "Late" }, values: ["leave"], timeoutMs: 3000 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    // The option appears after 2s, so the read-back has ~1s left; the failure
+    // still names the 3s the step was configured for.
+    expect(result(stored, "late")?.error).toContain("within 3s")
+  })
+
+  it("accepts the first match when a single select is asked for several values, as selectOption does", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("one", { action: "select", locator: { kind: "label", value: "Single" }, values: ["1", "2"] }),
+      step("many", { action: "select", locator: { kind: "label", value: "Tags" }, values: ["a", "c"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "one")?.status, result(stored, "one")?.error).toBe("passed")
+    expect(result(stored, "many")?.status, result(stored, "many")?.error).toBe("passed")
+  })
+
+  it("keeps a focus-opened popover open across the evidence taken between steps", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/widgets` }),
+      step("focus", { action: "click", locator: { kind: "label", value: "Country" } }),
+      step("shown", { action: "expect-visible", locator: role("button", "Norway") }),
+      step("pick", { action: "press", locator: role("button", "Norway"), key: "Enter", timeoutMs: 1000 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "pick")?.status, result(stored, "pick")?.error).toBe("passed")
+  })
+
+  it("says an element may have closed when a click cannot find what an earlier step saw", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/widgets` }),
+      step("focus", { action: "click", locator: { kind: "label", value: "Country" } }),
+      step("shown", { action: "expect-visible", locator: role("button", "Norway") }),
+      step("away", { action: "click", locator: role("button", "Save draft") }),
+      step("closed", { action: "expect-visible", locator: role("button", "Norway"), visible: false }),
+      step("pick", { action: "click", locator: role("button", "Norway"), timeoutMs: 500 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "pick")?.error).toContain("it was not found (if an earlier step saw it, it may have closed or moved since)")
   })
 
   it("reruns a failed check from the start of the browser chain", async () => {

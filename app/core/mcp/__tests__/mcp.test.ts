@@ -601,6 +601,59 @@ describe("MCP bridge — second transport, parity by construction", () => {
     await client.close()
   })
 
+  // FB-019: runs_get is metadata-only unless the caller opts in; the opt-in
+  // returns the run's stored variables masked and bounded, never sliced.
+  it("runs_get exposes stored variables only on the variables opt-in, masked and bounded", async () => {
+    const secret = "opaque-value-that-must-never-cross-mcp"
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "final variables",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "completed",
+      variables: {
+        token: secret,
+        petName: "Rex",
+        bigField: "x".repeat(12 * 1024),
+      },
+    })
+
+    const client = await connectClient()
+    const withoutOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId },
+    })
+    const plain = JSON.parse(textOf(withoutOptIn as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+    expect(plain).not.toHaveProperty("variables")
+    expect(textOf(withoutOptIn as { content: Array<{ type: string; text?: string }> })).not.toContain(secret)
+
+    const withOptIn = await client.callTool({
+      name: "runs_get",
+      arguments: { workspaceId: workspace.workspaceId, runId: run.runId, variables: true },
+    })
+    const text = textOf(withOptIn as { content: Array<{ type: string; text?: string }> })
+    const parsed = JSON.parse(text) as {
+      variables: {
+        values: Record<string, unknown>
+        omittedVariableNames: string[]
+        budgetBytes: number
+        budgetLimitBytes: number
+      }
+    }
+    // A secret-named key never crosses: the transport redaction blanks it, and
+    // an ordinary value arrives as stored.
+    expect(parsed.variables.values).toMatchObject({ token: "<SECRET>", petName: "Rex" })
+    // The 12 KiB entry cannot fit the 8 KiB budget: named, not sliced.
+    expect(parsed.variables.values).not.toHaveProperty("bigField")
+    expect(parsed.variables.omittedVariableNames).toEqual(["bigField"])
+    expect(parsed.variables.budgetLimitBytes).toBe(8192)
+    expect(parsed.variables.budgetBytes).toBeLessThanOrEqual(8192)
+    expect(text).not.toContain(secret)
+    await client.close()
+  })
+
   it("names a failed browser step's page and its own error, with the evidence read to open next", async () => {
     const secret = "opaque-browser-error-that-must-never-cross-mcp"
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
@@ -1093,6 +1146,11 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     expect(authoring.text).toContain("Re-pick element")
     expect(authoring.text).toContain("Turn into extract")
     expect(authoring.text).toContain("removeNodeIds")
+    // What a scoped snapshot left out is named, a still-changing page says so
+    // in its own evidence, and inspection replays side effects.
+    expect(authoring.text).toContain("scopeNote")
+    expect(authoring.text).toContain("The page was still changing")
+    expect(authoring.text).toContain("replays side effects")
     await client.close()
   })
 
@@ -1139,6 +1197,27 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     expect(createSchema).toContain("workflows_nodeSchema")
     const assertion = await client.callTool({ name: "workflows_nodeSchema", arguments: { type: "assertion" } })
     expect(textOf(assertion as { content: Array<{ type: string; text?: string }> })).toContain("response.body")
+    await client.close()
+  })
+
+  /**
+   * FB-004. Reusing an edgeId replaces the stored edge, endpoints included —
+   * that is what the service does, but an agent that read "matched by edgeId"
+   * as "re-point this connection" could not have known. Both surfaces it reads
+   * say so: the field description in the tool schema and the authoring guide.
+   */
+  it("says that a new connection needs a new edgeId, and a reused one replaces that edge", async () => {
+    const client = await connectClient()
+    const tools = (await client.listTools()).tools
+    const patchSchema = JSON.stringify(tools.find((tool) => tool.name === "workflows_patch")?.inputSchema)
+    expect(patchSchema).toContain("a new connection needs a new edgeId")
+    expect(patchSchema).toContain("reusing one replaces that edge, including its source and target")
+
+    const authoring = MCP_GUIDES.find((guide) => guide.slug === "workflow-authoring")?.text ?? ""
+    expect(authoring).toContain("reusing one replaces that edge, including its source and target")
+    // FB-005: the shape a chain has, and how to re-check it after removals.
+    expect(authoring).toContain("has one edge fewer than")
+    expect(authoring).toContain("read the outline back")
     await client.close()
   })
 })

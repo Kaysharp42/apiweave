@@ -25,4 +25,11 @@ export interface WorkflowGraphInput {
    * analyzer then compares `browser` nodes only.
    */
   readonly browserStepWorkflowIds?: readonly string[] | undefined
+  /**
+   * The variables workflows that call this one pass in through a Call
+   * Workflow node: `inputMapping` keys and `forEach` item and index variables.
+   * Counted as set, like a manual value. Absent when the caller cannot read
+   * other workflows (the canvas gate).
+   */
+  readonly callerVariableNames?: readonly string[] | undefined
 }

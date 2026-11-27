@@ -25,7 +25,6 @@ const createInput = z
     name: z.string().min(1),
     description: z.string().nullable().optional(),
     color: z.string().nullable().optional(),
-    projectId: z.string().nullable().optional(),
     workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
   })
   .strict()
@@ -37,7 +36,6 @@ const updateInput = z
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     color: z.string().nullable().optional(),
-    projectId: z.string().nullable().optional(),
     workflowCount: z.number().int().nonnegative().optional(),
     workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
   })

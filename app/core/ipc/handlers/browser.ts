@@ -1,9 +1,8 @@
 import { z } from "zod"
-import { JsonValueSchema, AriaScopeSchema } from "@shared/zod-schemas"
+import { JsonValueSchema, AriaScopeSchema, unknownKeyError } from "@shared/zod-schemas"
 import { BrowserInspectionSchema } from "@shared/zod-schemas/BrowserInspectionSchema"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import { unknownKeyError } from "./common"
 import {
   BROWSER_INSPECT_SNAPSHOT_DEFAULT_BYTES,
   BROWSER_INSPECT_SNAPSHOT_MAX_BYTES,
@@ -20,7 +19,7 @@ const inspectInput = z
         .string()
         .min(1)
         .optional()
-        .describe("Continue an inspection started earlier: waits on that run and returns its page, starting nothing. Mutually exclusive with workflowId, beforeNodeId, selectedEnvironmentId, variables and screenshot."),
+        .describe("Continue an inspection started earlier: waits on that run and returns its page, starting nothing. A finished run's page stays readable here until it expires (10 minutes after its last read). Mutually exclusive with workflowId, beforeNodeId, selectedEnvironmentId, variables and screenshot."),
       beforeNodeId: z.string().min(1).optional().describe("Run every step before this node, then read the page: the page as it is just before this node runs — the page the step acts on. Omitted: run the whole workflow and read the page it ends on."),
       selectedEnvironmentId: z.string().min(1).nullable().optional().describe("Environment to run against. Omitted: the workflow's own; null: none."),
       variables: z.record(z.string(), JsonValueSchema).optional().describe("Run variables, as for runs_create."),

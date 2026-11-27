@@ -5,7 +5,7 @@ import { RunScheduler, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
-import { resumeEntries, seedResults } from "../resume"
+import { maskedVariablesRead, resumeEntries, seedResults } from "../resume"
 import { startServer, type TestServer } from "./auth_test_servers"
 import type { Run } from "@shared/types/Run"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
@@ -258,5 +258,16 @@ describe("resume planning", () => {
     const seeded = seedResults([second, first], edges, new Set(["x"]))
     // c ran in the first run, but downstream of b, which the second run replaced: its old result is stale.
     expect(seeded.map((entry) => [entry.nodeId, entry.status])).toEqual([["a", "passed"], ["b", "passed"]])
+  })
+  it("needs a masked variable read through a path, unless a scope node sets it first", () => {
+    const node = (nodeId: string, type: string, config: Record<string, unknown>) => ({ nodeId, type, config }) as unknown as WorkflowNode
+    const reader = node("r", "http-request", { url: "https://api.test/{{variables.session.id}}/{{variables.keys[0]}}" })
+    const scriptReader = node("s", "http-request", { url: "https://api.test", scripts: { preRequest: 'aw.variables.get("other"); aw.variables.get("user-id")' } })
+    expect(maskedVariablesRead([reader, scriptReader], new Set(["r", "s"]), ["session", "keys", "other", "user-id", "unread"])).toEqual(["session", "keys", "other", "user-id"])
+
+    // A browser extract and a script both set a variable inside the scope.
+    const extract = node("e", "browser", { action: "extract", from: "text", locator: { kind: "css", value: ".id" }, variable: "session" })
+    const script = node("w", "http-request", { url: "https://api.test", scripts: { postResponse: 'aw.variables.set("keys", [])' } })
+    expect(maskedVariablesRead([extract, script, reader], new Set(["e", "w", "r"]), ["session", "keys"])).toEqual([])
   })
 })

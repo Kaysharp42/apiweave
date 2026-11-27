@@ -1,15 +1,12 @@
 /**
  * Project — workspace-scoped grouping of workflows.
  * Maps to the SQLite `collections` table (backend type: `Collection`).
- * The `projectId` field is the public alias for the legacy `collectionId`.
  */
 export interface Project {
   /** Internal document ID. */
   id: string;
-  /** Legacy collection ID (still used as primary key in DB). */
+  /** The project's id: the primary key in the DB, and the `projectId` of project runs. */
   collectionId: string;
-  /** Public-domain project ID (alias for collectionId). */
-  projectId?: string;
   /** Display name. */
   name: string;
   /** Optional description. */

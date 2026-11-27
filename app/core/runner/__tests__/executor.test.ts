@@ -150,6 +150,58 @@ describe("WorkflowExecutor", () => {
       }
     })
 
+    it("leaves an empty scope path as written instead of substituting the whole scope", async () => {
+      const { createServer } = await import("node:http")
+      const seen: Record<string, string | string[] | undefined> = {}
+      const server = createServer((request, response) => {
+        Object.assign(seen, request.headers)
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "http_1",
+              type: "http-request",
+              config: {
+                method: "GET",
+                url: `http://127.0.0.1:${port}/`,
+                headers: [
+                  { key: "X-Vars", value: "{{variables.}}" },
+                  { key: "X-Env", value: "{{env.}}" },
+                  { key: "X-Data", value: "{{data.}}" },
+                  { key: "X-Index", value: "{{variables.[0]}}" },
+                ],
+              },
+            },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "end" },
+          ],
+          variables: { a: "x" },
+        }
+
+        const output = await new WorkflowExecutor({
+          ...makeDeps(),
+          environmentVariables: { B: "y" },
+          data: { c: "z" },
+        }).executeWorkflow(workflow)
+
+        expect(output.status).toBe("passed")
+        expect(seen["x-vars"]).toBe("{{variables.}}")
+        expect(seen["x-env"]).toBe("{{env.}}")
+        expect(seen["x-data"]).toBe("{{data.}}")
+        expect(seen["x-index"]).toBe("{{variables.[0]}}")
+      } finally {
+        server.close()
+      }
+    })
+
     it("substitutes a data-driven run's row as {{data.<column>}}", async () => {
       const { createServer } = await import("node:http")
       const seen: { url: string; user: string; body: string }[] = []
@@ -197,6 +249,66 @@ describe("WorkflowExecutor", () => {
           },
         ])
         expect(output.results.find((r) => r.nodeId === "http_1")?.unresolvedPlaceholders).toEqual(["data.missing"])
+      } finally {
+        server.close()
+      }
+    })
+
+    it("walks array indexes in variables, env and data placeholders, leaving one past the end unresolved", async () => {
+      const { createServer } = await import("node:http")
+      const seen: { url: string; brand: string; body: string }[] = []
+      const server = createServer((request, response) => {
+        let body = ""
+        request.on("data", (chunk: Buffer) => (body += chunk.toString()))
+        request.on("end", () => {
+          seen.push({ url: request.url ?? "", brand: String(request.headers["x-brand"]), body })
+          response.end("{}")
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "http_1",
+              type: "http-request",
+              config: {
+                method: "POST",
+                url: `http://127.0.0.1:${port}/{{variables.ids[1]}}/{{env.REGIONS[0]}}/{{data.rows[0].code}}`,
+                headers: [{ key: "X-Brand", value: "{{variables.cars[0].brand}}" }],
+                body: '{"deep":"{{variables.a.b[1].c}}","whole":{{variables.cars[1]}},"past":"{{variables.ids[5]}}"}',
+                bodyType: "json",
+              },
+            },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "end" },
+          ],
+          variables: {
+            ids: ["first", "second"],
+            cars: [{ brand: "Northwind" }, { brand: "Southwind", seats: 4 }],
+            a: { b: [{ c: "x" }, { c: "y" }] },
+          },
+        }
+
+        const output = await new WorkflowExecutor({
+          ...makeDeps(),
+          environmentVariables: { REGIONS: ["north", "south"] },
+          data: { rows: [{ code: "r1" }] },
+        }).executeWorkflow(workflow)
+
+        expect(seen).toEqual([
+          {
+            url: "/second/north/r1",
+            brand: "Northwind",
+            body: '{"deep":"y","whole":{"brand":"Southwind","seats":4},"past":"{{variables.ids[5]}}"}',
+          },
+        ])
+        expect(output.results.find((r) => r.nodeId === "http_1")?.unresolvedPlaceholders).toEqual(["variables.ids[5]"])
       } finally {
         server.close()
       }
@@ -1293,6 +1405,132 @@ describe("WorkflowExecutor", () => {
       // caller's node result — only the summary above (see the redaction-gap
       // rationale on `NodeResult.subWorkflow`).
       expect(result).not.toHaveProperty("subWorkflow.results")
+    })
+
+    describe("inputMapping", () => {
+      const echoChild = {
+        name: "Echo",
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }],
+      }
+
+      async function callWith(
+        inputMapping: Record<string, string>,
+        variables: Record<string, unknown>,
+        outputMapping: Record<string, string>,
+        secrets: Record<string, string> = {},
+      ) {
+        let childRuns = 0
+        const executor = new WorkflowExecutor({
+          ...makeDeps(),
+          secrets,
+          resolveWorkflow: () => {
+            childRuns += 1
+            return echoChild
+          },
+        })
+        const output = await executor.executeWorkflow({
+          ...callerWorkflow({ targetWorkflowId: "sub-1", inputMapping, outputMapping }),
+          variables,
+        })
+        return { output, childRuns, result: output.results.find((r) => r.nodeId === "call1") }
+      }
+
+      it("fails the call, naming the key, when a placeholder is not set in the caller", async () => {
+        const { output, result } = await callWith({ title: "{{variables.missing}}" }, {}, { got: "title" })
+        expect(output.status).toBe("failed")
+        expect(result?.error).toBe("inputMapping.title: {{variables.missing}} is not set in the caller")
+        expect(output.extractedVariables).not.toHaveProperty("got")
+      })
+
+      it("fails the call when one placeholder of a mixed template is not set", async () => {
+        const { output, result } = await callWith({ label: "case {{variables.n}} of {{env.TOTAL}}" }, { n: 2 }, {})
+        expect(output.status).toBe("failed")
+        expect(result?.error).toBe("inputMapping.label: {{env.TOTAL}} is not set in the caller")
+      })
+
+      it("still refuses a secret in the mapping", async () => {
+        const { output, result } = await callWith({ token: "{{secrets.API_KEY}}" }, {}, {}, { API_KEY: "k-value" })
+        expect(output.status).toBe("failed")
+        expect(result?.error).toContain("Secret substitution not allowed")
+        expect(JSON.stringify(output)).not.toContain("k-value")
+      })
+
+      it("passes a single placeholder's raw value, keeping its type", async () => {
+        const record = { title: "First case", tags: ["a", "b"], open: true }
+        const { output } = await callWith(
+          { record: "{{variables.record}}", count: "{{variables.count}}", flag: "{{variables.flag}}", list: " {{variables.list}} " },
+          { record, count: 3, flag: false, list: [1, 2] },
+          { record: "record", count: "count", flag: "flag", list: "list" },
+        )
+        expect(output.status).toBe("passed")
+        expect(output.extractedVariables).toMatchObject({ record, count: 3, flag: false, list: [1, 2] })
+      })
+
+      it("passes an array element by index, and fails the call on an index past the end", async () => {
+        const cars = [{ brand: "Northwind" }, { brand: "Southwind" }]
+        const { output } = await callWith(
+          { car: "{{variables.cars[1]}}", brand: "{{variables.cars[0].brand}}" },
+          { cars },
+          { car: "car", brand: "brand" },
+        )
+        expect(output.status).toBe("passed")
+        expect(output.extractedVariables).toMatchObject({ car: { brand: "Southwind" }, brand: "Northwind" })
+
+        const { output: past, result } = await callWith({ car: "{{variables.cars[2]}}" }, { cars }, {})
+        expect(past.status).toBe("failed")
+        expect(result?.error).toBe("inputMapping.car: {{variables.cars[2]}} is not set in the caller")
+      })
+
+      it("passes a {{prev.…}} placeholder's raw value, keeping its type", async () => {
+        const { createServer } = await import("node:http")
+        const server = createServer((_request, response) => {
+          response.writeHead(200, { "content-type": "application/json" })
+          response.end(JSON.stringify({ items: [{ id: 1 }, { id: 2 }] }))
+        })
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+        const port = (server.address() as { port: number }).port
+        try {
+          const executor = new WorkflowExecutor({ ...makeDeps(), resolveWorkflow: () => echoChild })
+          const output = await executor.executeWorkflow({
+            nodes: [
+              { nodeId: "start", type: "start" },
+              { nodeId: "fetch", type: "http-request", config: { method: "GET", url: `http://127.0.0.1:${port}/items` } },
+              {
+                nodeId: "call1",
+                type: "workflow",
+                config: {
+                  targetWorkflowId: "sub-1",
+                  inputMapping: { items: "{{prev.response.body.items}}" },
+                  outputMapping: { echoed: "items" },
+                },
+              },
+              { nodeId: "end", type: "end" },
+            ],
+            edges: [
+              { edgeId: "e1", source: "start", target: "fetch" },
+              { edgeId: "e2", source: "fetch", target: "call1" },
+              { edgeId: "e3", source: "call1", target: "end" },
+            ],
+          })
+          expect(output.status).toBe("passed")
+          expect(output.extractedVariables["echoed"]).toEqual([{ id: 1 }, { id: 2 }])
+        } finally {
+          server.close()
+        }
+      })
+
+      it("keeps a mixed template as text", async () => {
+        const { output } = await callWith(
+          { label: "case {{variables.n}}: {{variables.record}}" },
+          { n: 2, record: { id: 7 } },
+          { label: "label" },
+        )
+        expect(output.extractedVariables["label"]).toBe('case 2: {"id":7}')
+      })
     })
 
     it("propagates a sub-workflow's own extracted variable through outputMapping", async () => {

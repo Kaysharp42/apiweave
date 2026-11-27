@@ -104,6 +104,39 @@ console.log("signed with", aw.secrets.get("SIGNING_KEY"))`,
     expect(output.extractedVariables).toMatchObject({ itemPath: "/items/42" })
   })
 
+  it("passes a value a post-response script sets into a called workflow through inputMapping", async () => {
+    const api = await startServer()
+    server = api.server
+    const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
+    const rng = new SeededRandomProvider("0xDEADBEEF")
+    const executor = new WorkflowExecutor({
+      clock,
+      rng,
+      http: new SafeHttp(),
+      functions: new DynamicFunctions(clock, rng),
+      resolveWorkflow: () => ({
+        name: "Reader",
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "read", type: "http-request", config: { method: "GET", url: `${api.base}{{variables.path}}` } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "read" }],
+      }),
+    })
+    const output = await executor.executeWorkflow(
+      chain(
+        {
+          nodeId: "create",
+          type: "http-request",
+          config: { method: "POST", url: `${api.base}/items`, scripts: { postResponse: 'aw.variables.set("itemPath", "/items/" + aw.response.json().id)' } },
+        },
+        { nodeId: "call", type: "workflow", config: { targetWorkflowId: "reader", inputMapping: { path: "{{variables.itemPath}}" } } },
+      ),
+    )
+    expect(output.status).toBe("passed")
+    expect(api.received.map((r) => r.url)).toEqual(["/items", "/items/42"])
+  })
+
   it("fails the node, and stops the branch, when an aw.test fails", async () => {
     const api = await startServer()
     server = api.server

@@ -1,14 +1,14 @@
 import type { Page } from "playwright-core"
+import { redactUrlForRunHistory } from "../../services/secret_utils"
 import { capturePage, within } from "./capture"
 import { settle } from "./settle"
-import { withoutQuery } from "./step"
 
 /** How long inspect waits for the page a run left open to settle. */
 const SETTLE_MAX_MS = 3_000
 
 /** The page a run left open, as `browser_inspect` returns it: every string already through the run's masker. */
 export interface InspectedPage {
-  /** Query string and fragment redacted, as run history stores URLs. */
+  /** Every query value but the plainly navigational ones, userinfo and the fragment withheld, as run history stores URLs. */
   readonly url: string
   readonly title: string
   readonly ariaSnapshot?: string
@@ -38,7 +38,7 @@ export async function inspectPage(
     ...(settled.ariaSnapshot !== undefined ? { ariaSnapshot: settled.ariaSnapshot } : {}),
   })
   return {
-    url: options.mask(withoutQuery(page.url())),
+    url: options.mask(redactUrlForRunHistory(page.url())),
     title: options.mask(title),
     ...(capture.ariaSnapshot !== undefined ? { ariaSnapshot: options.mask(capture.ariaSnapshot) } : {}),
     ...(capture.screenshot !== undefined ? { screenshot: capture.screenshot } : {}),

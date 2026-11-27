@@ -63,9 +63,18 @@ export function registerSecretHandlers(router: IpcRouter, deps: HandlerDeps): vo
   })
 
   router.register("secrets", "list", {
-    input: scopeInput,
+    // Optional scope, defaulting to the workspace's own: the common question is
+    // "which secrets exist", and an environment scope still names both fields.
+    input: z
+      .object({ workspaceId: ws, scopeType: scopeType.optional(), scopeId: z.string().min(1).optional() })
+      .strict()
+      .superRefine((i, ctx) => {
+        if (i.scopeType === "environment" && !i.scopeId) {
+          ctx.addIssue({ code: "custom", path: ["scopeId"], message: "scopeId is required for an environment scope" })
+        }
+      }),
     output: z.array(SecretMetadataSchema),
-    handle: (i) => secrets.list(i.workspaceId, i.scopeType, i.scopeId),
+    handle: (i) => secrets.list(i.workspaceId, i.scopeType ?? "workspace", i.scopeId ?? i.workspaceId),
   })
 
   router.register("secrets", "delete", {

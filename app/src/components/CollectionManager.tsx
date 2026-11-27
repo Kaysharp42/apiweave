@@ -120,7 +120,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
 
   const getProjectId = useCallback(
     (project: ExtendedProject): string =>
-      project.projectId ?? project.collectionId,
+      project.collectionId,
     [],
   );
 

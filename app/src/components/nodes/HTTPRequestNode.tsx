@@ -385,7 +385,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
 
 const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
   const updateNodeData = useNodeConfigPatch(id);
-  const { variables } = useWorkflow();
+  const { availableVariables } = useWorkflow();
 
   const method = (data.config?.method ?? "GET") as HttpMethod;
   const methodBadgeClass = methodBadgeClasses[method] ?? methodBadgeClasses.GET;
@@ -662,7 +662,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 onUpdate={(files: FileUpload[]) =>
                   updateNodeData("fileUploads", files)
                 }
-                variables={variables}
+                variables={availableVariables}
               />
             </div>
           )}

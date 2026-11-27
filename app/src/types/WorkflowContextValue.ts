@@ -4,7 +4,14 @@ import type { WorkflowVariables } from "./WorkflowVariables";
 
 export interface WorkflowContextValue {
   workflowId: string | undefined;
+  /** The workflow's stored variables: what a save writes. */
   variables: WorkflowVariables;
+  /**
+   * Stored variables plus the names the canvas's extractors define, for
+   * display and pickers only. Never save this: extractor names are derived
+   * from the graph and need no stored entry.
+   */
+  availableVariables: WorkflowVariables;
   collections: Project[];
   isLoadingCollections: boolean;
   currentCollectionId: string | null;

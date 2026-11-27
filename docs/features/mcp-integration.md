@@ -404,6 +404,12 @@ A row that is one iteration of a data-driven or load run carries `iteration`
 (`groupId`, 1-based `index`, `count`) — a load run's iterations are ordinary
 runs, so check the marker before treating the newest row as "the" latest run.
 
+`runs_get` stays metadata-only unless the caller passes `variables: true`,
+which also returns the run's stored variables — the final set once the run
+has finished (`outputMapping`, `aw.variables.set` and extractor values),
+masked like every read and bounded to 8 KiB, with entries that did not fit
+named in `omittedVariableNames`.
+
 Two run-adjacent operations are deliberately not agent tools. A load run —
 the same workflow fanned out as up to thousands of parallel real requests —
 is started by you from **Run options → Load run…** or with the CLI
@@ -499,9 +505,12 @@ rejected on write — the runner caps nesting at 8 levels and fails the node
 instead. A `{{secrets.NAME}}` on the right-hand side of an input mapping fails
 the node by design; the sub-workflow resolves secrets itself.
 
-The sub-workflow runs inside the caller's run, so there is no second run to
-poll: `runs_get` reports the calling node's status, and the run tools never
-expose a child run id because none exists.
+Each call is its own child run of the target; the calling node's `call`
+evidence names it (`runId`, or one per iteration under `forEach`), and the
+caller's `runs_get` reports the calling node's status. The child sees only its
+own variables plus the mapped inputs, and only `outputMapping` keys come back.
+A mapping value that is exactly one placeholder keeps its type (an object stays
+an object); one not set in the caller fails the node.
 
 **Reading a mapping back is lossy.** The redaction pass that protects MCP reads
 works on key names anywhere in a config, so a mapping entry whose *variable
@@ -574,7 +583,11 @@ Run tools return operational metadata suitable for an agent to monitor a run:
 Run responses intentionally omit raw request/response and variable content —
 except `runs_getNodeResult`, which returns one node's stored request/response,
 or a browser step's page address, values and masked ARIA snapshot, under the
-standard secret-redaction pass. Use the desktop response inspector when full
+standard secret-redaction pass. A page address or request URL is kept as the
+run visited or sent it, query and fragment included, losing only embedded
+userinfo: a value resolved from a secret reads `<SECRET>`, but a value a server
+put in the address (a sign-in code, a signed link, a session id) is stored and
+returned as it was. Use the desktop response inspector when full
 payloads for other nodes are needed.
 
 Run tools do not push updates themselves. A session client can subscribe to the

@@ -61,7 +61,7 @@ describe("settle", () => {
     const settled = settle(stub.page, 1_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "same" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "same", settled: true, unreadable: false })
     expect(stub.waits).toEqual([SETTLE_INTERVAL_MS])
     // Every read stays inside its own cap and the time the deadline had left.
     expect(stub.readTimeouts).toEqual([1_000, 500])
@@ -73,7 +73,7 @@ describe("settle", () => {
     const settled = settle(stub.page, 1_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "snapshot 1" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "snapshot 1", settled: false, unreadable: false })
     // One wait per interval, so the loop spends the budget rather than running on.
     expect(stub.waits).toEqual([SETTLE_INTERVAL_MS, SETTLE_INTERVAL_MS])
     expect(stub.waits.reduce((total, ms) => total + ms, 0)).toBe(1_000)
@@ -85,7 +85,7 @@ describe("settle", () => {
     const settled = settle(stub.page, 1_000, 150)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "same" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "same", settled: true, unreadable: false })
     expect(stub.waits).toEqual([150])
   })
 
@@ -94,28 +94,57 @@ describe("settle", () => {
     const settled = settle(stub.page, 1_000, 150)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "arrived" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "arrived", settled: true, unreadable: false })
     expect(stub.waits).toEqual([150, 150, 150, 150])
   })
 
-  it("honours a cap shorter than one interval", async () => {
+  it("honours a cap shorter than one interval, where no second read can be compared", async () => {
     const stub = stubPage((read) => `snapshot ${read}`)
     const settled = settle(stub.page, 300)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "snapshot 0" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "snapshot 0", settled: false, unreadable: true })
     expect(stub.waits).toEqual([300])
   })
 
-  it("keeps the snapshot it had when a later read finds nothing", async () => {
+  it("keeps the snapshot it had when a later read finds nothing, and calls it unreadable", async () => {
     // A read that runs out of budget answers nothing. That is no reason to
-    // throw away the page the first read did see.
+    // throw away the page the first read did see — and it is not evidence that
+    // the page changed, so it must not be reported as still changing.
     const stub = stubPage((read) => (read === 0 ? "before" : ""))
     const settled = settle(stub.page, 1_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "before" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "before", settled: false, unreadable: true })
     expect(stub.waits).toEqual([SETTLE_INTERVAL_MS, SETTLE_INTERVAL_MS])
+  })
+
+  it("calls a slow snapshot that used the settle budget unreadable, not still changing", async () => {
+    const page = {
+      isClosed: () => false,
+      waitForTimeout: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      waitForLoadState: () => Promise.resolve(),
+      locator: () => ({
+        ariaSnapshot: () => new Promise<string>((resolve) => setTimeout(() => resolve("slow"), 600)),
+      }),
+    }
+    const settled = settle(page as unknown as Page, 1_000, 150)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "slow", settled: false, unreadable: true })
+  })
+
+  it("calls a page whose snapshot throws unreadable, never still changing", async () => {
+    const page = {
+      isClosed: () => false,
+      waitForTimeout: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      waitForLoadState: () => Promise.resolve(),
+      locator: () => ({ ariaSnapshot: () => Promise.reject(new Error("page is gone")) }),
+    }
+    const settled = settle(page as unknown as Page, 1_000, 150)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    await expect(settled).resolves.toEqual({ settled: false, unreadable: true })
   })
 
   it("does not call two empty reads a settled page while the page is still open", async () => {
@@ -123,7 +152,7 @@ describe("settle", () => {
     const settled = settle(stub.page, 1_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({})
+    await expect(settled).resolves.toEqual({ settled: false, unreadable: true })
     // Silence is not agreement: settle spends its cap rather than stopping
     // after the first interval, during which a slow navigation would be cut.
     expect(stub.waits.reduce((total, ms) => total + ms, 0)).toBe(1_000)
@@ -137,7 +166,7 @@ describe("settle", () => {
     const settled = settle(stub.page, 60_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({ ariaSnapshot: "before" })
+    await expect(settled).resolves.toEqual({ ariaSnapshot: "before", settled: false, unreadable: true })
     expect(stub.waits).toEqual([SETTLE_INTERVAL_MS])
     expect(stub.readTimeouts).toHaveLength(2)
   })
@@ -149,7 +178,7 @@ describe("settle", () => {
 
     // Reads of a closed page take nothing, and the close is what ends the
     // wait: it says so rather than watching a deadline that cannot help.
-    await expect(settled).resolves.toEqual({})
+    await expect(settled).resolves.toEqual({ settled: false, unreadable: true })
     expect(stub.readTimeouts).toHaveLength(2)
     expect(stub.waits).toEqual([SETTLE_INTERVAL_MS])
   })
@@ -169,6 +198,6 @@ describe("settle", () => {
     const settled = settle(page as unknown as Page, 1_000)
     await vi.advanceTimersByTimeAsync(30_000)
 
-    await expect(settled).resolves.toEqual({})
+    await expect(settled).resolves.toEqual({ settled: false, unreadable: true })
   })
 })

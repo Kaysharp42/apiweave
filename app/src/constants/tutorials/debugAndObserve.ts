@@ -78,6 +78,8 @@ export const debugAndObserveChapter: TutorialChapter = {
           title: "Understand run persistence and masking",
           instruction:
             "Know that each completed node is persisted through the run repository and every resolved secret value is scrubbed before persistence.",
+          detail:
+            "Run history stays on this machine (Git sync never commits it), and agents connected over MCP can read it. Addresses are kept whole, query and fragment included, so a value a site put in an address itself — a sign-in code, a signed download link, a session id — is stored as it was: only your {{secrets.*}} values are masked. Report files leave the query out.",
         },
       ],
       example: {

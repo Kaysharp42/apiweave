@@ -1,8 +1,8 @@
 import { z } from "zod"
-import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema, RunArtifactSchema, AriaScopeSchema, RunInputCheckSchema } from "@shared/zod-schemas"
+import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema, RunArtifactSchema, AriaScopeSchema, RunInputCheckSchema, unknownKeyError } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import { ifFound, listResult, unknownKeyError } from "./common"
+import { ifFound, listResult } from "./common"
 import { NotFoundError, ValidationError } from "../errors"
 import {
   EVIDENCE_PREVIEW_MAX_BYTES,
@@ -65,6 +65,22 @@ const createLoadInput = z
 const loadGroupInput = z.object({ workspaceId: ws, groupId: z.string().min(1) }).strict()
 
 const runIdInput = z.object({ workspaceId: ws, runId: z.string().min(1) }).strict()
+
+// `variables` selects what the MCP projection of this read carries, not what
+// the handler returns: the shared IPC read stays the full local Run (the
+// renderer consumes run.variables itself), while the bridge reads the flag
+// and projects a bounded, masked variables section instead (see
+// core/mcp/run-projection.ts). The renderer never sends it.
+const getRunInput = z
+  .object({
+    workspaceId: ws,
+    runId: z.string().min(1),
+    variables: z
+      .boolean()
+      .optional()
+      .describe("Also return the run's stored variables — the final set once it has finished (outputMapping, aw.variables.set and extractor values). Bounded to 8 KiB: entries that do not fit are named in omittedVariableNames. Masked like every read; a value the run resolved from a secret is <SECRET>."),
+  })
+  .strict()
 
 const waitInput = z.object({
   workspaceId: ws,
@@ -233,7 +249,7 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   })
 
   router.register("runs", "get", {
-    input: runIdInput,
+    input: getRunInput,
     output: RunSchema,
     handle: (i) => runs.get(i.workspaceId, i.runId),
   })

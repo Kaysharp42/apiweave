@@ -25,6 +25,7 @@ import { ProjectFileImportTab } from "./molecules/ProjectFileImportTab";
 import { ProjectImportTargetSelect } from "./molecules/ProjectImportTargetSelect";
 import type { ProjectFileImportKind, TabItem } from "../types";
 import { Input } from "./atoms/Input";
+import { ProjectOptions } from "./atoms/ProjectOptions";
 import { TextArea } from "./atoms/TextArea";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
@@ -748,14 +749,7 @@ export function CollectionExportImport({
                   className="ml-7 px-3 py-2 rounded-sm"
                 >
                   <option value="">Select project…</option>
-                  {projects.map((project) => (
-                    <option
-                      key={project.projectId ?? project.collectionId}
-                      value={project.projectId ?? project.collectionId}
-                    >
-                      {project.name}
-                    </option>
-                  ))}
+                  <ProjectOptions projects={projects} />
                 </Select>
               )}
             </div>

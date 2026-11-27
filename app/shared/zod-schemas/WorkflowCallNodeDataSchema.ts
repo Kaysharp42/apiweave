@@ -8,7 +8,8 @@ import { WorkflowCallForEachSchema } from "./WorkflowCallForEachSchema"
  * `{{variables.<key>}}`; values are placeholder expressions resolved in the
  * CALLER's context (e.g. `{{variables.userId}}`, `{{env.BASE_URL}}`, or a
  * literal) — reusing the executor's existing substitution grammar rather than
- * inventing a second one.
+ * inventing a second one. A value that is exactly one placeholder keeps the
+ * resolved value's type; an unresolved placeholder fails the call.
  *
  * `outputMapping` keys are variable names written into the CALLER's scope;
  * values are variable names read from the target workflow's final
@@ -36,7 +37,7 @@ export const WorkflowCallNodeDataSchema = z
       .record(z.string(), z.string())
       .optional()
       .describe(
-        'Maps a target-workflow variable name to an expression resolved in the CALLER\'s context before the call: {{variables.x}}, {{env.X}} or a literal. A {{secrets.NAME}} here is rejected — the sub-workflow shares the caller\'s secrets and reads them itself.',
+        'Maps a target-workflow variable name to an expression resolved in the CALLER\'s context before the call: {{variables.x}}, {{env.X}}, a template or a literal. A value that is exactly one placeholder passes the raw value, so an object, array, number or boolean keeps its type (the target reads {{variables.<key>.field}}); a template mixing text and placeholders becomes text. A placeholder not set in the caller fails the node. A {{secrets.NAME}} here is rejected — the sub-workflow shares the caller\'s secrets and reads them itself.',
       ),
     outputMapping: z
       .record(z.string(), z.string())

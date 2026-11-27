@@ -15,7 +15,7 @@ export const BrowserStepResultSchema = z
     title: z.string().optional(),
     /** `expect-*`: what the step waited for. */
     expected: z.string().optional(),
-    /** `expect-*`: what the page showed last. `extract`: the value read. */
+    /** `expect-*`: what the page showed last. `extract`: the value read. `fill`: the value typed (`<SECRET>` for a secret or a password field). */
     actual: z.string().optional(),
     /** On failure: Playwright's own account of the failure, capped. */
     detail: z.string().optional(),

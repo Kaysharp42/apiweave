@@ -68,6 +68,88 @@ describe("Call Workflow forEach", () => {
     expect(filtered.extractedVariables["echoed"]).toEqual(["p", "r"])
   })
 
+  it("resolves a list from {{prev.…}} as the array it names", async () => {
+    const { createServer } = await import("node:http")
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ ids: [1, 2, 3] }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const port = (server.address() as { port: number }).port
+    try {
+      const output = await run({
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "fetch", type: "http-request", config: { method: "GET", url: `http://127.0.0.1:${port}/ids` } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            config: {
+              targetWorkflowId: "child",
+              outputMapping: { echoed: "item" },
+              forEach: { items: "{{prev.response.body.ids}}", itemVariable: "item" },
+            },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "fetch" },
+          { edgeId: "e2", source: "fetch", target: "call1" },
+          { edgeId: "e3", source: "call1", target: "end" },
+        ],
+      })
+      expect(output.status).toBe("passed")
+      expect(output.extractedVariables["echoed"]).toEqual([1, 2, 3])
+    } finally {
+      server.close()
+    }
+  })
+
+  it("refuses a for-each over a seeded prev result that was masked in the source run", async () => {
+    const executor = new WorkflowExecutor({ ...makeDeps(), resolveWorkflow: () => echoChild })
+    const output = await executor.executeWorkflow(
+      {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "fetch", type: "http-request", config: { method: "GET", url: "https://api.example.test/ids" } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            config: {
+              targetWorkflowId: "child",
+              outputMapping: { echoed: "item" },
+              forEach: { items: "{{prev.response.body.items}}", itemVariable: "item" },
+            },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "fetch" },
+          { edgeId: "e2", source: "fetch", target: "call1" },
+          { edgeId: "e3", source: "call1", target: "end" },
+        ],
+      },
+      {
+        startNodeIds: ["call1"],
+        resume: {
+          scope: new Set(["call1", "end"]),
+          results: [{
+            nodeId: "fetch",
+            status: "passed",
+            duration: 5,
+            response: { statusCode: 200, body: { items: ["<SECRET>", "kept"] } },
+          }],
+          maskedVariables: [],
+        },
+      },
+    )
+
+    expect(output.status).toBe("failed")
+    const error = output.results.find((result) => result.nodeId === "call1")?.error
+    expect(error).toContain("{{prev.response.body.items}} was masked in the source run")
+    expect(error).toContain("Not rerun:")
+  })
+
   it("fails the node when items is not an array or itemVariable is missing", async () => {
     const notArray = await run(caller({ items: "{{variables.n}}", itemVariable: "item" }, {}, { n: 3 }))
     expect(notArray.status).toBe("failed")
@@ -172,6 +254,77 @@ describe("Call Workflow forEach", () => {
       const result = output.results.find((r) => r.nodeId === "call1")
       expect(result?.status).toBe("skipped")
       expect(output.nodeStatuses["end"]).toBeUndefined()
+    })
+  })
+
+  it("passes the input mapping into every iteration, beside the item", async () => {
+    const output = await run(
+      caller(
+        { items: "[1,2,3]", itemVariable: "item" },
+        { inputMapping: { tenant: "{{variables.tenant}}", limits: "{{variables.limits}}" }, outputMapping: { tenants: "tenant", limitSets: "limits", echoed: "item" } },
+        { tenant: "tenant-a", limits: { max: 5 } },
+      ),
+    )
+    expect(output.status).toBe("passed")
+    expect(output.extractedVariables["tenants"]).toEqual(["tenant-a", "tenant-a", "tenant-a"])
+    expect(output.extractedVariables["limitSets"]).toEqual([{ max: 5 }, { max: 5 }, { max: 5 }])
+    expect(output.extractedVariables["echoed"]).toEqual([1, 2, 3])
+  })
+
+  it("fails before any iteration when the input mapping does not resolve in the caller", async () => {
+    const begun: string[] = []
+    const subRun = {
+      begin: (workflowId: string) => {
+        begun.push(workflowId)
+        return { runId: `run-${begun.length}`, deps: { ...makeDeps() } }
+      },
+      finish: () => undefined,
+    }
+    const output = await run(
+      caller({ items: "[1,2]", itemVariable: "item" }, { inputMapping: { tenant: "{{variables.tenant}}" } }),
+      echoChild,
+      { subRun },
+    )
+    expect(output.status).toBe("failed")
+    expect(output.results.find((r) => r.nodeId === "call1")?.error).toBe("inputMapping.tenant: {{variables.tenant}} is not set in the caller")
+    expect(begun).toEqual([])
+    expect(output.extractedVariables).not.toHaveProperty("echoed")
+  })
+
+  describe("with an object item read field by field in the child", () => {
+    let server: Server
+    let port: number
+    const paths: string[] = []
+
+    beforeEach(async () => {
+      paths.length = 0
+      server = createServer((req, res) => {
+        paths.push(req.url ?? "")
+        res.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      port = (server.address() as { port: number }).port
+    })
+    afterEach(() => {
+      server.closeAllConnections()
+      server.close()
+    })
+
+    it("resolves {{variables.case.title}} against each item", async () => {
+      const child: ResolvedSubWorkflow = {
+        name: "Case",
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "h", type: "http-request", config: { url: `http://127.0.0.1:${port}/{{variables.case.title}}/{{variables.case.meta.rank}}` } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "h" }],
+      }
+      const output = await run(
+        caller({ items: "{{variables.cases}}", itemVariable: "case" }, {}, { cases: [{ title: "first", meta: { rank: 1 } }, { title: "second", meta: { rank: 2 } }] }),
+        child,
+      )
+      expect(output.status).toBe("passed")
+      expect(paths).toEqual(["/first/1", "/second/2"])
     })
   })
 

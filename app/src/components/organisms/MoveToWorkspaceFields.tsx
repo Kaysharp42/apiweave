@@ -1,5 +1,5 @@
 import { FormField } from "../molecules/FormField";
-import { Select } from "../atoms/Select";
+import { ProjectAssignmentSelect } from "../molecules/ProjectAssignmentSelect";
 import { Spinner } from "../atoms/Spinner";
 import { WorkspaceSelect } from "./WorkspaceSelect";
 import type { MovableItemKind, Project, Workspace } from "../../types";
@@ -74,29 +74,15 @@ export function MoveToWorkspaceFields({
           label="Project in the destination"
           hint="Optional — the workflow can arrive without a project."
         >
-          {isLoadingProjects ? (
-            <div className="flex items-center gap-2 py-2 text-xs text-text-secondary dark:text-text-secondary-dark">
-              <Spinner size="xs" /> Loading projects…
-            </div>
-          ) : (
-            <Select
-              aria-label="Project in the destination workspace"
-              className="cursor-pointer"
-              value={targetProjectId}
-              onChange={(event) => onSelectProject(event.target.value)}
-              disabled={disabled}
-            >
-              <option value={unassignedValue}>No project</option>
-              {targetProjects.map((project) => {
-                const projectId = project.projectId ?? project.collectionId;
-                return (
-                  <option key={projectId} value={projectId}>
-                    {project.name}
-                  </option>
-                );
-              })}
-            </Select>
-          )}
+          <ProjectAssignmentSelect
+            projects={targetProjects}
+            isLoading={isLoadingProjects}
+            value={targetProjectId}
+            onChange={onSelectProject}
+            disabled={disabled}
+            ariaLabel="Project in the destination workspace"
+            unassignedValue={unassignedValue}
+          />
         </FormField>
       )}
     </>

@@ -89,6 +89,12 @@ const GET_BY_ID_SQL = `SELECT ${COLUMNS} FROM workflows WHERE id = ?`
 /** `update`'s no-op guard compares every column it writes, so its read adds `slug` to {@link COLUMNS}. */
 const GET_BY_ID_FOR_UPDATE_SQL = `SELECT ${COLUMNS}, slug FROM workflows WHERE id = ?`
 
+/** `listCallers`: workflows holding a Call Workflow node whose `targetWorkflowId` is the second parameter. */
+const LIST_CALLERS_SQL = `SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? AND EXISTS (
+  SELECT 1 FROM json_each(graph_json, '$.nodes')
+  WHERE json_extract(value, '$.type') = 'workflow' AND json_extract(value, '$.config.targetWorkflowId') = ?
+) ORDER BY createdAt DESC, id DESC`
+
 interface WorkflowRow extends SqliteRow {
   readonly id: string
   readonly workspace_id: string
@@ -202,6 +208,11 @@ export class WorkflowRepository {
       rowToWorkflow,
     ).filter((workflow) => workflow.collectionId === collectionId)
     return { items, total: items.length }
+  }
+
+  /** The workspace's workflows with a Call Workflow node that targets `targetWorkflowId`. */
+  public listCallers(workspaceId: string, targetWorkflowId: string): readonly Workflow[] {
+    return queryMapped(this.store, LIST_CALLERS_SQL, [workspaceId, targetWorkflowId], rowToWorkflow)
   }
 
   /** Bounded, graph-free discovery query with deterministic keyset ordering. */

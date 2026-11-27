@@ -2,6 +2,7 @@ import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { SECRET_PLACEHOLDER } from "../services/secret_utils"
+import { placeholderReferences, scriptReferences, variableWrites } from "@shared/analysis/variable_references"
 import type { WorkflowEdge, WorkflowNode } from "./executor"
 
 /**
@@ -107,13 +108,9 @@ export function seedVariables(
   return { variables: reusable, masked }
 }
 
-const VARIABLE_READ = /\{\{\s*variables\.([^.}\s[]+)|aw\.variables\.get\(\s*["']([^"']+)["']/g
-const SCRIPT_VARIABLE_WRITE = /aw\.variables\.set\(\s*["']([^"']+)["']/g
-
 /**
  * The masked variables the scope's nodes read without setting them first in
- * the scope (an extractor, a Call Workflow output, or a script's
- * `aw.variables.set`). A rerun that needs one is refused: its stored value is
+ * the scope (see `variablesWritten`). A rerun that needs one is refused: its stored value is
  * `<SECRET>`, never the value. A variable a scope node sets is left to the
  * executor, which refuses the read at run time if it still comes first.
  */
@@ -122,24 +119,16 @@ export function maskedVariablesRead(nodes: readonly WorkflowNode[], scope: Reado
   const inScope = nodes.filter((node) => scope.has(node.nodeId))
   const read = new Set<string>()
   for (const text of collectStrings(inScope.map((node) => node.config ?? {}))) {
-    for (const match of text.matchAll(VARIABLE_READ)) read.add((match[1] ?? match[2])!)
+    for (const ref of placeholderReferences(text)) if (ref.scope === "variables") read.add(ref.name)
+    for (const ref of scriptReferences(text)) if (ref.scope === "variables" && !ref.write) read.add(ref.name)
   }
   const written = variablesWritten(inScope)
   return masked.filter((name) => read.has(name) && !written.has(name))
 }
 
-/** The variables `nodes` set: an extractor, a Call Workflow output, or a script's `aw.variables.set`. */
+/** The variables `nodes` set: an extractor, a Call Workflow output, a browser extract or a script's `aw.variables.set`. */
 function variablesWritten(nodes: readonly WorkflowNode[]): Set<string> {
-  const written = new Set<string>()
-  for (const node of nodes) {
-    const config = node.config ?? {}
-    for (const key of ["extractors", "outputMapping"]) {
-      const map = config[key]
-      if (map !== null && typeof map === "object") for (const name of Object.keys(map)) written.add(name)
-    }
-    for (const text of collectStrings(config)) for (const match of text.matchAll(SCRIPT_VARIABLE_WRITE)) written.add(match[1]!)
-  }
-  return written
+  return new Set(nodes.flatMap((node) => variableWrites(node).map((write) => write.name)))
 }
 
 /**

@@ -3,6 +3,7 @@ import { describeLocator } from "@shared/browser/describe_locator"
 import type { BrowserLocator } from "@shared/types/BrowserLocator"
 import type { BrowserNodeData } from "@shared/types/BrowserNodeData"
 import type { BrowserStepResult } from "@shared/types/BrowserStepResult"
+import { SECRET_PLACEHOLDER, redactUrlForRunHistory } from "../../services/secret_utils"
 import { rememberSecretField, within } from "./capture"
 import { buildLocator } from "./locator"
 import { pollUntil } from "./poll"
@@ -89,18 +90,6 @@ function resolveValue(ctx: BrowserStepContext, text: string, allowSecrets: boole
 /** Collapse runs of whitespace and trim, the way Playwright's own text assertions compare. */
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, " ").trim()
-}
-
-/** `url` without its query string and fragment, which can carry tokens, as run history stores URLs. */
-export function withoutQuery(url: string): string {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    return url
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return url
-  return `${parsed.origin}${parsed.pathname}${parsed.search ? "?<REDACTED>" : ""}${parsed.hash ? "#<REDACTED>" : ""}`
 }
 
 function seconds(ms: number): string {
@@ -267,6 +256,115 @@ async function expectRead(
   throw new StepFailure(describeMiss(actual), { expected, ...(actual !== undefined ? { actual: shown(actual) } : {}) })
 }
 
+/**
+ * An expect-text or expect-value check: poll what `read` takes from the element
+ * at `where` until it compares to `expected` by `match`. `noun` names that part
+ * of the element in the failure.
+ */
+function expectElementRead(
+  ctx: BrowserStepContext,
+  read: (timeoutMs: number) => Promise<string>,
+  expected: string,
+  match: "equals" | "contains" | "matches",
+  timeout: number,
+  where: string,
+  noun: "text" | "value",
+): Promise<Compared> {
+  return expectRead(
+    read,
+    (actual) => compareText(ctx, actual, expected, match),
+    timeout,
+    expected,
+    (actual) =>
+      actual === undefined
+        ? `${where} was not found within ${seconds(timeout)}`
+        : `the ${noun} of ${where} did not ${MATCH_VERBS[match]} the expected ${noun} within ${seconds(timeout)}`,
+  )
+}
+
+/** Whitespace as `selectOption` compares it: one space, no leading or trailing run. */
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim()
+}
+
+/** Whether an option's value or visible label is the requested value, whitespace aside. */
+function optionMatches(option: { value: string; label: string }, value: string): boolean {
+  const wanted = collapseWhitespace(value)
+  return collapseWhitespace(option.value) === wanted || collapseWhitespace(option.label) === wanted
+}
+
+/** What a native <select> holds, read in the page: whether it is multiple, and each selected option. */
+function readSelected(element: Element): { multiple: boolean; options: Array<{ value: string; label: string }> } | undefined {
+  // Playwright's own actions retarget a label to its control, but `evaluate`
+  // runs on the element the locator matched: a `<label for=…>` locator must be
+  // followed to the control the step actually selected.
+  const control = element instanceof HTMLLabelElement ? element.control : element
+  if (!(control instanceof HTMLSelectElement)) return undefined
+  return {
+    multiple: control.multiple,
+    options: Array.from(control.selectedOptions, (option) => ({ value: option.value, label: option.label })),
+  }
+}
+
+/** A navigation the selection itself started, which destroys the context the read-back runs in. */
+function isNavigationDuringRead(error: unknown): boolean {
+  return error instanceof Error && /Execution context was destroyed|Execution context is not available/i.test(error.message)
+}
+
+/**
+ * Playwright's `selectOption` returns once it has dispatched its events, so a
+ * page whose change handler puts the old value back still reports success.
+ * Read the <select> back until it holds the requested options, each matched by
+ * value or label as `selectOption` matched it.
+ *
+ * A single select holds one option however many were asked for — Playwright
+ * picks the first match — so one of the requested values is enough; a
+ * multi-select must hold exactly the requested set. A change handler that
+ * navigates destroys the context the read would use, and that is the page
+ * acting on the selection, so it passes.
+ */
+async function expectSelected(
+  element: Locator,
+  values: readonly string[],
+  where: string,
+  pollTimeout: number,
+  configuredTimeout: number,
+  navigated: () => boolean,
+): Promise<Compared> {
+  const expected = values.join(", ")
+  let held: { multiple: boolean; options: Array<{ value: string; label: string }> } | undefined
+  const { passed } = await pollUntil(
+    pollTimeout,
+    async (remaining) => {
+      try {
+        held = await element.evaluate(readSelected, undefined, { timeout: Math.min(remaining, POLL_READ_MAX_MS) })
+      } catch (error) {
+        // A navigating handler destroys the context, or — once the page has
+        // replaced the form — leaves the locator nothing to resolve. Either way
+        // the page acted on the selection rather than reverting it.
+        if (isNavigationDuringRead(error) || navigated()) return true
+        throw error
+      }
+      if (held === undefined && navigated()) return true
+      const current = held
+      if (current === undefined) return false
+      const matched = (option: { value: string; label: string }, value: string): boolean => optionMatches(option, value)
+      if (!current.multiple) return current.options.some((option) => values.some((value) => matched(option, value)))
+      return (
+        values.every((value) => current.options.some((option) => matched(option, value))) &&
+        current.options.every((option) => values.some((value) => matched(option, value)))
+      )
+    },
+    isFatal,
+  )
+  const actual = held === undefined ? undefined : held.options.map((option) => option.label).join(", ")
+  if (passed) return actual !== undefined ? { expected, actual } : { expected }
+  throw new StepFailure(
+    `${where} did not hold the selected option within ${seconds(configuredTimeout)}: the page changed it back, or it is not a native <select>`,
+    { expected, ...(actual !== undefined ? { actual } : {}) },
+  )
+}
+
 // fallow-ignore-next-line complexity -- one case per browser action: the switch is the action table
 async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepContext, timeout: number): Promise<Compared> {
   const locate = (locator: BrowserLocator): Locator => buildLocator(page, locator, (text) => resolveValue(ctx, text, false))
@@ -314,7 +412,9 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
       if (value !== "" && (secret || password)) rememberSecretField(page, element)
       if (password && value !== "") ctx.maskValue(value)
       await element.fill(value, { timeout })
-      return {}
+      // What was typed, so a value that resolved to "" shows. A secret or a
+      // password is never written here, even one too short for the masker.
+      return { actual: secret || password ? SECRET_PLACEHOLDER : value }
     }
     case "press": {
       armDialog(page, config.dialog)
@@ -331,9 +431,23 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
     case "hover":
       await locate(config.locator).hover({ timeout })
       return {}
-    case "select":
-      await locate(config.locator).selectOption(config.values.map((value) => resolveValue(ctx, value, false)), { timeout })
-      return {}
+    case "select": {
+      const values = config.values.map((value) => resolveValue(ctx, value, false))
+      const element = locate(config.locator)
+      // The whole step shares one deadline: a read-back that started its own
+      // full timeout would let a slow selection double the step's wait.
+      const deadline = Date.now() + timeout
+      const urlBefore = page.url()
+      await element.selectOption(values, { timeout })
+      return expectSelected(
+        element,
+        values,
+        describeLocator(config.locator),
+        Math.max(1, deadline - Date.now()),
+        timeout,
+        () => page.url() !== urlBefore,
+      )
+    }
     case "expect-visible": {
       const visible = config.visible ?? true
       const expected = visible ? "visible" : "hidden"
@@ -352,31 +466,26 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
       const match = config.match ?? "contains"
       const expected = match === "matches" ? resolveValue(ctx, config.text, false) : normalizeText(resolveValue(ctx, config.text, false))
       const element = locate(config.locator)
-      const where = describeLocator(config.locator)
-      return expectRead(
+      return expectElementRead(
+        ctx,
         async (readTimeout) => normalizeText(await element.innerText({ timeout: readTimeout })),
-        (actual) => compareText(ctx, actual, expected, match),
-        timeout,
         expected,
-        (actual) =>
-          actual === undefined
-            ? `${where} was not found within ${seconds(timeout)}`
-            : `the text of ${where} did not ${MATCH_VERBS[match]} the expected text within ${seconds(timeout)}`,
+        match,
+        timeout,
+        describeLocator(config.locator),
+        "text",
       )
     }
     case "expect-value": {
-      const expected = resolveValue(ctx, config.value, false)
       const element = locate(config.locator)
-      const where = describeLocator(config.locator)
-      return expectRead(
+      return expectElementRead(
+        ctx,
         (readTimeout) => element.inputValue({ timeout: readTimeout }),
-        async (actual) => actual === expected,
+        resolveValue(ctx, config.value, false),
+        config.match ?? "equals",
         timeout,
-        expected,
-        (actual) =>
-          actual === undefined
-            ? `${where} was not found within ${seconds(timeout)}`
-            : `the value of ${where} did not equal the expected value within ${seconds(timeout)}`,
+        describeLocator(config.locator),
+        "value",
       )
     }
     case "expect-url": {
@@ -386,15 +495,15 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
         async () => page.url(),
         (actual) => compareText(ctx, actual, expected, match),
         timeout,
-        withoutQuery(expected),
+        redactUrlForRunHistory(expected),
         () => `the page URL did not ${MATCH_VERBS[match]} the expected URL within ${seconds(timeout)}`,
-        withoutQuery,
+        redactUrlForRunHistory,
       )
     }
     case "extract": {
       const value = await extractValue(page, config, locate, timeout)
       ctx.setVariable(config.variable, value)
-      return { actual: config.from === "url" ? withoutQuery(value) : value }
+      return { actual: config.from === "url" ? redactUrlForRunHistory(value) : value }
     }
   }
 }
@@ -428,14 +537,33 @@ async function extractValue(
  * own account rides on the result's `detail`.
  */
 export function timeoutReason(message: string): string {
-  if (message.includes("intercepts pointer events")) return "another element covers it"
+  if (message.includes("intercepts pointer events")) {
+    return "another element covers it (if this is a visually hidden input, click its label or press Space)"
+  }
   if (message.includes("element is not visible")) return "it is not visible"
   if (message.includes("element is not enabled")) return "it is disabled"
   if (message.includes("element is not editable")) return "it is not editable"
   if (message.includes("outside of the viewport")) return "it is outside the page"
   if (message.includes("element is not stable")) return "it kept moving"
-  if (message.includes("waiting for") && !message.includes("locator resolved to")) return "it was not found"
+  if (message.includes("waiting for") && !message.includes("locator resolved to")) return "it was not found (if an earlier step saw it, it may have closed or moved since)"
   return "it did not become ready in time (see detail)"
+}
+
+const CANDIDATES_SHOWN = 5
+const CANDIDATE_MAX_CHARS = 80
+
+/**
+ * The candidates of a strict-mode violation as Playwright names them, each a
+ * locator that would pick it (`getByRole('button', { name: 'Save' })`), the
+ * first few and shortened. A candidate longer than the cap is left out whole
+ * rather than cut: a half-name can be half a secret the run's masker only
+ * matches whole, and it is still counted in the "N more" tail.
+ */
+function ambiguousCandidates(message: string): string[] {
+  const plain = message.replace(/\u001b\[[0-9;]*m/g, "")
+  const all = [...plain.matchAll(/^\s*\d+\) .*? aka (.+?)\s*$/gm)].map((match) => match[1] ?? "")
+  const shown = all.filter((name) => name.length <= CANDIDATE_MAX_CHARS).slice(0, CANDIDATES_SHOWN)
+  return all.length > shown.length ? [...shown, `${all.length - shown.length} more`] : shown
 }
 
 /** A Playwright error as a value-free message about this step. */
@@ -446,7 +574,9 @@ export function diagnose(error: unknown, config: BrowserNodeData, timeout: numbe
   if (isClosed(error)) return "the browser was closed"
   if (isAmbiguous(error)) {
     const count = /resolved to (\d+) elements/.exec(message)?.[1]
-    return `${target} matches ${count ?? "several"} elements; add hasText, nth or within to pick one`
+    const candidates = ambiguousCandidates(message)
+    const listed = candidates.length > 0 ? ` (${candidates.join("; ")})` : ""
+    return `${target} matches ${count ?? "several"} elements${listed}; add hasText, nth or within to pick one`
   }
   const network = /net::ERR_[A-Z_]+/.exec(message)?.[0]
   if (network !== undefined) return `the page could not be loaded (${network})`
@@ -465,14 +595,16 @@ function detailOf(error: unknown): string | undefined {
 }
 
 /**
- * Where the page is: its url without the query and its title. Read after a
+ * Where the page is: its redacted url and its title. Read after a
  * step, and again of the settled page when its evidence is taken, so both say
- * which page they belong to.
+ * which page they belong to. Plain query parameters stay legible; userinfo,
+ * the fragment and secret-named parameters are withheld, on top of the run's
+ * own secret-value masker.
  */
 export async function pageFacts(page: Page): Promise<Pick<BrowserStepResult, "url" | "title">> {
   const url = page.url()
   const title = await within(page.title(), 2_000, "")
-  return { ...(url !== "" ? { url: withoutQuery(url) } : {}), ...(title !== "" ? { title } : {}) }
+  return { ...(url !== "" ? { url: redactUrlForRunHistory(url) } : {}), ...(title !== "" ? { title } : {}) }
 }
 
 /**

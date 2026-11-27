@@ -1,4 +1,5 @@
 import type { Workflow } from "@shared/types/Workflow";
+import { applyNodeChanges } from "@xyflow/react";
 import { describe, expect, it } from "vitest";
 import { canvasToWorkflow, workflowToCanvas } from "./workflowCanvas";
 
@@ -266,6 +267,47 @@ describe("workflow canvas adapters", () => {
     expect(
       result.nodes.find((node) => node.nodeId === "request-1"),
     ).toMatchObject({ parentId: "group-1", position: { x: 28, y: 28 } });
+  });
+
+  // FB-006: a frame's stored size must change only when the user resizes it.
+  // React Flow reports a measurement as a `dimensions` change without
+  // `setAttributes`; the resizer sets it. Only the second may reach a save.
+  it("persists a frame's size from an explicit resize, never from a measurement", () => {
+    const framed: Workflow = {
+      ...workflow,
+      nodes: [
+        {
+          nodeId: "group-1",
+          type: "group",
+          label: "Checkout",
+          position: { x: 180, y: 0 },
+          config: { width: 420, height: 260 },
+        },
+      ],
+      edges: [],
+    };
+    const canvas = workflowToCanvas(framed);
+    const persistedSize = (nodes: typeof canvas.nodes) =>
+      canvasToWorkflow({ ...canvas, nodes }, framed).nodes[0]?.config;
+
+    const measured = applyNodeChanges(
+      [{ id: "group-1", type: "dimensions", dimensions: { width: 421.5, height: 259 } }],
+      canvas.nodes,
+    );
+    expect(persistedSize(measured)).toEqual({ width: 420, height: 260 });
+
+    const resized = applyNodeChanges(
+      [
+        {
+          id: "group-1",
+          type: "dimensions",
+          dimensions: { width: 500, height: 300 },
+          setAttributes: true,
+        },
+      ],
+      canvas.nodes,
+    );
+    expect(persistedSize(resized)).toEqual({ width: 500, height: 300 });
   });
 
   it("drops a parentId the cloud merge left dangling", () => {
