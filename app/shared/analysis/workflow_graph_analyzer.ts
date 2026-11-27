@@ -944,7 +944,10 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   for (const [variableName, entry] of Object.entries(provenance)) {
     // A value passed in by a calling workflow is set before any node runs, as a manual one is.
     const hasManualValue = Object.prototype.hasOwnProperty.call(variables, variableName) || callerVariables.has(variableName)
-    if (!hasManualValue && entry.producers.length === 0 && entry.consumers.length > 0) {
+    // A refresh re-reads a value the node already had; it is not a source, so
+    // it neither hides a missing one nor counts as a second producer.
+    const producers = entry.producers.filter((producer) => !isRefresh(producer, variableName))
+    if (!hasManualValue && producers.length === 0 && entry.consumers.length > 0) {
       diagnostics.push(diagnostic(
         "variable_source_missing",
         "warning",
@@ -955,7 +958,6 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
         { kind: "define_variable_or_extractor", variableName },
       ))
     }
-    const producers = entry.producers.filter((producer) => !isRefresh(producer, variableName))
     if (producers.length > 1) {
       diagnostics.push(diagnostic(
         "variable_producer_duplicate",

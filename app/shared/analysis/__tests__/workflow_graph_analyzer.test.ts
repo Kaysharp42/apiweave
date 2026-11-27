@@ -1686,6 +1686,16 @@ describe("variable producers and readers", () => {
     expect(findings(workflow)).toEqual([])
   })
 
+  it("still reports a variable whose only write is its own post-response refresh", () => {
+    const workflow = chain([
+      request("use", {
+        headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+        scripts: { postResponse: 'aw.variables.set("token", aw.response.json().token)' },
+      }),
+    ])
+    expect(findings(workflow)).toEqual([["variable_source_missing", "token"]])
+  })
+
   it("still flags a pre-request write of a variable the same node's placeholders read", () => {
     // Placeholders resolve before the pre-request script runs, so this node
     // reads the previous value and then adds a second producer of its own.
