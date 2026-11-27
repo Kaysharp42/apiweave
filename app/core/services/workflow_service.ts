@@ -183,12 +183,15 @@ function describeConnection(edge: WorkflowEdge): string {
 /**
  * Whether a whole-graph write re-transmits a stored edge unchanged. Handles and
  * the label compare as null when absent, so the canvas's `null` spelling and a
- * stored omission are the same edge.
+ * stored omission are the same edge. A stored graph may itself hold several
+ * edges under one id (written before the check existed, or imported through the
+ * repository); the sent copy is carried over when it matches any of them.
  */
-function isCarriedOverEdge(stored: WorkflowEdge | undefined, sent: WorkflowEdge): boolean {
-  return stored !== undefined
-    && edgeConnectionKey(stored) === edgeConnectionKey(sent)
-    && (stored.label ?? null) === (sent.label ?? null)
+function isCarriedOverEdge(stored: readonly WorkflowEdge[] | undefined, sent: WorkflowEdge): boolean {
+  return stored?.some((candidate) =>
+    edgeConnectionKey(candidate) === edgeConnectionKey(sent)
+    && (candidate.label ?? null) === (sent.label ?? null),
+  ) ?? false
 }
 
 /**
@@ -272,16 +275,25 @@ function missingEndpointAdvice(removedInPatch: boolean): string {
  * means one of the two edges would silently replace the other.
  */
 function assertSentEdgeIdsUnique(sent: readonly SentEdge[]): void {
-  const sentById = new Map<string, SentEdge>()
+  const sentById = new Map<string, SentEdge[]>()
   for (const item of sent) {
-    const previous = sentById.get(item.edge.edgeId)
-    if (previous !== undefined) {
-      throw new ValidationError(
-        `${describeSentEdge(item)}: edgeId "${item.edge.edgeId}" is already used by ${describeSentEdge(previous)}. Give each connection its own edgeId; reusing one replaces that edge.`,
-        { edgeIndex: item.index, edgeId: item.edge.edgeId, duplicateOfEdgeIndex: previous.index },
-      )
+    const group = sentById.get(item.edge.edgeId)
+    if (group === undefined) {
+      sentById.set(item.edge.edgeId, [item])
+      continue
     }
-    sentById.set(item.edge.edgeId, item)
+    group.push(item)
+    // A repeat where every copy is carried over predates this write: the
+    // canvas only re-transmitted a stored defect. One new or changed copy makes
+    // the request ambiguous, and that copy is the one the message names.
+    const authored = group.filter((candidate) => !candidate.carriedOver)
+    if (authored.length === 0) continue
+    const duplicate = authored[authored.length - 1]!
+    const previous = group.find((candidate) => candidate.index !== duplicate.index)!
+    throw new ValidationError(
+      `${describeSentEdge(duplicate)}: edgeId "${duplicate.edge.edgeId}" is already used by ${describeSentEdge(previous)}. Give each connection its own edgeId; reusing one replaces that edge.`,
+      { edgeIndex: duplicate.index, edgeId: duplicate.edge.edgeId, duplicateOfEdgeIndex: previous.index },
+    )
   }
 }
 
@@ -586,7 +598,14 @@ export class WorkflowService {
     if (patch.edges !== undefined) {
       // The canvas saves by sending the whole graph, so an edge unchanged from
       // the stored one is not this write's request — see `assertEdgeIntegrity`.
-      const storedEdges = new Map(existing.edges.map((edge) => [edge.edgeId, edge]))
+      // A stored graph can hold more than one edge under an id, so every stored
+      // copy is kept, not just the last the map would have held.
+      const storedEdges = new Map<string, WorkflowEdge[]>()
+      for (const edge of existing.edges) {
+        const copies = storedEdges.get(edge.edgeId)
+        if (copies === undefined) storedEdges.set(edge.edgeId, [edge])
+        else copies.push(edge)
+      }
       assertEdgeIntegrity(
         patch.edges,
         patch.nodes ?? existing.nodes,

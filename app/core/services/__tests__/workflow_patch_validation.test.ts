@@ -288,6 +288,72 @@ describe("edge integrity on every write", () => {
     expect(analyzeWorkflowGraph(saved).diagnostics.map((item) => item.code)).toContain("duplicate_edge")
   })
 
+  it("saves a whole edge list whose stored edges share an edgeId, re-sending both unchanged", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored repeated id",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+        { nodeId: "other", type: "end", position: { x: 100, y: 100 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e1", source: "start", target: "other" },
+      ],
+    })
+
+    const saved = await service.update(workspaceId, stored.workflowId, { edges: stored.edges })
+
+    expect(saved.edges.map((edge) => [edge.edgeId, edge.target])).toEqual([["e1", "end"], ["e1", "other"]])
+  })
+
+  it("rejects a whole-graph update that changes one of two stored edges sharing an edgeId", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored repeated id",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+        { nodeId: "other", type: "end", position: { x: 100, y: 100 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e1", source: "start", target: "other" },
+      ],
+    })
+
+    const error = await rejected(service.update(workspaceId, stored.workflowId, {
+      edges: [{ ...stored.edges[0]!, label: "changed" }, stored.edges[1]!],
+    }))
+
+    expect(error.message).toContain('edges[0] ("e1")')
+    expect(workflows.getById(stored.workflowId)!.rev).toBe(stored.rev)
+  })
+
+  it("rejects a whole-graph update that adds a third copy of a stored edgeId", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored repeated id",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+        { nodeId: "other", type: "end", position: { x: 100, y: 100 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e1", source: "start", target: "other" },
+      ],
+    })
+
+    const error = await rejected(service.update(workspaceId, stored.workflowId, {
+      edges: [...stored.edges, { edgeId: "e1", source: "end", target: "other" }],
+    }))
+
+    expect(error.message).toContain('edges[2] ("e1")')
+    expect(workflows.getById(stored.workflowId)!.rev).toBe(stored.rev)
+  })
+
   it("still rejects a whole-graph update that adds a third copy of a stored connection", async () => {
     const stored = workflows.create({
       workspaceId,
