@@ -183,15 +183,22 @@ function describeConnection(edge: WorkflowEdge): string {
 /**
  * Whether a whole-graph write re-transmits a stored edge unchanged. Handles and
  * the label compare as null when absent, so the canvas's `null` spelling and a
- * stored omission are the same edge. A stored graph may itself hold several
- * edges under one id (written before the check existed, or imported through the
- * repository); the sent copy is carried over when it matches any of them.
+ * stored omission are the same edge.
+ *
+ * A stored graph may itself hold several edges under one id (written before the
+ * check existed, or imported through the repository). A match is consumed from
+ * `stored`, so each stored copy can be carried over by one sent edge only: two
+ * stored copies never excuse three exact copies in one request.
  */
-function isCarriedOverEdge(stored: readonly WorkflowEdge[] | undefined, sent: WorkflowEdge): boolean {
-  return stored?.some((candidate) =>
+function takeCarriedOverEdge(stored: WorkflowEdge[] | undefined, sent: WorkflowEdge): boolean {
+  if (stored === undefined) return false
+  const index = stored.findIndex((candidate) =>
     edgeConnectionKey(candidate) === edgeConnectionKey(sent)
     && (candidate.label ?? null) === (sent.label ?? null),
-  ) ?? false
+  )
+  if (index < 0) return false
+  stored.splice(index, 1)
+  return true
 }
 
 /**
@@ -613,7 +620,7 @@ export class WorkflowService {
           edge,
           field: "edges",
           index,
-          carriedOver: isCarriedOverEdge(storedEdges.get(edge.edgeId), edge),
+          carriedOver: takeCarriedOverEdge(storedEdges.get(edge.edgeId), edge),
         })),
         { existingNodeIds: new Set(existing.nodes.map((node) => node.nodeId)) },
       )

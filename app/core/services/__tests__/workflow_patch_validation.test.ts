@@ -354,6 +354,29 @@ describe("edge integrity on every write", () => {
     expect(workflows.getById(stored.workflowId)!.rev).toBe(stored.rev)
   })
 
+  it("rejects a third exact copy when two stored edges already share an edgeId", async () => {
+    const stored = workflows.create({
+      workspaceId,
+      name: "Stored repeated id",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "end", type: "end", position: { x: 100, y: 0 } },
+        { nodeId: "other", type: "end", position: { x: 100, y: 100 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "end" },
+        { edgeId: "e1", source: "start", target: "other" },
+      ],
+    })
+
+    const error = await rejected(service.update(workspaceId, stored.workflowId, {
+      edges: [...stored.edges, stored.edges[0]!],
+    }))
+
+    expect(error.message).toContain('edges[2] ("e1")')
+    expect(workflows.getById(stored.workflowId)!.rev).toBe(stored.rev)
+  })
+
   it("still rejects a whole-graph update that adds a third copy of a stored connection", async () => {
     const stored = workflows.create({
       workspaceId,
