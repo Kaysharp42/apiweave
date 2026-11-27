@@ -1675,6 +1675,42 @@ describe("variable producers and readers", () => {
     expect(findings(workflow)).toEqual([["variable_producer_not_upstream", "session"]])
   })
 
+  it("treats a post-response write of a variable the same node reads as a refresh", () => {
+    const workflow = chain([
+      request("login", { extractors: { token: "response.body.token" } }),
+      request("use", {
+        headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+        scripts: { postResponse: 'aw.variables.set("token", aw.response.json().token)' },
+      }),
+    ])
+    expect(findings(workflow)).toEqual([])
+  })
+
+  it("still flags a pre-request write of a variable the same node's placeholders read", () => {
+    // Placeholders resolve before the pre-request script runs, so this node
+    // reads the previous value and then adds a second producer of its own.
+    const workflow = chain([
+      request("login", { extractors: { token: "response.body.token" } }),
+      request("use", {
+        headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+        scripts: { preRequest: 'aw.variables.set("token", "new")' },
+      }),
+    ])
+    expect(findings(workflow)).toEqual(expect.arrayContaining([
+      ["variable_producer_duplicate", "token"],
+      ["variable_producer_not_upstream", "token"],
+    ]))
+  })
+
+  it("still flags two separate nodes producing the same variable", () => {
+    const workflow = chain([
+      request("first", { extractors: { token: "response.body.token" } }),
+      request("second", { extractors: { token: "response.body.token" } }),
+      request("use", { headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }] }),
+    ])
+    expect(findings(workflow)).toContainEqual(["variable_producer_duplicate", "token"])
+  })
+
   it("counts the variables a calling workflow passes in as set", () => {
     const workflow = chain([
       request("read", { url: "https://api.example.test/{{variables.case.title}}/{{variables.i}}/{{variables.tenant}}" }),

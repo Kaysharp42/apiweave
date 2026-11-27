@@ -16,7 +16,7 @@ import { assertionExpectedProblem, operatorTakesNoExpectedValue } from "./assert
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
 import { isQueryPath, isXPath, isValidJsonPath, isValidXPath } from "../extractors/extractorPath"
-import { placeholderReferences, variableWrites } from "./variable_references"
+import { placeholderReferences, scriptReferences, variableWrites } from "./variable_references"
 
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const FUNCTION_CALL_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
@@ -883,9 +883,38 @@ function addExpectedStatusMigrationDiagnostics(workflow: WorkflowGraphInput, dia
   }
 }
 
+/**
+ * The `nodeId`/variable pairs whose post-response script write refreshes a
+ * value the same node already reads. Placeholders resolve before the request,
+ * so writing the refetched value back is not a second producer; a pre-request
+ * write is a producer, because the node's own placeholders already read the old
+ * value.
+ */
+function refreshProducerKeys(nodes: readonly VariableProvenanceNode[]): Set<string> {
+  const keys = new Set<string>()
+  for (const node of nodes) {
+    const config = node.config as Readonly<Record<string, unknown>> | undefined
+    if (config === undefined) continue
+    const reads = new Set<string>()
+    forEachConfigString(config, (_rootKey, value) => {
+      for (const ref of placeholderReferences(value)) if (ref.scope === "variables") reads.add(ref.name)
+      for (const ref of scriptReferences(value)) if (ref.scope === "variables" && !ref.write) reads.add(ref.name)
+    })
+    for (const write of variableWrites(node)) {
+      if (write.field === "scripts" && write.path === "scripts.postResponse" && reads.has(write.name)) {
+        keys.add(`${node.nodeId}\u0000${write.name}`)
+      }
+    }
+  }
+  return keys
+}
+
 function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const { successors } = buildGraph(workflow.nodes, workflow.edges)
   const provenance = analyzeVariableProvenance(workflow.nodes)
+  const refreshes = refreshProducerKeys(workflow.nodes)
+  const isRefresh = (producer: { readonly nodeId: string; readonly path: string }, variableName: string): boolean =>
+    producer.path === "scripts.postResponse" && refreshes.has(`${producer.nodeId}\u0000${variableName}`)
   const variables = workflow.variables ?? {}
   const callerVariables = new Set(workflow.callerVariableNames ?? [])
   for (const node of workflow.nodes) {
@@ -926,22 +955,24 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
         { kind: "define_variable_or_extractor", variableName },
       ))
     }
-    if (entry.producers.length > 1) {
+    const producers = entry.producers.filter((producer) => !isRefresh(producer, variableName))
+    if (producers.length > 1) {
       diagnostics.push(diagnostic(
         "variable_producer_duplicate",
         "warning",
         "dataflow",
-        entry.producers.map((producer) => producer.nodeId),
+        producers.map((producer) => producer.nodeId),
         "More than one node produces the same variable.",
-        { variableName, count: entry.producers.length },
+        { variableName, count: producers.length },
         { kind: "keep_single_variable_producer", variableName },
       ))
     }
     for (const producer of entry.producers) {
+      const refresh = isRefresh(producer, variableName)
       const downstream = traverse([producer.nodeId], successors)
       const invalidConsumers = entry.consumers
         .filter((consumer) =>
-          (consumer.nodeId === producer.nodeId && !hasManualValue)
+          (consumer.nodeId === producer.nodeId && !hasManualValue && !refresh)
             || (consumer.nodeId !== producer.nodeId && !downstream.has(consumer.nodeId)),
         )
         .map((consumer) => consumer.nodeId)
