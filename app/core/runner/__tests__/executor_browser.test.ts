@@ -113,6 +113,23 @@ combo.addEventListener('focus', () => { pop.hidden = false })
 combo.addEventListener('blur', () => { setTimeout(() => { if (!pop.contains(document.activeElement)) pop.hidden = true }, 0) })
 </script>`
 
+/**
+ * Selects that expose the read-back's assumptions: an option whose value holds
+ * a non-breaking space, a label written with a double space, a change handler
+ * that navigates, a multi-select and a single select asked for several values.
+ */
+const selectsPage = (): string => `<!doctype html><title>Selects</title>
+<label for="country">Country</label>
+<select id="country"><option>United&nbsp;States</option><option>Canada</option></select>
+<label for="city">City</label>
+<select id="city"><option value="ny">New  York</option><option value="la">Los Angeles</option></select>
+<label for="go">Go</label>
+<select id="go" onchange="location.href='/arrived'"><option value="stay">Stay</option><option value="leave">Leave</option></select>
+<label for="tags">Tags</label>
+<select id="tags" multiple><option>a</option><option>b</option><option>c</option></select>
+<label for="single">Single</label>
+<select id="single"><option value="1">One</option><option value="2">Two</option></select>`
+
 let channel: BrowserChannel | undefined
 let server: Server
 let base: string
@@ -134,6 +151,8 @@ beforeAll(async () => {
       response.writeHead(200, { "content-type": "text/html" }).end(dashboardPage(greeting))
     } else if (path === "/widgets") {
       response.writeHead(200, { "content-type": "text/html" }).end(widgetsPage())
+    } else if (path === "/selects") {
+      response.writeHead(200, { "content-type": "text/html" }).end(selectsPage())
     } else if (path === "/unsettled") {
       const ms = Number(new URLSearchParams((request.url ?? "").split("?")[1] ?? "").get("ms") ?? "300")
       response.writeHead(200, { "content-type": "text/html" }).end(unsettledPage(ms))
@@ -349,9 +368,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       action: "expect-text",
       expected: "Welcome ada@example.com",
       actual: "Welcome ada@example.com",
-      // A plain routing parameter stays legible, so the evidence says whose
-      // dashboard this was; only secret-named parameters are withheld.
-      url: `${base}/dashboard?user=ada%40example.com`,
+      // Every parameter keeps its name but loses its value, so the evidence
+      // says which page this was without storing what the page carried.
+      url: `${base}/dashboard?user=<REDACTED>`,
       title: "Dashboard",
       // A passed step keeps its evidence too: the fifth browser step's screenshot.
       screenshotArtifactId: "artifact-5",
@@ -423,7 +442,7 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
   })
 
-  it("keeps a plain parameter in a step's evidence URL and withholds a secret-named one", async () => {
+  it("withholds every parameter value in a step's evidence URL", async () => {
     const workflowId = create([
       step("open", { action: "navigate", url: `${base}/dashboard?user=ada&token=literal-ticket-9` }),
     ])
@@ -431,9 +450,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     const stored = await run(workflowId)
 
     expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
-    // The plain parameter says whose dashboard the evidence is of; the
-    // secret-named one is withheld by name, not by cutting the whole query.
-    expect(result(stored, "open")?.browser?.url).toBe(`${base}/dashboard?user=ada&token=<REDACTED>`)
+    // Each parameter keeps its name so the query still says what it asked for;
+    // its value is withheld, so the credential never reaches run history.
+    expect(result(stored, "open")?.browser?.url).toBe(`${base}/dashboard?user=<REDACTED>&token=<REDACTED>`)
     expect(JSON.stringify(stored)).not.toContain("literal-ticket-9")
   })
 
@@ -597,6 +616,55 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(result(stored, "keeps")?.browser).toMatchObject({ expected: "Pro", actual: "Pro" })
     expect(result(stored, "reverts")?.error).toContain("did not hold the selected option")
     expect(result(stored, "reverts")?.browser).toMatchObject({ expected: "b", actual: "Alpha" })
+  })
+
+  it("reads back a select by its control when the locator finds the label", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("picked", { action: "select", locator: { kind: "css", value: 'label[for="country"]' }, values: ["Canada"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "picked")?.status, result(stored, "picked")?.error).toBe("passed")
+    expect(result(stored, "picked")?.browser).toMatchObject({ expected: "Canada", actual: "Canada" })
+  })
+
+  it("matches a select value after collapsing whitespace, as selectOption did", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("nbsp", { action: "select", locator: { kind: "label", value: "Country" }, values: ["United States"] }),
+      step("spaces", { action: "select", locator: { kind: "label", value: "City" }, values: ["New York"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "nbsp")?.status, result(stored, "nbsp")?.error).toBe("passed")
+    expect(result(stored, "spaces")?.status, result(stored, "spaces")?.error).toBe("passed")
+  })
+
+  it("passes a select whose change handler navigates away before the read-back", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("leave", { action: "select", locator: { kind: "label", value: "Go" }, values: ["leave"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "leave")?.status, result(stored, "leave")?.error).toBe("passed")
+  })
+
+  it("accepts the first match when a single select is asked for several values, as selectOption does", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("one", { action: "select", locator: { kind: "label", value: "Single" }, values: ["1", "2"] }),
+      step("many", { action: "select", locator: { kind: "label", value: "Tags" }, values: ["a", "c"] }),
+    ])
+
+    const stored = await run(workflowId)
+
+    expect(result(stored, "one")?.status, result(stored, "one")?.error).toBe("passed")
+    expect(result(stored, "many")?.status, result(stored, "many")?.error).toBe("passed")
   })
 
   it("keeps a focus-opened popover open across the evidence taken between steps", async () => {

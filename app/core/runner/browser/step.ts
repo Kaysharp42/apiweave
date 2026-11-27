@@ -282,35 +282,82 @@ function expectElementRead(
   )
 }
 
-/** What a native <select> holds, read in the page: each selected option's value and visible label. */
-function readSelected(select: Element): Array<{ value: string; label: string }> {
-  if (!(select instanceof HTMLSelectElement)) return []
-  return Array.from(select.selectedOptions, (option) => ({ value: option.value, label: option.label }))
+/** Whitespace as `selectOption` compares it: one space, no leading or trailing run. */
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim()
+}
+
+/** Whether an option's value or visible label is the requested value, whitespace aside. */
+function optionMatches(option: { value: string; label: string }, value: string): boolean {
+  const wanted = collapseWhitespace(value)
+  return collapseWhitespace(option.value) === wanted || collapseWhitespace(option.label) === wanted
+}
+
+/** What a native <select> holds, read in the page: whether it is multiple, and each selected option. */
+function readSelected(element: Element): { multiple: boolean; options: Array<{ value: string; label: string }> } | undefined {
+  // Playwright's own actions retarget a label to its control, but `evaluate`
+  // runs on the element the locator matched: a `<label for=…>` locator must be
+  // followed to the control the step actually selected.
+  const control = element instanceof HTMLLabelElement ? element.control : element
+  if (!(control instanceof HTMLSelectElement)) return undefined
+  return {
+    multiple: control.multiple,
+    options: Array.from(control.selectedOptions, (option) => ({ value: option.value, label: option.label })),
+  }
+}
+
+/** A navigation the selection itself started, which destroys the context the read-back runs in. */
+function isNavigationDuringRead(error: unknown): boolean {
+  return error instanceof Error && /Execution context was destroyed|Execution context is not available/i.test(error.message)
 }
 
 /**
  * Playwright's `selectOption` returns once it has dispatched its events, so a
  * page whose change handler puts the old value back still reports success.
- * Read the <select> back until it holds exactly the requested options, each
- * matched by value or label as `selectOption` matched it.
+ * Read the <select> back until it holds the requested options, each matched by
+ * value or label as `selectOption` matched it.
+ *
+ * A single select holds one option however many were asked for — Playwright
+ * picks the first match — so one of the requested values is enough; a
+ * multi-select must hold exactly the requested set. A change handler that
+ * navigates destroys the context the read would use, and that is the page
+ * acting on the selection, so it passes.
  */
-async function expectSelected(element: Locator, values: readonly string[], where: string, timeout: number): Promise<Compared> {
+async function expectSelected(
+  element: Locator,
+  values: readonly string[],
+  where: string,
+  timeout: number,
+  navigated: () => boolean,
+): Promise<Compared> {
   const expected = values.join(", ")
-  let held: Array<{ value: string; label: string }> | undefined
+  let held: { multiple: boolean; options: Array<{ value: string; label: string }> } | undefined
   const { passed } = await pollUntil(
     timeout,
     async (remaining) => {
-      held = await element.evaluate(readSelected, undefined, { timeout: Math.min(remaining, POLL_READ_MAX_MS) })
+      try {
+        held = await element.evaluate(readSelected, undefined, { timeout: Math.min(remaining, POLL_READ_MAX_MS) })
+      } catch (error) {
+        // A navigating handler destroys the context, or — once the page has
+        // replaced the form — leaves the locator nothing to resolve. Either way
+        // the page acted on the selection rather than reverting it.
+        if (isNavigationDuringRead(error) || navigated()) return true
+        throw error
+      }
+      if (held === undefined && navigated()) return true
       const current = held
+      if (current === undefined) return false
+      const matched = (option: { value: string; label: string }, value: string): boolean => optionMatches(option, value)
+      if (!current.multiple) return current.options.some((option) => values.some((value) => matched(option, value)))
       return (
-        values.every((value) => current.some((option) => option.value === value || option.label === value)) &&
-        current.every((option) => values.some((value) => option.value === value || option.label === value))
+        values.every((value) => current.options.some((option) => matched(option, value))) &&
+        current.options.every((option) => values.some((value) => matched(option, value)))
       )
     },
     isFatal,
   )
-  const actual = held === undefined ? undefined : held.map((option) => option.label).join(", ")
-  if (passed && actual !== undefined) return { expected, actual }
+  const actual = held === undefined ? undefined : held.options.map((option) => option.label).join(", ")
+  if (passed) return actual !== undefined ? { expected, actual } : { expected }
   throw new StepFailure(
     `${where} did not hold the selected option within ${seconds(timeout)}: the page changed it back, or it is not a native <select>`,
     { expected, ...(actual !== undefined ? { actual } : {}) },
@@ -386,8 +433,18 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
     case "select": {
       const values = config.values.map((value) => resolveValue(ctx, value, false))
       const element = locate(config.locator)
+      // The whole step shares one deadline: a read-back that started its own
+      // full timeout would let a slow selection double the step's wait.
+      const deadline = Date.now() + timeout
+      const urlBefore = page.url()
       await element.selectOption(values, { timeout })
-      return expectSelected(element, values, describeLocator(config.locator), timeout)
+      return expectSelected(
+        element,
+        values,
+        describeLocator(config.locator),
+        Math.max(1, deadline - Date.now()),
+        () => page.url() !== urlBefore,
+      )
     }
     case "expect-visible": {
       const visible = config.visible ?? true
