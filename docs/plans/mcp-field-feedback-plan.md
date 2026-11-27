@@ -33,7 +33,7 @@ Paths are under `app/`.
 
 | # | Question | Decision |
 | --- | --- | --- |
-| D1 | Evidence URLs: keep cutting the whole query string, or redact per parameter with the existing key-aware redactor? | **Per parameter.** The redaction guide already promises it (FB-040). |
+| D1 | Evidence URLs: keep cutting the whole query string, or redact per parameter with the existing key-aware redactor? | **Per parameter** (FB-040). **Revised 2026-11-27: no filtering** — keep the whole URL, mask only the run's own secrets, warn in the tutorial and guide; report files withhold the query. See the log. |
 | D2 | An inspected page: consumed on first read, or re-readable until it expires (10 min)? | **Re-readable until expiry** (FB-042). |
 | D3 | Expose a run's final variables over MCP? They are stored sanitised by key name; values must also be masked against the run's secret values. | **Yes**, as a section of the run read, after the masking check (FB-019). |
 | D4 | Add `force` to `click`/`check`? | **Not yet.** Better error hint and guide first (FB-035); revisit if agents still stall. |
@@ -264,10 +264,9 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
   same-node pre-request warning is correct: placeholders resolve before the
   pre-request script). Fixed on the branch (DeepSeek Flash, coordinator
   review), each with a test that failed first:
-  - Stored evidence URLs withhold every query value except an allow list of
-    navigation parameters (replaces D1's per-parameter block list, which kept
-    missing credential names); the masker also matches the URL parser's own
-    encoding of a secret, when it holds the whole value.
+  - Stored evidence URLs: the masker also matches the URL parser's own
+    encoding of a secret, when it holds the whole value. An allow list of
+    navigation parameters was tried and reverted (see the next entry).
   - Hyphenated and digit-leading root names are references again (approved
     hosts, rerun masked-variable check).
   - `select` read-back: whitespace-normalised labels, `<label>` locators,
@@ -283,6 +282,19 @@ the top of the ARIA snapshot. Recorded so later rounds don't re-triage them.
     whole; `{{prev.…}}` mappings are typed, and the typed path refuses a
     masked or truncated rerun seed as the text path does.
   Full suite: 5 468 passed, 0 failed.
+- **2026-11-27 — D1 revised: run history keeps URLs whole.** Withholding
+  query values blinded agents to the filters a step applied, and no rule
+  separates credentials from filters by name or by value shape: a probe of 22
+  credential kinds against 29 filter values found every value-shape threshold
+  either leaking some session ids or withholding product slugs and UUID
+  lists. Decision (user): no filtering. Run history keeps the path, query and
+  fragment as visited, dropping only embedded userinfo; the run's own secrets
+  are masked wherever they appear. Run history never leaves the machine (Git
+  sync commits only projects, workflows, environments and presets), so the
+  warning lives where testers and agents read it: the Secrets and Runs
+  tutorial lessons, the MCP redaction guide and the feature docs. Report
+  files, which do leave the app, withhold every query and fragment
+  themselves (`reporters.ts` had relied on run history doing it).
 - **Known flaky tests (pre-existing, also fail on `3aca4e67`):** 3 gRPC TLS
   tests (`grpc.test.ts`, `executor_grpc.test.ts`); browser tests under load
   (`recording.test.ts` iframe case, `better_selector`, `pick`, `capture`,
