@@ -108,6 +108,20 @@ describe("diagnose", () => {
     expect(message).not.toContain("<button")
   })
 
+  it("omits a candidate too long to show instead of truncating it, and counts it in the remainder", () => {
+    const longName = `getByRole('button', { name: '${"x".repeat(90)}' })`
+    const error = new Error([
+      "locator.click: Error: strict mode violation: getByRole('button') resolved to 2 elements:",
+      `    1) <button>…</button> aka ${longName}`,
+      "    2) <button>…</button> aka getByRole('button', { name: 'Short' })",
+    ].join("\n"))
+    const message = diagnose(error, click, 10_000)
+    // A half candidate is a half secret: it is left out whole, not cut.
+    expect(message).not.toContain(longName.slice(0, 60))
+    expect(message).toContain("getByRole('button', { name: 'Short' })")
+    expect(message).toContain("1 more")
+  })
+
   it("keeps the page content of Playwright's message out of the diagnosis", () => {
     const error = new PlaywrightTimeout(
       [

@@ -553,12 +553,14 @@ const CANDIDATE_MAX_CHARS = 80
 /**
  * The candidates of a strict-mode violation as Playwright names them, each a
  * locator that would pick it (`getByRole('button', { name: 'Save' })`), the
- * first few and shortened.
+ * first few and shortened. A candidate longer than the cap is left out whole
+ * rather than cut: a half-name can be half a secret the run's masker only
+ * matches whole, and it is still counted in the "N more" tail.
  */
 function ambiguousCandidates(message: string): string[] {
   const plain = message.replace(/\u001b\[[0-9;]*m/g, "")
   const all = [...plain.matchAll(/^\s*\d+\) .*? aka (.+?)\s*$/gm)].map((match) => match[1] ?? "")
-  const shown = all.slice(0, CANDIDATES_SHOWN).map((name) => (name.length > CANDIDATE_MAX_CHARS ? `${name.slice(0, CANDIDATE_MAX_CHARS - 1)}…` : name))
+  const shown = all.filter((name) => name.length <= CANDIDATE_MAX_CHARS).slice(0, CANDIDATES_SHOWN)
   return all.length > shown.length ? [...shown, `${all.length - shown.length} more`] : shown
 }
 
