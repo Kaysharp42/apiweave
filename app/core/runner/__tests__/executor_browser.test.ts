@@ -128,7 +128,19 @@ const selectsPage = (): string => `<!doctype html><title>Selects</title>
 <label for="tags">Tags</label>
 <select id="tags" multiple><option>a</option><option>b</option><option>c</option></select>
 <label for="single">Single</label>
-<select id="single"><option value="1">One</option><option value="2">Two</option></select>`
+<select id="single"><option value="1">One</option><option value="2">Two</option></select>
+<label for="late">Late</label>
+<select id="late"><option value="stay">Stay</option></select>
+<script>
+setTimeout(() => {
+  const late = document.getElementById('late')
+  const option = document.createElement('option')
+  option.value = 'leave'
+  option.textContent = 'Leave'
+  late.append(option)
+  late.addEventListener('change', () => { late.value = 'stay' })
+}, 2000)
+</script>`
 
 let channel: BrowserChannel | undefined
 let server: Server
@@ -652,6 +664,19 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     const stored = await run(workflowId)
 
     expect(result(stored, "leave")?.status, result(stored, "leave")?.error).toBe("passed")
+  })
+
+  it("reports the step's configured timeout when selecting spent the read-back's share", async () => {
+    const workflowId = create([
+      step("open", { action: "navigate", url: `${base}/selects` }),
+      step("late", { action: "select", locator: { kind: "label", value: "Late" }, values: ["leave"], timeoutMs: 3000 }),
+    ])
+
+    const stored = await run(workflowId)
+
+    // The option appears after 2s, so the read-back has ~1s left; the failure
+    // still names the 3s the step was configured for.
+    expect(result(stored, "late")?.error).toContain("within 3s")
   })
 
   it("accepts the first match when a single select is asked for several values, as selectOption does", async () => {

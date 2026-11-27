@@ -327,13 +327,14 @@ async function expectSelected(
   element: Locator,
   values: readonly string[],
   where: string,
-  timeout: number,
+  pollTimeout: number,
+  configuredTimeout: number,
   navigated: () => boolean,
 ): Promise<Compared> {
   const expected = values.join(", ")
   let held: { multiple: boolean; options: Array<{ value: string; label: string }> } | undefined
   const { passed } = await pollUntil(
-    timeout,
+    pollTimeout,
     async (remaining) => {
       try {
         held = await element.evaluate(readSelected, undefined, { timeout: Math.min(remaining, POLL_READ_MAX_MS) })
@@ -359,7 +360,7 @@ async function expectSelected(
   const actual = held === undefined ? undefined : held.options.map((option) => option.label).join(", ")
   if (passed) return actual !== undefined ? { expected, actual } : { expected }
   throw new StepFailure(
-    `${where} did not hold the selected option within ${seconds(timeout)}: the page changed it back, or it is not a native <select>`,
+    `${where} did not hold the selected option within ${seconds(configuredTimeout)}: the page changed it back, or it is not a native <select>`,
     { expected, ...(actual !== undefined ? { actual } : {}) },
   )
 }
@@ -443,6 +444,7 @@ async function perform(page: Page, config: BrowserNodeData, ctx: BrowserStepCont
         values,
         describeLocator(config.locator),
         Math.max(1, deadline - Date.now()),
+        timeout,
         () => page.url() !== urlBefore,
       )
     }
