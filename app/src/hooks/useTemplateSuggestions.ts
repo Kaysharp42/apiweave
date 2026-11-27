@@ -68,7 +68,9 @@ const FUNCTION_SUGGESTIONS: readonly TemplateSuggestion[] =
  * complete. Outside a workflow the list is just the functions.
  */
 export function useTemplateSuggestions(): readonly TemplateSuggestion[] {
-  const variables = useContext(WorkflowContext)?.variables;
+  // Stored variables plus the names extractors produce: both resolve at run
+  // time, so both belong in the picker.
+  const variables = useContext(WorkflowContext)?.availableVariables;
   const environments = useEnvironmentStore((state) => state.environments);
   const { names, environmentId } = useSecretNamesInScope();
   const secretNames = names ?? NO_NAMES;

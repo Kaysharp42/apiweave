@@ -44,6 +44,7 @@ function AddVariableToggle({
 
 export default function VariablesPanel() {
   const {
+    variables: storedVariables,
     availableVariables: variables,
     updateVariable,
     deleteVariablesWithCleanup,
@@ -158,6 +159,13 @@ export default function VariablesPanel() {
     dispatch({ type: "clear-edit" });
   };
 
+  // A name only an extractor in this graph produces has no stored value to
+  // edit: saving one would create a second, manual producer for it. Delete
+  // stays, as it always was, so its uses can still be cleaned up.
+  const extractorOnly = (varName: string): boolean =>
+    Object.prototype.hasOwnProperty.call(variables, varName) &&
+    !Object.prototype.hasOwnProperty.call(storedVariables, varName);
+
   return (
     <div className="relative w-full min-w-0 h-full flex flex-col overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
       {/* Header — stays put; the list below it is what scrolls */}
@@ -255,24 +263,26 @@ export default function VariablesPanel() {
                     >
                       <GitBranch className="w-3 h-3" />
                     </IconButton>
-                    <IconButton
-                      onClick={() =>
-                        dispatch({
-                          type: "start-edit",
-                          varName,
-                          value:
-                            typeof varValue === "string"
-                              ? varValue
-                              : JSON.stringify(varValue),
-                        })
-                      }
-                      variant="primary"
-                      size="xs"
-                      tooltip="Edit variable"
-                      className="shrink-0"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </IconButton>
+                    {!extractorOnly(varName) && (
+                      <IconButton
+                        onClick={() =>
+                          dispatch({
+                            type: "start-edit",
+                            varName,
+                            value:
+                              typeof varValue === "string"
+                                ? varValue
+                                : JSON.stringify(varValue),
+                          })
+                        }
+                        variant="primary"
+                        size="xs"
+                        tooltip="Edit variable"
+                        className="shrink-0"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </IconButton>
+                    )}
                     <IconButton
                       onClick={() => handleDelete(varName)}
                       variant="error"

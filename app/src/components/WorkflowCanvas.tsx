@@ -303,6 +303,7 @@ function WorkflowCanvas({
 
   const {
     variables: workflowVariables,
+    availableVariables,
     registerExtractors,
     updateVariable,
     updateVariables,
@@ -1656,7 +1657,9 @@ function WorkflowCanvas({
     nodes,
     nodesRef,
     setNodes,
-    variables: workflowVariables,
+    // A name an extractor produces is taken too: it is not a stored variable,
+    // but the canvas resolves it exactly as it resolves one.
+    variables: availableVariables,
     setVariable: updateVariable,
   });
 
