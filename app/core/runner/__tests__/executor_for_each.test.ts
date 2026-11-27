@@ -68,6 +68,43 @@ describe("Call Workflow forEach", () => {
     expect(filtered.extractedVariables["echoed"]).toEqual(["p", "r"])
   })
 
+  it("resolves a list from {{prev.…}} as the array it names", async () => {
+    const { createServer } = await import("node:http")
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ ids: [1, 2, 3] }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const port = (server.address() as { port: number }).port
+    try {
+      const output = await run({
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "fetch", type: "http-request", config: { method: "GET", url: `http://127.0.0.1:${port}/ids` } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            config: {
+              targetWorkflowId: "child",
+              outputMapping: { echoed: "item" },
+              forEach: { items: "{{prev.response.body.ids}}", itemVariable: "item" },
+            },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "fetch" },
+          { edgeId: "e2", source: "fetch", target: "call1" },
+          { edgeId: "e3", source: "call1", target: "end" },
+        ],
+      })
+      expect(output.status).toBe("passed")
+      expect(output.extractedVariables["echoed"]).toEqual([1, 2, 3])
+    } finally {
+      server.close()
+    }
+  })
+
   it("fails the node when items is not an array or itemVariable is missing", async () => {
     const notArray = await run(caller({ items: "{{variables.n}}", itemVariable: "item" }, {}, { n: 3 }))
     expect(notArray.status).toBe("failed")

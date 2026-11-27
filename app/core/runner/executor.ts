@@ -3222,6 +3222,10 @@ export class WorkflowExecutor {
   private resolvePlaceholderValue(varPath: string): unknown {
     const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
     if (scope) return this.readScopedValue(scope[1]!, scope[2]!)
+    if (varPath.startsWith("prev")) {
+      const entry = this.prevEntry(varPath)
+      return entry ? readDotPath(entry.result, entry.path) : undefined
+    }
     const { nodeId, path } = splitNodePath(varPath)
     const nodeResult = this.results.get(nodeId)
     return nodeResult ? readDotPath(nodeResult, path) : undefined
@@ -3370,21 +3374,31 @@ export class WorkflowExecutor {
     return String(func(...paramList))
   }
 
-  /** `{{prev.…}}` reads the last result (a rerun entry's own predecessor); `{{prev[i].…}}` the i-th of the merged branches, else of all results. */
-  private resolvePrevPlaceholder(varPath: string, match: string): string {
+  /**
+   * The result and path a `{{prev.…}}` placeholder addresses: the last result
+   * (a rerun entry's own predecessor), or `{{prev[i].…}}` the i-th of the
+   * merged branches, else of all results. Shared by the text resolver and the
+   * raw-value resolver so both read the same entry.
+   */
+  private prevEntry(varPath: string): { readonly nodeId: string; readonly result: NodeResult; readonly path: string } | undefined {
     const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
     if (indexMatch) {
       const branchIndex = Number.parseInt(indexMatch[1]!, 10)
       const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
       const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
-      return entry ? this.readResult(entry[0], entry[1], indexMatch[2]!, match) : match
+      return entry ? { nodeId: entry[0], result: entry[1], path: indexMatch[2]! } : undefined
     }
-
     const path = varPath.slice(5)
-    if (path === "") return match
+    if (path === "") return undefined
     const entryPrev = this.entryPrev.getStore()
     const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
-    return last ? this.readResult(last[0], last[1], path, match) : match
+    return last ? { nodeId: last[0], result: last[1], path } : undefined
+  }
+
+  /** `{{prev.…}}` as text, refusing a value the source run masked. */
+  private resolvePrevPlaceholder(varPath: string, match: string): string {
+    const entry = this.prevEntry(varPath)
+    return entry ? this.readResult(entry.nodeId, entry.result, entry.path, match) : match
   }
 
   /**

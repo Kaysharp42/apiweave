@@ -1485,6 +1485,44 @@ describe("WorkflowExecutor", () => {
         expect(result?.error).toBe("inputMapping.car: {{variables.cars[2]}} is not set in the caller")
       })
 
+      it("passes a {{prev.…}} placeholder's raw value, keeping its type", async () => {
+        const { createServer } = await import("node:http")
+        const server = createServer((_request, response) => {
+          response.writeHead(200, { "content-type": "application/json" })
+          response.end(JSON.stringify({ items: [{ id: 1 }, { id: 2 }] }))
+        })
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+        const port = (server.address() as { port: number }).port
+        try {
+          const executor = new WorkflowExecutor({ ...makeDeps(), resolveWorkflow: () => echoChild })
+          const output = await executor.executeWorkflow({
+            nodes: [
+              { nodeId: "start", type: "start" },
+              { nodeId: "fetch", type: "http-request", config: { method: "GET", url: `http://127.0.0.1:${port}/items` } },
+              {
+                nodeId: "call1",
+                type: "workflow",
+                config: {
+                  targetWorkflowId: "sub-1",
+                  inputMapping: { items: "{{prev.response.body.items}}" },
+                  outputMapping: { echoed: "items" },
+                },
+              },
+              { nodeId: "end", type: "end" },
+            ],
+            edges: [
+              { edgeId: "e1", source: "start", target: "fetch" },
+              { edgeId: "e2", source: "fetch", target: "call1" },
+              { edgeId: "e3", source: "call1", target: "end" },
+            ],
+          })
+          expect(output.status).toBe("passed")
+          expect(output.extractedVariables["echoed"]).toEqual([{ id: 1 }, { id: 2 }])
+        } finally {
+          server.close()
+        }
+      })
+
       it("keeps a mixed template as text", async () => {
         const { output } = await callWith(
           { label: "case {{variables.n}}: {{variables.record}}" },
