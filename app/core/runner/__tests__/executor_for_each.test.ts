@@ -105,6 +105,51 @@ describe("Call Workflow forEach", () => {
     }
   })
 
+  it("refuses a for-each over a seeded prev result that was masked in the source run", async () => {
+    const executor = new WorkflowExecutor({ ...makeDeps(), resolveWorkflow: () => echoChild })
+    const output = await executor.executeWorkflow(
+      {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "fetch", type: "http-request", config: { method: "GET", url: "https://api.example.test/ids" } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            config: {
+              targetWorkflowId: "child",
+              outputMapping: { echoed: "item" },
+              forEach: { items: "{{prev.response.body.items}}", itemVariable: "item" },
+            },
+          },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "fetch" },
+          { edgeId: "e2", source: "fetch", target: "call1" },
+          { edgeId: "e3", source: "call1", target: "end" },
+        ],
+      },
+      {
+        startNodeIds: ["call1"],
+        resume: {
+          scope: new Set(["call1", "end"]),
+          results: [{
+            nodeId: "fetch",
+            status: "passed",
+            duration: 5,
+            response: { statusCode: 200, body: { items: ["<SECRET>", "kept"] } },
+          }],
+          maskedVariables: [],
+        },
+      },
+    )
+
+    expect(output.status).toBe("failed")
+    const error = output.results.find((result) => result.nodeId === "call1")?.error
+    expect(error).toContain("{{prev.response.body.items}} was masked in the source run")
+    expect(error).toContain("Not rerun:")
+  })
+
   it("fails the node when items is not an array or itemVariable is missing", async () => {
     const notArray = await run(caller({ items: "{{variables.n}}", itemVariable: "item" }, {}, { n: 3 }))
     expect(notArray.status).toBe("failed")

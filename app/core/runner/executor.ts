@@ -24,7 +24,7 @@ import type { Validator } from "@cfworker/json-schema"
 import { ASSERTION_VALUE_TYPES, parseSchemaValue } from "@shared/analysis/assertion_expected"
 import type { SchemaViolation } from "@shared/types/SchemaViolation"
 import { SECRET_PLACEHOLDER, extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
-import type { ResumeSeed } from "./resume"
+import { isMasked, type ResumeSeed } from "./resume"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
@@ -3224,11 +3224,17 @@ export class WorkflowExecutor {
     if (scope) return this.readScopedValue(scope[1]!, scope[2]!)
     if (varPath.startsWith("prev")) {
       const entry = this.prevEntry(varPath)
-      return entry ? readDotPath(entry.result, entry.path) : undefined
+      if (entry === undefined) return undefined
+      const value = readDotPath(entry.result, entry.path)
+      this.refuseUnreadableSeed(entry.nodeId, entry.result, `{{${varPath}}}`, isMasked(value))
+      return value
     }
     const { nodeId, path } = splitNodePath(varPath)
     const nodeResult = this.results.get(nodeId)
-    return nodeResult ? readDotPath(nodeResult, path) : undefined
+    if (nodeResult === undefined) return undefined
+    const value = readDotPath(nodeResult, path)
+    this.refuseUnreadableSeed(nodeId, nodeResult, `{{${varPath}}}`, isMasked(value))
+    return value
   }
 
   /**
@@ -3402,6 +3408,22 @@ export class WorkflowExecutor {
   }
 
   /**
+   * Refuse a value read from a node whose result was seeded from a rerun's
+   * source run when that stored copy cannot stand in for the live one: a
+   * response too large to store whole, or text the masker wrote. Shared by the
+   * text reader and the raw-value reader.
+   */
+  private refuseUnreadableSeed(nodeId: string, result: NodeResult, expression: string, masked: boolean): void {
+    if (!this.seededNodeIds.has(nodeId)) return
+    if (result.response?.truncated === true) {
+      throw new Error(`${RERUN_REFUSED} ${expression} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
+    }
+    if (masked) {
+      throw new Error(`${RERUN_REFUSED} ${expression} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
+    }
+  }
+
+  /**
    * A path into a node's result. A result seeded from a rerun's source run is
    * the stored copy, so a value that was masked or cut short there is refused
    * rather than sent as `<SECRET>` or as half a body.
@@ -3409,13 +3431,7 @@ export class WorkflowExecutor {
   private readResult(nodeId: string, result: NodeResult, path: string, match: string): string {
     const value = readDotPath(result, path)
     const text = value !== undefined && value !== null ? placeholderText(value) : match
-    if (!this.seededNodeIds.has(nodeId)) return text
-    if (result.response?.truncated === true) {
-      throw new Error(`${RERUN_REFUSED} ${match} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
-    }
-    if (text.includes(SECRET_PLACEHOLDER)) {
-      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
-    }
+    this.refuseUnreadableSeed(nodeId, result, match, text.includes(SECRET_PLACEHOLDER))
     return text
   }
 
