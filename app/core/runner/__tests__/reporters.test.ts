@@ -118,9 +118,8 @@ const FAILED_RUN = makeRun({
   results: [
     result("http_1", {
       duration: 250,
-      // The stored shape a run leaves: a plain parameter legible, a
-      // secret-named one withheld by name.
-      request: { method: "GET", url: "https://api.example.com/users?page=2&token=<REDACTED>" },
+      // The stored shape a run leaves: the URL as sent, the run's own secret masked.
+      request: { method: "GET", url: "https://api.example.com/users?page=2&token=<SECRET>" },
       response: { statusCode: 200, headers: { "set-cookie": "sid=abc" }, body: { token: "server-issued" } },
     }),
     result("check", {
@@ -299,7 +298,7 @@ describe("buildHtmlReport", () => {
     const html = buildHtmlReport({ kind: "run", run: FAILED_RUN, workflow: WORKFLOW })
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true)
     expect(html).not.toMatch(/<script|<link|src=|https?:\/\/(?!api\.example\.com)/)
-    expect(html).toContain("GET https://api.example.com/users?page=2&amp;token=&lt;REDACTED&gt;")
+    expect(html).toContain("GET https://api.example.com/users?&lt;REDACTED&gt;")
     expect(html).toContain("Status 200")
     expect(html).toContain("Rule 2: prev body.items.length gt — fail (comparison-failed)")
   })
@@ -529,6 +528,48 @@ describe("report contents", () => {
         expect(report).not.toContain(value)
       }
     }
+  })
+})
+
+describe("addresses in a report", () => {
+  it("withholds every query and fragment, which run history keeps whole, because a report leaves the app", () => {
+    const workflow: ReportWorkflow = {
+      workflowId: "wf_1",
+      name: "Sign-in",
+      nodes: [
+        { nodeId: "h1", type: "http-request", label: "Fetch", position: { x: 0, y: 0 } },
+        { nodeId: "b1", type: "browser", label: "Landed", position: { x: 1, y: 0 } },
+        { nodeId: "b2", type: "browser", label: "Heading", position: { x: 2, y: 0 } },
+      ],
+    }
+    const run = makeRun({
+      status: "failed",
+      nodeStatuses: { h1: { status: "failed" }, b1: { status: "failed" }, b2: { status: "failed" } },
+      results: [
+        result("h1", { status: "failed", request: { method: "GET", url: "https://ada:pw@api.example.test/files?X-Signature=f00d&page=2" } }),
+        result("b1", {
+          status: "failed",
+          browser: {
+            action: "expect-url",
+            url: "https://app.example.test/home?code=one-time-code#state=s1",
+            expected: "https://app.example.test/dashboard?tab=all",
+            actual: "https://app.example.test/home?code=one-time-code#state=s1",
+          },
+        }),
+        result("b2", { status: "failed", browser: { action: "expect-text", url: "https://app.example.test/home", expected: "a?b#c", actual: "Home" } }),
+      ],
+    })
+    const input: ReportInput = { kind: "run", run, workflow }
+    for (const report of [buildConsoleReport(input, false), buildJUnitReport(input), buildHtmlReport(input)]) {
+      for (const leaked of ["f00d", "page=2", "one-time-code", "state=s1", "tab=all", "ada", ":pw@"]) expect(report).not.toContain(leaked)
+    }
+    const console = buildConsoleReport(input, false)
+    expect(console).toContain("GET https://api.example.test/files?<REDACTED>")
+    expect(console).toContain('Expected: "https://app.example.test/dashboard?<REDACTED>"')
+    expect(console).toContain('Found: "https://app.example.test/home?<REDACTED>#<REDACTED>"')
+    expect(console).toContain("Page: https://app.example.test/home?<REDACTED>#<REDACTED>")
+    // Only a page-address check's compared values are addresses; any other check's text is shown as compared.
+    expect(console).toContain('Expected: "a?b#c"')
   })
 })
 
