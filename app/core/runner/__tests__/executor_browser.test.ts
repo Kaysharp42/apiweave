@@ -380,9 +380,9 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
       action: "expect-text",
       expected: "Welcome ada@example.com",
       actual: "Welcome ada@example.com",
-      // Every parameter keeps its name but loses its value, so the evidence
-      // says which page this was without storing what the page carried.
-      url: `${base}/dashboard?user=<REDACTED>`,
+      // The URL is kept as visited, query included: it says which page this
+      // was and what it was asked for.
+      url: `${base}/dashboard?user=ada%40example.com`,
       title: "Dashboard",
       // A passed step keeps its evidence too: the fifth browser step's screenshot.
       screenshotArtifactId: "artifact-5",
@@ -454,18 +454,16 @@ describe("browser steps in a real browser", { timeout: BROWSER_TEST_TIMEOUT_MS }
     expect(result(stored, "open")?.browser?.ariaSnapshot).toContain('heading "Arrived"')
   })
 
-  it("withholds every parameter value in a step's evidence URL", async () => {
+  it("keeps a step's evidence URL as visited: filters and the fragment stay legible", async () => {
     const workflowId = create([
-      step("open", { action: "navigate", url: `${base}/dashboard?user=ada&token=literal-ticket-9` }),
+      step("open", { action: "navigate", url: `${base}/dashboard?status=open&q=red%20shoes&code=abc123#/list` }),
     ])
 
     const stored = await run(workflowId)
 
     expect(stored.status, JSON.stringify(stored.results.map((r) => [r.nodeId, r.error]))).toBe("completed")
-    // Each parameter keeps its name so the query still says what it asked for;
-    // its value is withheld, so the credential never reaches run history.
-    expect(result(stored, "open")?.browser?.url).toBe(`${base}/dashboard?user=<REDACTED>&token=<REDACTED>`)
-    expect(JSON.stringify(stored)).not.toContain("literal-ticket-9")
+    // Nothing in the query is judged by its name: run history keeps what the page's address said.
+    expect(result(stored, "open")?.browser?.url).toBe(`${base}/dashboard?status=open&q=red%20shoes&code=abc123#/list`)
   })
 
   it("takes no evidence of a step that passed when the run is cancelled while its page settles", async () => {

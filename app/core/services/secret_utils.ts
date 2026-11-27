@@ -739,46 +739,24 @@ function redactUrlQueryParams(
   return queryChanged
 }
 
-/** The blank a stored run URL substitutes for a withheld parameter value. */
-const RUN_HISTORY_URL_BLANK = "<REDACTED>"
+/** A URL's scheme and authority up to its last `@`: the userinfo a URL can embed. */
+const URL_USERINFO_RE = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/?#]*@/
 
 /**
- * Query parameter names whose values are harmless navigation state, so a
- * stored run URL may keep them. Lowercased, matched exactly. Everything else
- * has its value withheld: a block list kept missing credential names a page
- * invents (a signed URL's `X-Goog-Signature`, an OAuth `oauth_verifier`, a
- * session id under any vendor's spelling), so run history withholds by default
- * and keeps only what it can name as plainly safe.
- */
-const RUN_HISTORY_HARMLESS_PARAMS: ReadonlySet<string> = new Set([
-  "page", "per_page", "page_size", "pagesize", "limit", "offset", "sort",
-  "order", "orderby", "tab", "view", "lang", "locale", "hl",
-])
-
-/** True if a query parameter of a stored run URL must not keep its value. */
-function isRunHistorySensitiveParam(key: string): boolean {
-  return !RUN_HISTORY_HARMLESS_PARAMS.has(key.toLowerCase())
-}
-
-/**
- * A URL as run history keeps it — the one redaction every captured evidence
- * URL (a browser step's page, an inspected page, a request's metadata) goes
- * through, on top of the run's own secret-value masker.
+ * A URL as run history keeps it — what every captured evidence URL (a browser
+ * step's page, an inspected page, a request's metadata) goes through, after
+ * the run's own secret-value masker.
  *
- * Every parameter keeps its name and has its value withheld, except the few
- * plainly navigational ones the allow list names, so the evidence still says
- * which page it was without ever storing a credential a page put in its query
- * string. Userinfo, the fragment and credential-looking path segments are
- * withheld too. A `<SECRET>` the masker already wrote — and the `<REDACTED>`
- * blank itself — survive legible: the URL parser percent-encodes their angle
- * brackets on the round-trip a redaction forces, so they are decoded back.
+ * Only embedded userinfo (`user:password@`) is dropped: it is credential
+ * syntax by definition. The path, query and fragment are kept exactly as
+ * visited, because they are what says which page it was and which filters
+ * were applied. A value a server puts in an address — a sign-in code, a signed
+ * link, a session id — is therefore stored as it was; the run's own
+ * `{{secrets.*}}` values are masked wherever they appear. The tutorial and
+ * the MCP guide say so where testers and agents read run history.
  */
 export function redactUrlForRunHistory(value: string): string {
-  const redacted = sanitizeUrlWithReferences(value, RUN_HISTORY_URL_BLANK, isRunHistorySensitiveParam)
-  if (redacted === value) return value
-  return redacted
-    .replaceAll(encodeURIComponent(RUN_HISTORY_URL_BLANK), RUN_HISTORY_URL_BLANK)
-    .replaceAll(encodeURIComponent(SECRET_PLACEHOLDER), SECRET_PLACEHOLDER)
+  return value.replace(URL_USERINFO_RE, "$1")
 }
 
 /**

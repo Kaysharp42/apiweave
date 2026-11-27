@@ -863,9 +863,8 @@ an entry with its value replaced:
 The entry is still there, so you can tell "stored, value withheld" from "never
 saved". Request bodies are redacted leaf by leaf: a plain JSON body comes back
 as written, and only the fields that name or look like credentials are replaced.
-Cookie values are always withheld. URLs keep their shape: every query
-parameter keeps its name but loses its value, except a few plainly navigational
-ones, and embedded userinfo and the fragment are dropped.
+Cookie values are always withheld. URLs keep their shape, losing only embedded
+userinfo, a fragment, and secret-named query parameters.
 
 \`{{secrets.NAME}}\` references survive verbatim everywhere — a reference is not a
 secret, and seeing it is how you know which credential a request uses.
@@ -899,7 +898,11 @@ masked ARIA snapshot. \`browser_inspect\` returns the page its run left open —
 URL, title and masked ARIA snapshot — and with \`screenshot: true\` the
 viewport JPEG, painted over the same way. All three run the same
 secret-redaction pass every other read gets, and bodies travel as previews,
-never whole. One exception in the run summaries themselves: a failed browser
+never whole. A URL in run evidence is kept as the run visited or sent it —
+path, query and fragment — losing only embedded userinfo, so a filter reads as
+it was; a value the run resolved from a secret reads \`<SECRET>\`, but one a
+server put in an address (a sign-in code, a signed link) is stored as it was.
+One exception in the run summaries themselves: a failed browser
 step in \`runs_create\`, \`runs_wait\` or \`runs_get\` carries its action, page URL
 and title and the runner's own failure message, plus a \`nextRead\` pointing at
 its evidence. A second, opt-in: \`runs_get\` with \`variables: true\` also

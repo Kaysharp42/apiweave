@@ -208,11 +208,10 @@ describe("RunScheduler", () => {
         nodeId: "http_1",
         status: "failed",
         error: "Request configuration invalid",
-        // The secret-named parameter is withheld by name; a plain one would
-        // have stayed legible.
-        request: { url: "ftp://169.254.169.254/auth?token=<REDACTED>" },
+        // Run history keeps the URL as sent: an environment variable is not a
+        // secret, and only the run's own secret values are masked.
+        request: { url: "ftp://169.254.169.254/auth?token=opaque-credential" },
       })
-      expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
     })
 
     it("persists a completed node result before a downstream delay finishes", async () => {
@@ -286,12 +285,11 @@ describe("RunScheduler", () => {
 
       const persistedRun = runs.getById(runId)
       // BASE_URL comes from the child (override wins); REGION is inherited from
-      // the base untouched. The stored evidence keeps the host but withholds
-      // every query value, so the URL shows both resolutions happened and the
-      // query's value stays out of run history.
+      // the base untouched. The stored evidence keeps the URL as sent, so it
+      // shows both resolutions happened.
       expect(persistedRun?.results[0]).toMatchObject({
         nodeId: "http_1",
-        request: { url: "ftp://169.254.169.254/child-override?region=<REDACTED>" },
+        request: { url: "ftp://169.254.169.254/child-override?region=eu" },
       })
     })
 

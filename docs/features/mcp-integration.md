@@ -583,7 +583,11 @@ Run tools return operational metadata suitable for an agent to monitor a run:
 Run responses intentionally omit raw request/response and variable content —
 except `runs_getNodeResult`, which returns one node's stored request/response,
 or a browser step's page address, values and masked ARIA snapshot, under the
-standard secret-redaction pass. Use the desktop response inspector when full
+standard secret-redaction pass. A page address or request URL is kept as the
+run visited or sent it, query and fragment included, losing only embedded
+userinfo: a value resolved from a secret reads `<SECRET>`, but a value a server
+put in the address (a sign-in code, a signed link, a session id) is stored and
+returned as it was. Use the desktop response inspector when full
 payloads for other nodes are needed.
 
 Run tools do not push updates themselves. A session client can subscribe to the
