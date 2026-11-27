@@ -150,6 +150,58 @@ describe("WorkflowExecutor", () => {
       }
     })
 
+    it("leaves an empty scope path as written instead of substituting the whole scope", async () => {
+      const { createServer } = await import("node:http")
+      const seen: Record<string, string | string[] | undefined> = {}
+      const server = createServer((request, response) => {
+        Object.assign(seen, request.headers)
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "http_1",
+              type: "http-request",
+              config: {
+                method: "GET",
+                url: `http://127.0.0.1:${port}/`,
+                headers: [
+                  { key: "X-Vars", value: "{{variables.}}" },
+                  { key: "X-Env", value: "{{env.}}" },
+                  { key: "X-Data", value: "{{data.}}" },
+                  { key: "X-Index", value: "{{variables.[0]}}" },
+                ],
+              },
+            },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "end" },
+          ],
+          variables: { a: "x" },
+        }
+
+        const output = await new WorkflowExecutor({
+          ...makeDeps(),
+          environmentVariables: { B: "y" },
+          data: { c: "z" },
+        }).executeWorkflow(workflow)
+
+        expect(output.status).toBe("passed")
+        expect(seen["x-vars"]).toBe("{{variables.}}")
+        expect(seen["x-env"]).toBe("{{env.}}")
+        expect(seen["x-data"]).toBe("{{data.}}")
+        expect(seen["x-index"]).toBe("{{variables.[0]}}")
+      } finally {
+        server.close()
+      }
+    })
+
     it("substitutes a data-driven run's row as {{data.<column>}}", async () => {
       const { createServer } = await import("node:http")
       const seen: { url: string; user: string; body: string }[] = []

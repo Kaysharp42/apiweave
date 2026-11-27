@@ -3234,6 +3234,10 @@ export class WorkflowExecutor {
    */
   private readScopedValue(scopeName: string, path: string): unknown {
     const name = /^[^.[]*/.exec(path)![0]
+    // An empty path (`{{variables.}}`) or a path with no root name
+    // (`{{variables.[0]}}`) names no value: read as written rather than
+    // handing back the whole scope.
+    if (name === "") return undefined
     if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
       throw new Error(`${RERUN_REFUSED} {{variables.${name}}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
     }
